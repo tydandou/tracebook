@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.coverage
+.tracebook-test/
+# Local Tracebook knowledge roots and per-user overrides.
+.tracebook/
+.env
+.env.*
+!.env.example
+*.local
+
+# Internal planning and design notes; retained locally, not published.
+/docs/

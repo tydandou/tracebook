@@ -1,0 +1,15 @@
+{
+  "name": "tracebook",
+  "description": "Durable external project knowledge plugins for engineering workflows.",
+  "owner": {
+    "name": "Tracebook Contributors"
+  },
+  "plugins": [
+    {
+      "name": "tracebook",
+      "source": "./plugins/tracebook",
+      "description": "Durable and traceable external project knowledge for Claude Code.",
+      "version": "1.0.0"
+    }
+  ]
+}

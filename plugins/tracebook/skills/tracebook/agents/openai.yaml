@@ -1,0 +1,4 @@
+interface:
+  display_name: Tracebook
+  short_description: Durable and traceable project knowledge for Codex.
+  default_prompt: Use Tracebook to load relevant external project knowledge before this engineering task and capture only verified durable conclusions afterwards.

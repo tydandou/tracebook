@@ -1,0 +1,23 @@
+{
+  "name": "tracebook",
+  "version": "1.0.0",
+  "description": "Durable and traceable external project knowledge for Codex.",
+  "author": {
+    "name": "Tracebook Contributors"
+  },
+  "license": "Apache-2.0",
+  "keywords": ["knowledge", "engineering", "documentation", "obsidian"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Tracebook",
+    "shortDescription": "Durable external project knowledge",
+    "longDescription": "Capture and use verified engineering knowledge outside business repositories.",
+    "developerName": "Tracebook Contributors",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": [
+      "Use Tracebook to load project knowledge before this task.",
+      "Use Tracebook to capture verified conclusions from this task."
+    ]
+  }
+}
