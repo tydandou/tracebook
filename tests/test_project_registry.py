@@ -16,6 +16,30 @@ class ProjectRegistryTest(unittest.TestCase):
         (repository / ".git").mkdir(parents=True)
         return repository
 
+    def _symlink_or_skip(
+        self,
+        link: Path,
+        target: Path,
+        *,
+        target_is_directory: bool = False,
+    ) -> None:
+        try:
+            link.symlink_to(target, target_is_directory=target_is_directory)
+        except NotImplementedError as error:
+            self.skipTest(f"platform denied test symlink creation: {error}")
+        except OSError as error:
+            unavailable_errnos = {errno.EACCES, errno.EPERM}
+            for name in ("ENOTSUP", "EOPNOTSUPP"):
+                value = getattr(errno, name, None)
+                if value is not None:
+                    unavailable_errnos.add(value)
+            if (
+                error.errno in unavailable_errnos
+                or getattr(error, "winerror", None) == 1314
+            ):
+                self.skipTest(f"platform denied test symlink creation: {error}")
+            raise
+
     def test_registry_uses_json_extension_for_json_payload(self) -> None:
         with TemporaryDirectory() as temp:
             self.assertEqual(registry_path(Path(temp)).name, "registry.json")
@@ -98,6 +122,88 @@ class ProjectRegistryTest(unittest.TestCase):
             self.assertFalse(raised.exception.retryable)
             self.assertEqual(corrupt, path.read_bytes())
             self.assertEqual([], list((root / "01-projects").iterdir()))
+
+    def test_registry_directory_is_reported_as_corrupt(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            (root / "01-projects").mkdir(parents=True)
+            repository = self._local_repository(base)
+            path = registry_path(root)
+            path.mkdir()
+
+            with self.assertRaises(TracebookError) as raised:
+                ensure_project(root, repository)
+
+            self.assertEqual("CORRUPT_REGISTRY", raised.exception.code)
+            self.assertEqual("resolve", raised.exception.operation)
+            self.assertTrue(path.is_dir())
+            self.assertEqual([], list((root / "01-projects").iterdir()))
+
+    def test_dangling_registry_symlink_is_reported_as_corrupt_without_replacement(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            (root / "01-projects").mkdir(parents=True)
+            repository = self._local_repository(base)
+            path = registry_path(root)
+            outside = base / "missing-registry-target.json"
+            self._symlink_or_skip(path, outside)
+
+            with self.assertRaises(TracebookError) as raised:
+                ensure_project(root, repository)
+
+            self.assertEqual("CORRUPT_REGISTRY", raised.exception.code)
+            self.assertEqual("resolve", raised.exception.operation)
+            self.assertTrue(path.is_symlink())
+            self.assertFalse(outside.exists())
+            self.assertEqual([], list((root / "01-projects").iterdir()))
+
+    def test_project_minimum_files_reject_directory_entries(self) -> None:
+        for filename in ("index.md", "project-status.md"):
+            with self.subTest(filename=filename), TemporaryDirectory() as temp:
+                base = Path(temp)
+                root = base / "knowledge"
+                (root / "01-projects").mkdir(parents=True)
+                repository = self._local_repository(base)
+                record = ensure_project(root, repository)
+                entry = root / record.relative_path / filename
+                entry.unlink()
+                entry.mkdir()
+
+                with self.assertRaises(TracebookError) as raised:
+                    ensure_project(root, repository)
+
+                self.assertEqual("INVALID_PROJECT_STATE", raised.exception.code)
+                self.assertEqual("resolve", raised.exception.operation)
+                self.assertTrue(entry.is_dir())
+
+    def test_project_minimum_files_reject_external_symlinks_without_overwrite(
+        self,
+    ) -> None:
+        for filename in ("index.md", "project-status.md"):
+            with self.subTest(filename=filename), TemporaryDirectory() as temp:
+                base = Path(temp)
+                root = base / "knowledge"
+                (root / "01-projects").mkdir(parents=True)
+                repository = self._local_repository(base)
+                record = ensure_project(root, repository)
+                entry = root / record.relative_path / filename
+                entry.unlink()
+                outside = base / f"outside-{filename}"
+                original = b"outside content must remain unchanged\r\n"
+                outside.write_bytes(original)
+                self._symlink_or_skip(entry, outside)
+
+                with self.assertRaises(TracebookError) as raised:
+                    ensure_project(root, repository)
+
+                self.assertEqual("INVALID_PROJECT_STATE", raised.exception.code)
+                self.assertEqual("resolve", raised.exception.operation)
+                self.assertTrue(entry.is_symlink())
+                self.assertEqual(original, outside.read_bytes())
 
     def test_registry_schema_is_strict_for_version_projects_and_record_fields(
         self,

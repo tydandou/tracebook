@@ -7,7 +7,33 @@ import time
 import unittest
 
 
+ChildResult = tuple[int | None, str, str]
+
+
 class ConcurrentWritesTest(unittest.TestCase):
+    @staticmethod
+    def _cleanup_and_collect(
+        processes: list[subprocess.Popen[str]],
+        results: list[ChildResult | None],
+    ) -> list[ChildResult]:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+        for index, process in enumerate(processes):
+            if results[index] is None:
+                stdout, stderr = process.communicate()
+                results[index] = (process.returncode, stdout, stderr)
+        if any(result is None for result in results):
+            raise AssertionError("failed to collect every child process")
+        return [result for result in results if result is not None]
+
+    @staticmethod
+    def _format_results(results: list[ChildResult]) -> str:
+        return "\n\n".join(
+            f"child {index}: exit={returncode}\nstdout={stdout}\nstderr={stderr}"
+            for index, (returncode, stdout, stderr) in enumerate(results)
+        )
+
     def test_twenty_concurrent_resolves_retain_all_registry_records(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)
@@ -53,39 +79,65 @@ class ConcurrentWritesTest(unittest.TestCase):
                     )
                 )
 
-            results: list[tuple[int, str, str]] = []
+            results: list[ChildResult | None] = [None] * len(processes)
+            failure_reason: str | None = None
             try:
                 ready_deadline = time.monotonic() + 30
                 while len(list(ready.iterdir())) != 20:
-                    exited = [process.returncode for process in processes if process.poll() is not None]
-                    if exited or time.monotonic() >= ready_deadline:
-                        self.fail(
-                            "children failed to reach barrier: "
-                            f"ready={len(list(ready.iterdir()))}, exited={exited}"
+                    ready_count = len(list(ready.iterdir()))
+                    exited = [
+                        index
+                        for index, process in enumerate(processes)
+                        if process.poll() is not None
+                    ]
+                    if exited:
+                        failure_reason = (
+                            "children exited before reaching barrier: "
+                            f"ready={ready_count}, indexes={exited}"
                         )
+                        break
+                    if time.monotonic() >= ready_deadline:
+                        failure_reason = (
+                            "children timed out before reaching barrier: "
+                            f"ready={ready_count}"
+                        )
+                        break
                     time.sleep(0.02)
-                gate.touch()
 
-                completion_deadline = time.monotonic() + 60
-                for process in processes:
-                    remaining = completion_deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise subprocess.TimeoutExpired(process.args, 60)
-                    stdout, stderr = process.communicate(timeout=remaining)
-                    results.append((process.returncode, stdout, stderr))
+                if failure_reason is None:
+                    gate.touch()
+                    completion_deadline = time.monotonic() + 60
+                    for index, process in enumerate(processes):
+                        remaining = completion_deadline - time.monotonic()
+                        if remaining <= 0:
+                            failure_reason = (
+                                "children exceeded completion deadline before "
+                                f"child {index}"
+                            )
+                            break
+                        try:
+                            stdout, stderr = process.communicate(timeout=remaining)
+                        except subprocess.TimeoutExpired:
+                            failure_reason = (
+                                f"child {index} exceeded completion deadline"
+                            )
+                            break
+                        results[index] = (process.returncode, stdout, stderr)
             finally:
-                for process in processes:
-                    if process.poll() is None:
-                        process.kill()
-                    process.communicate()
+                collected = self._cleanup_and_collect(processes, results)
+
+            if failure_reason is not None:
+                self.fail(
+                    f"{failure_reason}\n\n{self._format_results(collected)}"
+                )
 
             failures = [
                 f"child {index}: exit={returncode}\nstdout={stdout}\nstderr={stderr}"
-                for index, (returncode, stdout, stderr) in enumerate(results)
+                for index, (returncode, stdout, stderr) in enumerate(collected)
                 if returncode != 0
             ]
             self.assertEqual([], failures, "\n\n".join(failures))
-            for returncode, stdout, stderr in results:
+            for returncode, stdout, stderr in collected:
                 self.assertEqual(0, returncode, stderr)
                 payload = json.loads(stdout)
                 self.assertIn("project", payload)

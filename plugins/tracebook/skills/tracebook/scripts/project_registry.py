@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
+import stat
 import subprocess
 from urllib.parse import urlsplit
 
@@ -138,8 +139,13 @@ def _validated_project_path(
 
 
 def _load_registry(path: Path, root: Path) -> dict[str, ProjectRecord]:
-    if not path.exists():
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
         return {}
+    if not stat.S_ISREG(mode):
+        entry_type = "symlink" if stat.S_ISLNK(mode) else "non-regular entry"
+        raise _corrupt_registry(path, f"expected a regular file, found {entry_type}")
     try:
         payload = json.loads(path.read_bytes().decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -202,33 +208,46 @@ def _slug(identity: str, records: dict[str, ProjectRecord]) -> str:
     return f"{base}-{suffix}"
 
 
-def _write_minimal_project_files(project_dir: Path, record: ProjectRecord) -> None:
-    project_dir.mkdir(parents=True, exist_ok=True)
-    index = project_dir / "index.md"
-    if not index.exists() and not index.is_symlink():
+def _write_minimal_project_file(path: Path, content: str) -> None:
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
         atomic_write_text(
-            index,
-            "\n".join(
-                [
-                    f"# {record.slug}",
-                    "",
-                    "## Project Overview",
-                    f"- Project identity: `{record.identity}`",
-                    "",
-                    "## Knowledge Index",
-                    "",
-                ]
-            ),
+            path,
+            content,
             operation="resolve",
+        )
+        return
+    if not stat.S_ISREG(mode):
+        entry_type = "symlink" if stat.S_ISLNK(mode) else "non-regular entry"
+        raise TracebookError(
+            "INVALID_PROJECT_STATE",
+            f"Invalid project state at {path}: expected a regular file, found {entry_type}",
+            "resolve",
         )
 
-    status = project_dir / "project-status.md"
-    if not status.exists() and not status.is_symlink():
-        atomic_write_text(
-            status,
-            "# Project Status\n\n## Current Status\n- Initialized by Tracebook.\n",
-            operation="resolve",
-        )
+
+def _write_minimal_project_files(project_dir: Path, record: ProjectRecord) -> None:
+    project_dir.mkdir(parents=True, exist_ok=True)
+    _write_minimal_project_file(
+        project_dir / "index.md",
+        "\n".join(
+            [
+                f"# {record.slug}",
+                "",
+                "## Project Overview",
+                f"- Project identity: `{record.identity}`",
+                "",
+                "## Knowledge Index",
+                "",
+            ]
+        ),
+    )
+
+    _write_minimal_project_file(
+        project_dir / "project-status.md",
+        "# Project Status\n\n## Current Status\n- Initialized by Tracebook.\n",
+    )
 
 
 def ensure_project(knowledge_root: Path, repo: Path) -> ProjectRecord:
