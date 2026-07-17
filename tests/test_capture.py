@@ -3,7 +3,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+from plugins.tracebook.skills.tracebook.scripts import tracebook_runner
 from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import CaptureRequest, capture, resolve
+
+
+validate_capture = getattr(tracebook_runner, "validate_capture", None)
+if validate_capture is None:
+    validate_capture = tracebook_runner._validate_capture
 
 
 class CaptureTest(unittest.TestCase):
@@ -37,6 +43,64 @@ class CaptureTest(unittest.TestCase):
             self.assertIn("business-rules.md", (document.parent / "index.md").read_text(encoding="utf-8"))
             self.assertIn("Refund status rule", (document.parent / "project-status.md").read_text(encoding="utf-8"))
             self.assertTrue((document.parent / "logs" / "2026-07.md").is_file())
+
+    def test_capture_public_interfaces_remain_available_from_runner(self) -> None:
+        self.assertEqual(
+            CaptureRequest.__module__,
+            "plugins.tracebook.skills.tracebook.scripts.capture",
+        )
+        for name in (
+            "CaptureResult",
+            "validate_capture",
+            "capture_lock_name",
+            "capture_knowledge",
+        ):
+            with self.subTest(name=name):
+                self.assertTrue(hasattr(tracebook_runner, name))
+
+    def test_capture_requires_non_empty_title_and_body(self) -> None:
+        for overrides, message in (
+            ({"title": ""}, "title"),
+            ({"title": "  \t"}, "title"),
+            ({"body": ""}, "body"),
+            ({"body": "\n  "}, "body"),
+        ):
+            with self.subTest(overrides=overrides):
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_capture(self._request(**overrides))
+
+    def test_current_capture_rejects_blank_or_unclassified_evidence(self) -> None:
+        for evidence in (
+            ("  ",),
+            ("observed during investigation",),
+            ("test:  ",),
+            ("command:\t",),
+            ("human:",),
+            ("README",),
+            ("/absolute/source.py:L2",),
+            (r"C:\absolute\source.py:L2",),
+            ("src/../secret.py:L2",),
+        ):
+            with self.subTest(evidence=evidence):
+                with self.assertRaisesRegex(ValueError, "evidence"):
+                    validate_capture(self._request(evidence=evidence))
+
+    def test_capture_accepts_every_approved_evidence_form_without_io(self) -> None:
+        approved = (
+            "http://example.test/incidents/42",
+            "https://example.test/incidents/42",
+            "test: python -m unittest tests.test_capture",
+            "command: git show --stat HEAD",
+            "human: confirmed by the service owner",
+            "src/order/status.ts:L20-L38",
+            r"src\order\status.ts:L20",
+            "README.md",
+            "generated/schema",
+        )
+
+        for evidence in approved:
+            with self.subTest(evidence=evidence):
+                validate_capture(self._request(evidence=(evidence,)))
 
     def test_pending_capture_can_be_saved_without_evidence(self) -> None:
         with TemporaryDirectory() as temp:
@@ -114,6 +178,10 @@ class CaptureTest(unittest.TestCase):
             self.assertTrue(pattern.changed_paths)
             self.assertTrue(decision.changed_paths)
             self.assertTrue(synthesis.changed_paths)
+            self.assertEqual(domain.health_scope, "domain")
+            self.assertEqual(pattern.health_scope, "pattern")
+            self.assertEqual(decision.health_scope, "project")
+            self.assertEqual(synthesis.health_scope, "project")
 
     def test_capture_rejects_non_durable_or_unsafe_requests(self) -> None:
         with TemporaryDirectory() as temp:

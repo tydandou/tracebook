@@ -13,11 +13,25 @@ import sys
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts.capture import (
+        CaptureRequest,
+        CaptureResult,
+        capture_knowledge,
+        capture_lock_name,
+        validate_capture,
+    )
     from scripts.check_knowledge import CheckReport, DeepAuditReport, run_check, run_deep_audit
     from scripts.knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
     from scripts.project_registry import ProjectRecord, ensure_project, repository_root
     from scripts.transaction import recover_transactions
 else:
+    from .capture import (
+        CaptureRequest,
+        CaptureResult,
+        capture_knowledge,
+        capture_lock_name,
+        validate_capture,
+    )
     from .check_knowledge import CheckReport, DeepAuditReport, run_check, run_deep_audit
     from .knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
     from .project_registry import ProjectRecord, ensure_project, repository_root
@@ -69,233 +83,11 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
             project / "project-status.md",
         ),
     )
-@dataclass(frozen=True)
-class CaptureRequest:
-    scope: str
-    kind: str
-    category: str
-    title: str
-    body: str
-    evidence: tuple[str, ...] = ()
-    status: str = "Current"
-    write_intent: str = "durable"
-    content_kind: str = "knowledge"
-    replacement: str | None = None
-    topic: str | None = None
-    user_prohibits_write: bool = False
-
-
-@dataclass(frozen=True)
-class CaptureResult:
-    changed_paths: tuple[Path, ...]
-    new_paths: tuple[Path, ...] = ()
-    skipped: bool = False
-
-
-PROJECT_DOCUMENTS = {
-    "architecture": "architecture.md",
-    "api": "api.md",
-    "business-rule": "business-rules.md",
-    "database": "database.md",
-    "module": "modules.md",
-    "source-map": "source-map.md",
-    "terminology": "terminology.md",
-}
-CATEGORY = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-
-
-def _safe_category(category: str) -> str:
-    if not CATEGORY.fullmatch(category):
-        raise ValueError("Unsupported category")
-    return category
-
-
-def _project_directory(context: ResolvedContext) -> Path:
-    return context.root / context.record.relative_path
-
-
-def _capture_destination(context: ResolvedContext, request: CaptureRequest) -> tuple[Path, Path]:
-    category = _safe_category(request.category)
-    if request.scope == "project":
-        directory = _project_directory(context)
-        if request.kind in PROJECT_DOCUMENTS:
-            if category != Path(PROJECT_DOCUMENTS[request.kind]).stem:
-                raise ValueError("Project document category must match its kind")
-            document = directory / PROJECT_DOCUMENTS[request.kind]
-            split_directories = {
-                "business-rule": "business-rules",
-                "api": "api",
-                "database": "database",
-                "source-map": "source-map",
-            }
-            if request.kind in split_directories and document.exists() and len(document.read_text(encoding="utf-8").splitlines()) > 300:
-                if not request.topic:
-                    raise ValueError("A topic is required after the document exceeds 300 lines")
-                document = directory / split_directories[request.kind] / f"{_safe_category(request.topic)}.md"
-        elif request.kind == "decision":
-            document = directory / "decisions" / f"{category}.md"
-        elif request.kind == "synthesis":
-            document = directory / "synthesis" / f"{category}.md"
-        else:
-            raise ValueError("Unsupported project knowledge kind")
-        index = directory / "index.md"
-    elif request.scope == "domain" and request.kind == "domain":
-        document = context.root / "02-domain" / f"{category}.md"
-        index = context.root / "02-domain" / "index.md"
-    elif request.scope == "pattern" and request.kind == "pattern":
-        document = context.root / "03-patterns" / f"{category}.md"
-        index = context.root / "03-patterns" / "index.md"
-    else:
-        raise ValueError("Unsupported scope and knowledge kind")
-
-    if request.status in {"Deprecated", "Historical"}:
-        if request.scope == "project":
-            project = _project_directory(context)
-            document = project / "archive" / document.relative_to(project)
-        else:
-            document = context.root / "99-archive" / request.scope / f"{category}.md"
-
-    try:
-        document.resolve().relative_to(context.root.resolve())
-    except ValueError as error:
-        raise ValueError("Knowledge path must remain inside the external root") from error
-    return document, index
-
-
-def _append_once(path: Path, text: str) -> bool:
-    current = path.read_text(encoding="utf-8") if path.exists() else ""
-    if text in current:
-        return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(current + text, encoding="utf-8")
-    return True
-
-
-def _requires_frontmatter(request: CaptureRequest) -> bool:
-    return request.scope in {"domain", "pattern"} or request.kind in {"decision", "synthesis"} or request.status in {"Deprecated", "Historical"}
-
-
-def _frontmatter_type(request: CaptureRequest) -> str:
-    if request.kind == "decision":
-        return "decision"
-    if request.kind == "synthesis":
-        return "synthesis"
-    if request.scope == "pattern":
-        return "pattern"
-    return "knowledge"
-
-
-def _frontmatter_status(status: str) -> str:
-    return {"Current": "current", "Pending": "unconfirmed", "Deprecated": "deprecated", "Superseded": "superseded", "Historical": "historical"}[status]
-
-
-def _with_frontmatter(current: str, request: CaptureRequest, today: date, owner_project: str) -> str:
-    if not _requires_frontmatter(request):
-        return current
-    status = _frontmatter_status(request.status)
-    if current.startswith("---\n"):
-        current = re.sub(r"(?m)^status: .*$", f"status: {status}", current, count=1)
-        return re.sub(r"(?m)^updated: .*$", f"updated: {today.isoformat()}", current, count=1)
-    header = "\n".join(
-        [
-            "---",
-            f"type: {_frontmatter_type(request)}",
-            f"status: {status}",
-            f"scope: {request.scope}",
-            f"owner_project: {owner_project}",
-            f"created: {today.isoformat()}",
-            f"updated: {today.isoformat()}",
-            "tags: []",
-            "---",
-            "",
-        ]
-    )
-    return header + current
-
-
-def _append_knowledge_entry(path: Path, text: str, request: CaptureRequest, today: date, owner_project: str) -> bool:
-    current = path.read_text(encoding="utf-8") if path.exists() else ""
-    current = _with_frontmatter(current, request, today, owner_project)
-    if text in current:
-        return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(current + text, encoding="utf-8")
-    return True
-
-
-def _append_project_log(path: Path, entry: str) -> bool:
-    current = path.read_text(encoding="utf-8") if path.exists() else ""
-    if entry in current:
-        return False
-    if "## Knowledge\n" not in current:
-        if current and not current.endswith("\n"):
-            current += "\n"
-        current += "## Knowledge\n\n"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(current + entry, encoding="utf-8")
-    return True
-
-
-def _validate_capture(request: CaptureRequest) -> None:
-    if request.write_intent != "durable":
-        raise ValueError("Unsupported write intent")
-    if request.content_kind != "knowledge":
-        raise ValueError("Unsupported content kind")
-    if request.status not in {"Current", "Pending", "Deprecated", "Superseded", "Historical"}:
-        raise ValueError(f"Unsupported capture status: {request.status}")
-    if request.status == "Current" and not request.evidence:
-        raise ValueError("Current knowledge requires evidence")
-    if request.status == "Superseded" and not request.replacement:
-        raise ValueError("Superseded knowledge requires a replacement")
-
-
 def capture(
     context: ResolvedContext, request: CaptureRequest, today: date
 ) -> CaptureResult:
     """Persist an explicitly classified durable knowledge entry."""
-    if request.user_prohibits_write:
-        return CaptureResult(changed_paths=(), new_paths=(), skipped=True)
-    _validate_capture(request)
-
-    document, index = _capture_destination(context, request)
-    evidence = list(request.evidence) or ["Pending evidence review"]
-    entry_lines = [
-        f"## {request.title}",
-        "",
-        request.body,
-        "",
-        f"Status: {request.status}",
-        "",
-        "Evidence:",
-        *(f"- `{item}`" for item in evidence),
-    ]
-    if request.replacement:
-        entry_lines.extend(["", f"Replacement: `{request.replacement}`"])
-    entry_lines.append("")
-    entry = "\n".join(entry_lines)
-    changed: list[Path] = []
-    new_paths: list[Path] = []
-    document_is_new = not document.exists()
-    if _append_knowledge_entry(document, entry, request, today, context.record.slug):
-        changed.append(document)
-        if document_is_new:
-            new_paths.append(document)
-
-    link = document.relative_to(index.parent).as_posix()
-    index_entry = f"- [{request.category}]({link})\n"
-    if _append_once(index, index_entry):
-        changed.append(index)
-
-    if request.scope == "project":
-        project = _project_directory(context)
-        status = project / "project-status.md"
-        if _append_once(status, f"- {today.isoformat()}: {request.title}\n"):
-            changed.append(status)
-        log = project / "logs" / f"{today:%Y-%m}.md"
-        if _append_project_log(log, f"- {today.isoformat()}: {request.title}\n"):
-            changed.append(log)
-
-    return CaptureResult(changed_paths=tuple(changed), new_paths=tuple(new_paths))
+    return capture_knowledge(context.root, context.record, request, today)
 
 
 @dataclass(frozen=True)
@@ -310,6 +102,17 @@ class DeepAuditResult:
     report: DeepAuditReport
     changed_paths: tuple[Path, ...]
     new_paths: tuple[Path, ...] = ()
+
+
+def _append_once(path: Path, text: str) -> bool:
+    current = path.read_text(encoding="utf-8") if path.exists() else ""
+    if text in current:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(current + text, encoding="utf-8")
+    return True
+
+
 def _set_health_value(content: str, key: str, value: str) -> str:
     pattern = rf"(?m)^- {re.escape(key)}:.*$"
     replacement = f"- {key}: {value}"

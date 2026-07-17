@@ -107,6 +107,27 @@ class LifecycleCaptureTest(unittest.TestCase):
             decision = context.root / context.record.relative_path / "decisions" / "adr-0001.md"
             self.assertIn("Replacement: `decisions/adr-0002.md`", decision.read_text(encoding="utf-8"))
 
+    def test_superseded_replacement_must_remain_inside_the_knowledge_root(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+
+            for replacement in (
+                "../escape.md",
+                "decisions/../../escape.md",
+                "/absolute/escape.md",
+                r"C:\absolute\escape.md",
+            ):
+                with self.subTest(replacement=replacement):
+                    with self.assertRaisesRegex(ValueError, "replacement"):
+                        capture(
+                            context,
+                            self._request(
+                                status="Superseded",
+                                replacement=replacement,
+                            ),
+                            date(2026, 7, 13),
+                        )
+
     def test_project_log_keeps_one_knowledge_heading(self) -> None:
         with TemporaryDirectory() as temp:
             context = self._context(Path(temp))

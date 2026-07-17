@@ -1,4 +1,6 @@
 from datetime import date
+import hashlib
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -66,6 +68,47 @@ class GrowthControlsTest(unittest.TestCase):
             self.assertEqual(result.changed_paths[0], child)
             self.assertTrue(child.is_file())
             self.assertIn("business-rules/refunds.md", (project / "index.md").read_text(encoding="utf-8"))
+
+    def test_capture_event_is_stable_across_dates_and_repeated_content_is_a_no_op(self) -> None:
+        with TemporaryDirectory() as temp:
+            context, _ = self._context(Path(temp))
+            request = self._request()
+            destination = (
+                Path(context.record.relative_path) / "business-rules.md"
+            ).as_posix()
+            canonical = {
+                "project": context.record.identity,
+                "destination": destination,
+                "title": request.title,
+                "body": request.body,
+                "evidence": list(request.evidence),
+                "status": request.status,
+                "replacement": request.replacement,
+            }
+            expected_event_id = hashlib.sha256(
+                json.dumps(
+                    canonical,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()[:16]
+
+            first = capture(context, request, date(2026, 7, 13))
+            second = capture(context, request, date(2026, 8, 2))
+
+            self.assertEqual(first.event_id, expected_event_id)
+            self.assertEqual(second.event_id, expected_event_id)
+            self.assertEqual(first.health_scope, "project")
+            self.assertTrue(second.skipped)
+            self.assertEqual(second.changed_paths, ())
+            self.assertEqual(second.new_paths, ())
+            document = context.root / destination
+            marker = f"<!-- tracebook:event:{expected_event_id} -->"
+            self.assertEqual(document.read_text(encoding="utf-8").count(marker), 1)
+            july_log = document.parent / "logs" / "2026-07.md"
+            self.assertIn(marker, july_log.read_text(encoding="utf-8"))
+            self.assertFalse((document.parent / "logs" / "2026-08.md").exists())
 
 
 if __name__ == "__main__":
