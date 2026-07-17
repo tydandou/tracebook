@@ -169,6 +169,44 @@ class GrowthControlsTest(unittest.TestCase):
             self.assertFalse((project / "business-rules" / "refunds.md").exists())
             self.assertFalse((project / "logs" / "2026-08.md").exists())
 
+    def test_retry_uses_original_child_event_after_aggregate_is_compressed(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            context, _ = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+            aggregate = project / "business-rules.md"
+            aggregate.write_text(
+                "# Business Rules\n" + "rule\n" * 300,
+                encoding="utf-8",
+            )
+            request = self._request(
+                title="Child-routed threshold rule",
+                topic="refunds",
+            )
+
+            first = capture(context, request, date(2026, 7, 13))
+            child = project / "business-rules" / "refunds.md"
+            first_child = child.read_text(encoding="utf-8")
+            july_log = (project / "logs" / "2026-07.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertEqual(child, first.changed_paths[0])
+
+            aggregate.write_text("# Business Rules\n", encoding="utf-8")
+            second = capture(context, request, date(2026, 8, 2))
+
+            self.assertTrue(second.skipped)
+            self.assertEqual(first.event_id, second.event_id)
+            self.assertEqual((), second.changed_paths)
+            self.assertEqual(first_child, child.read_text(encoding="utf-8"))
+            self.assertNotIn(request.body, aggregate.read_text(encoding="utf-8"))
+            self.assertEqual(
+                july_log,
+                (project / "logs" / "2026-07.md").read_text(encoding="utf-8"),
+            )
+            self.assertFalse((project / "logs" / "2026-08.md").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

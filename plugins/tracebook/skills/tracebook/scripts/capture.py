@@ -7,6 +7,7 @@ from datetime import date
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
+import posixpath
 import re
 
 from .locking import file_lock
@@ -60,6 +61,15 @@ SCHEME_OR_DRIVE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 EVENT_MARKER = "<!-- tracebook:event:{event_id} -->"
 LAST_EVENT_MARKER = "<!-- tracebook:last-event:{event_id} -->"
 LAST_EVENT_PATTERN = re.compile(r"<!-- tracebook:last-event:[0-9a-f]+ -->")
+MANAGED_POINTER_MARKER = "<!-- tracebook:managed-pointer -->"
+MANAGED_BACKLINK_MARKER = "<!-- tracebook:managed-pointer-backlink -->"
+MANAGED_POINTER_TARGET = re.compile(
+    r"(?m)^Managed Entity Authority: \[[^\]\n]+\]\(([^)\n]+)\)$"
+)
+MANAGED_BACKLINK_BLOCK = re.compile(
+    r"\n*<!-- tracebook:managed-pointer-backlink -->\n"
+    r"Managed Pointer: \[[^\]\n]+\]\([^)\n]+\)\n*"
+)
 
 
 def _invalid_request(field: str, reason: str) -> ValueError:
@@ -258,6 +268,40 @@ def _event_id(
     return hashlib.sha256(payload).hexdigest()[:16]
 
 
+def _split_event_candidates(
+    root: Path,
+    record: ProjectRecord,
+    request: CaptureRequest,
+) -> tuple[Path, ...]:
+    if request.scope != "project" or request.kind not in SPLIT_DIRECTORIES:
+        return ()
+    base, _ = _capture_destination(
+        root,
+        record,
+        request,
+        allow_split=False,
+    )
+    candidates = [base]
+    if request.topic is not None:
+        project = _project_directory(root, record)
+        child = (
+            project
+            / SPLIT_DIRECTORIES[request.kind]
+            / f"{request.topic}.md"
+        )
+        if request.status in {"Deprecated", "Historical"}:
+            child = project / "archive" / child.relative_to(project)
+        try:
+            child.resolve().relative_to(root.resolve())
+        except ValueError as error:
+            raise _invalid_request(
+                "destination",
+                "must remain inside the external root",
+            ) from error
+        candidates.append(child)
+    return tuple(candidates)
+
+
 def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
@@ -381,6 +425,114 @@ def _entity_identity_paths(
     return active, archived
 
 
+def _relative_markdown_link(root: Path, source: Path, target: Path) -> str:
+    source_parent = source.parent.resolve().relative_to(root.resolve()).as_posix()
+    target_relative = target.resolve().relative_to(root.resolve()).as_posix()
+    return posixpath.relpath(target_relative, start=source_parent)
+
+
+def _managed_pointer_content(root: Path, pointer: Path, authority: Path) -> str:
+    link = _relative_markdown_link(root, pointer, authority)
+    return (
+        f"{MANAGED_POINTER_MARKER}\n\n"
+        f"Managed Entity Authority: [{pointer.stem}]({link})\n\n"
+        "Evidence:\n"
+        "- `human: Tracebook managed pointer`\n"
+    )
+
+
+def _without_managed_backlink(content: str) -> str:
+    return MANAGED_BACKLINK_BLOCK.sub("\n", content).rstrip() + "\n"
+
+
+def _with_managed_backlink(
+    root: Path,
+    authority: Path,
+    pointer: Path,
+    content: str,
+) -> str:
+    content = _without_managed_backlink(content)
+    link = _relative_markdown_link(root, authority, pointer)
+    return (
+        content.rstrip()
+        + f"\n\n{MANAGED_BACKLINK_MARKER}\n"
+        + f"Managed Pointer: [{pointer.stem}]({link})\n"
+    )
+
+
+def _pointer_target(root: Path, pointer: Path, content: str) -> Path | None:
+    if MANAGED_POINTER_MARKER not in content:
+        return None
+    matches = MANAGED_POINTER_TARGET.findall(content)
+    if (
+        content.count(MANAGED_POINTER_MARKER) != 1
+        or len(matches) != 1
+        or content.startswith("---\n")
+        or _entity_title(content) is not None
+    ):
+        raise _invalid_request("entity state", "contains a corrupt managed pointer")
+    link = matches[0]
+    if "\\" in link or SCHEME_OR_DRIVE.match(link) or PurePosixPath(link).is_absolute():
+        raise _invalid_request("entity state", "contains a corrupt managed pointer")
+    target = pointer.parent.joinpath(*PurePosixPath(link).parts).resolve()
+    try:
+        target.relative_to(root.resolve())
+    except ValueError as error:
+        raise _invalid_request(
+            "entity state",
+            "contains a managed pointer outside the knowledge root",
+        ) from error
+    return target
+
+
+def _entity_storage_state(
+    root: Path,
+    record: ProjectRecord,
+    request: CaptureRequest,
+) -> tuple[Path, Path, Path | None, Path | None, dict[Path, str]]:
+    active, archived = _entity_identity_paths(root, record, request)
+    contents = {active: _read_text(active), archived: _read_text(archived)}
+    entities: list[Path] = []
+    pointers: list[Path] = []
+    for path, content in contents.items():
+        if not content:
+            continue
+        pointer_target = _pointer_target(root, path, content)
+        if pointer_target is not None:
+            counterpart = archived if path == active else active
+            if pointer_target != counterpart.resolve():
+                raise _invalid_request(
+                    "entity state",
+                    "contains a managed pointer to the wrong authority",
+                )
+            pointers.append(path)
+            continue
+        if _entity_title(content) is None:
+            raise _invalid_request("entity state", "contains an unrecognized page")
+        _validate_entity_title(content, request)
+        entities.append(path)
+
+    if len(entities) > 1 or len(pointers) > 1:
+        raise _invalid_request("entity state", "contains multiple authorities")
+    if pointers and (not entities or pointers[0] == entities[0]):
+        raise _invalid_request("entity state", "contains an orphan managed pointer")
+    return (
+        active,
+        archived,
+        entities[0] if entities else None,
+        pointers[0] if pointers else None,
+        contents,
+    )
+
+
+def _entity_index_content(current: str, category: str, entry: str) -> str:
+    existing = re.compile(rf"(?m)^- \[{re.escape(category)}\]\([^)\n]+\)\r?\n?")
+    current = existing.sub("", current)
+    if current and not current.endswith("\n"):
+        current += "\n"
+    return current + entry
+
+
 def _knowledge_content(
     current: str,
     entry: str,
@@ -469,58 +621,116 @@ def capture_knowledge(
     root = root.expanduser().resolve()
     scope = capture_lock_name(record, request)
     with file_lock(root, scope, operation="capture"):
-        for identity_path in _entity_identity_paths(root, record, request):
-            _validate_entity_title(_read_text(identity_path), request)
-
-        if request.scope == "project" and request.kind in SPLIT_DIRECTORIES:
-            base_document, _ = _capture_destination(
-                root,
-                record,
-                request,
-                allow_split=False,
-            )
-            base_event_id = _event_id(root, record, base_document, request)
-            base_marker = EVENT_MARKER.format(event_id=base_event_id)
-            if base_marker in _read_text(base_document):
+        for candidate in _split_event_candidates(root, record, request):
+            candidate_event_id = _event_id(root, record, candidate, request)
+            candidate_marker = EVENT_MARKER.format(event_id=candidate_event_id)
+            if candidate_marker in _read_text(candidate):
                 return CaptureResult(
                     changed_paths=(),
                     new_paths=(),
                     skipped=True,
                     health_scope=health_scope,
-                    event_id=base_event_id,
+                    event_id=candidate_event_id,
                 )
 
         document, index = _capture_destination(root, record, request)
         event_id = _event_id(root, record, document, request)
         marker = EVENT_MARKER.format(event_id=event_id)
-        document_current = _read_text(document)
-        _validate_entity_title(document_current, request)
-        if marker in document_current:
-            return CaptureResult(
-                changed_paths=(),
-                new_paths=(),
-                skipped=True,
-                health_scope=health_scope,
-                event_id=event_id,
-            )
-
         updates: dict[Path, str] = {}
         document_is_new = not document.exists()
         entry = _entry_text(request, event_id, record.identity)
-        document_content = _knowledge_content(
-            document_current,
-            entry,
-            request,
-            today,
-            record.slug,
-        )
-        if document_content != document_current:
-            updates[document] = document_content
+        entity_page = request.kind in {"decision", "synthesis"}
+        if entity_page:
+            (
+                active,
+                archived,
+                authority,
+                pointer,
+                entity_contents,
+            ) = _entity_storage_state(root, record, request)
+            document_current = entity_contents[document]
+            if authority == document and marker in document_current:
+                return CaptureResult(
+                    changed_paths=(),
+                    new_paths=(),
+                    skipped=True,
+                    health_scope=health_scope,
+                    event_id=event_id,
+                )
+
+            authority_current = entity_contents[authority] if authority else ""
+            authority_current = (
+                _without_managed_backlink(authority_current)
+                if authority_current
+                else authority_current
+            )
+            if marker in authority_current:
+                document_content = _with_frontmatter(
+                    authority_current,
+                    request,
+                    today,
+                    record.slug,
+                )
+            else:
+                document_content = _knowledge_content(
+                    authority_current,
+                    entry,
+                    request,
+                    today,
+                    record.slug,
+                )
+
+            pointer_after = (
+                authority
+                if authority is not None and authority != document
+                else pointer
+            )
+            if pointer_after is not None:
+                document_content = _with_managed_backlink(
+                    root,
+                    document,
+                    pointer_after,
+                    document_content,
+                )
+            if document_content != document_current:
+                updates[document] = document_content
+
+            if authority is not None and authority != document:
+                pointer_content = _managed_pointer_content(
+                    root,
+                    authority,
+                    document,
+                )
+                if pointer_content != entity_contents[authority]:
+                    updates[authority] = pointer_content
+        else:
+            document_current = _read_text(document)
+            if marker in document_current:
+                return CaptureResult(
+                    changed_paths=(),
+                    new_paths=(),
+                    skipped=True,
+                    health_scope=health_scope,
+                    event_id=event_id,
+                )
+            document_content = _knowledge_content(
+                document_current,
+                entry,
+                request,
+                today,
+                record.slug,
+            )
+            if document_content != document_current:
+                updates[document] = document_content
 
         index_current = _read_text(index)
         link = document.relative_to(index.parent).as_posix()
         index_entry = f"- [{request.category}]({link})\n"
-        index_content = _append_once(index_current, index_entry)
+        index_content = (
+            _entity_index_content(index_current, request.category, index_entry)
+            if entity_page
+            else _append_once(index_current, index_entry)
+        )
         if index_content != index_current:
             updates[index] = index_content
 

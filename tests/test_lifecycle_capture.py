@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+from plugins.tracebook.skills.tracebook.scripts.check_knowledge import run_check
 from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import CaptureRequest, capture, resolve
 
 
@@ -239,7 +240,6 @@ class LifecycleCaptureTest(unittest.TestCase):
             capture(context, self._request(), date(2026, 7, 13))
             project = context.root / context.record.relative_path
             active = project / "decisions" / "adr-0001.md"
-            active_before = active.read_text(encoding="utf-8")
 
             result = capture(
                 context,
@@ -254,11 +254,300 @@ class LifecycleCaptureTest(unittest.TestCase):
             self.assertIn(archived, result.changed_paths)
             self.assertTrue(archived.is_file())
             self.assertIn("Status: Deprecated", archived.read_text(encoding="utf-8"))
-            self.assertEqual(active_before, active.read_text(encoding="utf-8"))
+            self.assertIn(
+                "<!-- tracebook:managed-pointer -->",
+                active.read_text(encoding="utf-8"),
+            )
             self.assertIn(
                 "archive/decisions/adr-0001.md",
                 (project / "index.md").read_text(encoding="utf-8"),
             )
+
+    def test_decision_transition_moves_history_and_leaves_managed_pointer(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            first = capture(context, self._request(), date(2026, 7, 13))
+            project = context.root / context.record.relative_path
+            active = project / "decisions" / "adr-0001.md"
+            active.write_text(
+                active.read_text(encoding="utf-8").replace(
+                    "tags: []",
+                    "custom_field: preserve-me\ntags: []",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            retired_body = "This decision is retained as historical authority."
+
+            second = capture(
+                context,
+                self._request(
+                    body=retired_body,
+                    status="Deprecated",
+                ),
+                date(2026, 7, 14),
+            )
+
+            archived = project / "archive" / "decisions" / "adr-0001.md"
+            pointer = active.read_text(encoding="utf-8")
+            authority = archived.read_text(encoding="utf-8")
+            index = (project / "index.md").read_text(encoding="utf-8")
+            self.assertIn("<!-- tracebook:managed-pointer -->", pointer)
+            self.assertIn(
+                "Managed Entity Authority: "
+                "[adr-0001](../archive/decisions/adr-0001.md)",
+                pointer,
+            )
+            self.assertNotIn("type: decision", pointer)
+            self.assertNotRegex(pointer, r"(?m)^#{1,2} ")
+            self.assertIn("Evidence:", pointer)
+
+            self.assertIn("type: decision", authority)
+            self.assertIn("status: deprecated", authority)
+            self.assertIn("## Persist idempotency keys first", authority)
+            self.assertIn("custom_field: preserve-me", authority)
+            self.assertIn(self._request().body, authority)
+            self.assertIn("- `src/consumer.py:L20-L34`", authority)
+            self.assertIn(retired_body, authority)
+            self.assertIn(
+                "Managed Pointer: [adr-0001](../../decisions/adr-0001.md)",
+                authority,
+            )
+            for event_id in (first.event_id, second.event_id):
+                self.assertEqual(
+                    1,
+                    authority.count(f"<!-- tracebook:event:{event_id} -->"),
+                )
+
+            self.assertEqual(1, index.count("- [adr-0001]("))
+            self.assertIn(
+                "- [adr-0001](archive/decisions/adr-0001.md)",
+                index,
+            )
+            self.assertNotIn("- [adr-0001](decisions/adr-0001.md)", index)
+
+    def test_first_deprecated_decision_creates_only_archive_authority(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+
+            result = capture(
+                context,
+                self._request(status="Deprecated"),
+                date(2026, 7, 13),
+            )
+
+            active = project / "decisions" / "adr-0001.md"
+            archived = project / "archive" / "decisions" / "adr-0001.md"
+            self.assertFalse(active.exists())
+            self.assertTrue(archived.is_file())
+            self.assertNotIn(
+                "tracebook:managed-pointer",
+                archived.read_text(encoding="utf-8"),
+            )
+            self.assertEqual((archived,), result.new_paths)
+
+    def test_entity_capture_rejects_dual_entities_and_corrupt_pointer(self) -> None:
+        entity = (
+            "---\ntype: decision\nstatus: current\n"
+            "custom_field: preserve-me\n---\n\n"
+            "## Persist idempotency keys first\n\n"
+            "Legacy body.\n\nEvidence:\n- `src/consumer.py:L20-L34`\n"
+        )
+        for scenario in ("dual-entity", "corrupt-pointer"):
+            with self.subTest(scenario=scenario), TemporaryDirectory() as temp:
+                context = self._context(Path(temp))
+                project = context.root / context.record.relative_path
+                active = project / "decisions" / "adr-0001.md"
+                archived = project / "archive" / "decisions" / "adr-0001.md"
+                active.parent.mkdir(parents=True, exist_ok=True)
+                archived.parent.mkdir(parents=True, exist_ok=True)
+                archived.write_text(entity, encoding="utf-8")
+                if scenario == "dual-entity":
+                    active.write_text(entity, encoding="utf-8")
+                else:
+                    active.write_text(
+                        "<!-- tracebook:managed-pointer -->\n\n"
+                        "Managed Entity Authority: [adr-0001](../wrong.md)\n\n"
+                        "Evidence:\n- `human: Tracebook managed pointer`\n",
+                        encoding="utf-8",
+                    )
+                active_before = active.read_text(encoding="utf-8")
+                archive_before = archived.read_text(encoding="utf-8")
+
+                with self.assertRaisesRegex(ValueError, "INVALID_REQUEST"):
+                    capture(
+                        context,
+                        self._request(status="Deprecated"),
+                        date(2026, 7, 14),
+                    )
+
+                self.assertEqual(active_before, active.read_text(encoding="utf-8"))
+                self.assertEqual(
+                    archive_before,
+                    archived.read_text(encoding="utf-8"),
+                )
+
+    def test_entity_transition_retries_are_idempotent_across_dates(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+            active = project / "decisions" / "adr-0001.md"
+            archived = project / "archive" / "decisions" / "adr-0001.md"
+            index = project / "index.md"
+            status = project / "project-status.md"
+            log = project / "logs" / "2026-07.md"
+
+            original = capture(context, self._request(), date(2026, 7, 13))
+            retired_request = self._request(
+                body="Retire this decision while preserving its full history.",
+                status="Historical",
+            )
+            retired = capture(context, retired_request, date(2026, 7, 14))
+            retired_snapshot = {
+                path: path.read_text(encoding="utf-8")
+                for path in (active, archived, index, status, log)
+            }
+
+            retired_retry = capture(
+                context,
+                retired_request,
+                date(2026, 7, 15),
+            )
+
+            self.assertTrue(retired_retry.skipped)
+            self.assertEqual(retired.event_id, retired_retry.event_id)
+            self.assertEqual((), retired_retry.changed_paths)
+            self.assertEqual((), retired_retry.new_paths)
+            self.assertEqual(
+                retired_snapshot,
+                {
+                    path: path.read_text(encoding="utf-8")
+                    for path in retired_snapshot
+                },
+            )
+
+            restored = capture(context, self._request(), date(2026, 7, 16))
+            self.assertFalse(restored.skipped)
+            self.assertEqual(original.event_id, restored.event_id)
+            self.assertEqual(
+                (active, archived, index, status, log),
+                restored.changed_paths,
+            )
+            self.assertEqual((), restored.new_paths)
+            active_content = active.read_text(encoding="utf-8")
+            self.assertEqual(
+                1,
+                active_content.count(
+                    f"<!-- tracebook:event:{original.event_id} -->"
+                ),
+            )
+
+            restored_snapshot = {
+                path: path.read_text(encoding="utf-8")
+                for path in (active, archived, index, status, log)
+            }
+            restored_retry = capture(
+                context,
+                self._request(),
+                date(2026, 7, 17),
+            )
+            self.assertTrue(restored_retry.skipped)
+            self.assertEqual(original.event_id, restored_retry.event_id)
+            self.assertEqual((), restored_retry.changed_paths)
+            self.assertEqual((), restored_retry.new_paths)
+            self.assertEqual(
+                restored_snapshot,
+                {
+                    path: path.read_text(encoding="utf-8")
+                    for path in restored_snapshot
+                },
+            )
+
+    def test_multiple_entity_transitions_keep_one_authority_and_each_event_once(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+            active = project / "decisions" / "adr-0001.md"
+            archived = project / "archive" / "decisions" / "adr-0001.md"
+            index = project / "index.md"
+            status = project / "project-status.md"
+            log = project / "logs" / "2026-07.md"
+
+            requests = (
+                self._request(body="Current event one."),
+                self._request(body="Deprecated event two.", status="Deprecated"),
+                self._request(body="Current event three."),
+                self._request(body="Historical event four.", status="Historical"),
+            )
+            results = []
+            for offset, request in enumerate(requests, start=13):
+                results.append(capture(context, request, date(2026, 7, offset)))
+
+            self.assertEqual((active,), results[0].new_paths)
+            self.assertEqual((archived,), results[1].new_paths)
+            self.assertEqual((), results[2].new_paths)
+            self.assertEqual((), results[3].new_paths)
+            self.assertEqual(
+                (archived, active, index, status, log),
+                results[3].changed_paths,
+            )
+
+            pointer = active.read_text(encoding="utf-8")
+            authority = archived.read_text(encoding="utf-8")
+            self.assertIn("tracebook:managed-pointer", pointer)
+            self.assertNotIn("type: decision", pointer)
+            self.assertEqual(1, index.read_text(encoding="utf-8").count("- [adr-0001]("))
+            self.assertIn("archive/decisions/adr-0001.md", index.read_text(encoding="utf-8"))
+            for request, result in zip(requests, results):
+                self.assertIn(request.body, authority)
+                self.assertEqual(
+                    1,
+                    authority.count(
+                        f"<!-- tracebook:event:{result.event_id} -->"
+                    ),
+                )
+
+    def test_managed_pointer_and_authority_pass_existing_health_checks(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            capture(context, self._request(), date(2026, 7, 13))
+            result = capture(
+                context,
+                self._request(
+                    body="Retire this entity without creating a second authority.",
+                    status="Deprecated",
+                ),
+                date(2026, 7, 14),
+            )
+            project = context.root / context.record.relative_path
+            active = project / "decisions" / "adr-0001.md"
+            archived = project / "archive" / "decisions" / "adr-0001.md"
+            self.assertIn(active, result.changed_paths)
+            self.assertIn(archived, result.changed_paths)
+            health_status = (
+                context.root / "00-global" / "health" / "health-status.md"
+            )
+            health_status.write_text(
+                health_status.read_text(encoding="utf-8").replace(
+                    "- Changes Since Last Regular Check: 0",
+                    "- Changes Since Last Regular Check: 10",
+                ),
+                encoding="utf-8",
+            )
+
+            report = run_check(
+                context.root,
+                project,
+                [active, archived],
+                date(2026, 7, 14),
+            )
+
+            self.assertEqual("Regular", report.check_type)
+            self.assertEqual([], report.broken_links)
+            self.assertEqual([], report.orphan_pages)
+            self.assertEqual([], report.missing_sources)
+            self.assertEqual([], report.duplicate_pages)
 
     def test_decision_update_keeps_one_entity_and_updates_lifecycle(self) -> None:
         with TemporaryDirectory() as temp:

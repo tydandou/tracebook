@@ -694,6 +694,100 @@ class TransactionRecoveryTest(unittest.TestCase):
             self.assertEqual(1, log.read_text(encoding="utf-8").count(marker))
             self.assertEqual([], list(transactions.iterdir()))
 
+    def test_resolve_recovers_crashed_entity_lifecycle_transition(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            repository = base / "business"
+            (repository / ".git").mkdir(parents=True)
+            context = resolve(root, repository)
+            current = CaptureRequest(
+                scope="project",
+                kind="decision",
+                category="adr-0001",
+                title="Keep one lifecycle authority",
+                body="The original current history must survive recovery.",
+                evidence=("src/recovery.py:L20-L32",),
+                status="Current",
+                write_intent="durable",
+                content_kind="knowledge",
+            )
+            capture(context, current, date(2026, 7, 13))
+            retired = CaptureRequest(
+                scope="project",
+                kind="decision",
+                category="adr-0001",
+                title="Keep one lifecycle authority",
+                body="The retired event must roll forward with every target.",
+                evidence=("src/recovery.py:L34-L42",),
+                status="Historical",
+                write_intent="durable",
+                content_kind="knowledge",
+            )
+            original_replace = transaction._replace_target
+            replacements = 0
+
+            def crash_after_two_replacements(
+                target: Path,
+                staged: Path,
+                *,
+                operation: str,
+            ) -> None:
+                nonlocal replacements
+                if replacements == 2:
+                    raise OSError("lifecycle capture crashed after two replacements")
+                original_replace(target, staged, operation=operation)
+                replacements += 1
+
+            with patch.object(
+                transaction,
+                "_replace_target",
+                side_effect=crash_after_two_replacements,
+            ):
+                with self.assertRaisesRegex(
+                    OSError,
+                    "lifecycle capture crashed after two replacements",
+                ):
+                    capture(context, retired, date(2026, 7, 14))
+
+            transactions = root / ".tracebook-state" / "transactions"
+            self.assertEqual(1, len(list(transactions.iterdir())))
+
+            recovered = resolve(root, repository)
+            retry = capture(recovered, retired, date(2026, 7, 15))
+            self.assertTrue(retry.skipped)
+            marker = f"<!-- tracebook:event:{retry.event_id} -->"
+
+            project = recovered.root / recovered.record.relative_path
+            active = project / "decisions" / "adr-0001.md"
+            archived = project / "archive" / "decisions" / "adr-0001.md"
+            index = project / "index.md"
+            status = project / "project-status.md"
+            log = project / "logs" / "2026-07.md"
+            active_content = active.read_text(encoding="utf-8")
+            authority = archived.read_text(encoding="utf-8")
+            self.assertIn("<!-- tracebook:managed-pointer -->", active_content)
+            self.assertNotIn("type: decision", active_content)
+            self.assertIn("type: decision", authority)
+            self.assertIn("status: historical", authority)
+            self.assertIn(current.body, authority)
+            self.assertIn(retired.body, authority)
+            self.assertEqual(1, index.read_text(encoding="utf-8").count("- [adr-0001]("))
+            self.assertIn(
+                "archive/decisions/adr-0001.md",
+                index.read_text(encoding="utf-8"),
+            )
+            self.assertIn(retired.title, status.read_text(encoding="utf-8"))
+            self.assertEqual(
+                1,
+                log.read_text(encoding="utf-8").count(marker),
+            )
+            self.assertIn(
+                f"<!-- tracebook:last-event:{retry.event_id} -->",
+                status.read_text(encoding="utf-8"),
+            )
+            self.assertEqual([], list(transactions.iterdir()))
+
 
 if __name__ == "__main__":
     unittest.main()
