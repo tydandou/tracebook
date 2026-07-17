@@ -141,6 +141,14 @@ def _validated_updates(
     manifest: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     operation = manifest["operation"]
+    staged_root = transaction_dir / "staged"
+    resolved_staged_root = staged_root.resolve()
+    if staged_root.is_symlink() or resolved_staged_root != staged_root:
+        raise TracebookError(
+            "PATH_OUTSIDE_ROOT",
+            f"Transaction staged directory {staged_root} is not confined",
+            operation,
+        )
     validated: list[dict[str, Any]] = []
     seen_targets: set[Path] = set()
     for update in manifest["updates"]:
@@ -175,6 +183,14 @@ def _validated_updates(
             operation=operation,
             field="staged",
         )
+        try:
+            staged.relative_to(resolved_staged_root)
+        except ValueError:
+            raise TracebookError(
+                "PATH_OUTSIDE_ROOT",
+                f"Manifest staged path {update['staged']!r} is outside staged directory",
+                operation,
+            ) from None
         if target in seen_targets:
             raise _failure(operation, f"Duplicate transaction target {target}")
         seen_targets.add(target)
@@ -242,8 +258,12 @@ def commit_updates(
 
     resolved_root = root.resolve()
     ordered: list[tuple[Path, str]] = []
+    seen_targets: set[Path] = set()
     for target, content in updates.items():
         confined_target = confined_path(resolved_root, target, operation=operation)
+        if confined_target in seen_targets:
+            raise _failure(operation, f"Duplicate transaction target {confined_target}")
+        seen_targets.add(confined_target)
         ordered.append((confined_target, content))
     ordered.sort(key=lambda item: item[0].relative_to(resolved_root).as_posix())
 
@@ -318,7 +338,10 @@ def recover_transactions(root: Path) -> tuple[Path, ...]:
                 discovered_dir.name,
                 operation="recover",
             )
-            initial_manifest = _read_manifest(transaction_dir)
+            try:
+                initial_manifest = _read_manifest(transaction_dir)
+            except FileNotFoundError:
+                continue
             initial_scope = initial_manifest["scope"]
             with file_lock(resolved_root, initial_scope, operation="recover"):
                 manifest_path = transaction_dir / _MANIFEST_NAME

@@ -1,6 +1,8 @@
 from contextlib import contextmanager
+import errno
 import json
 from pathlib import Path
+import shutil
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -112,6 +114,33 @@ class TransactionRecoveryTest(unittest.TestCase):
             self.assertFalse(
                 (root / ".tracebook-state" / "transactions" / "success").exists()
             )
+
+    def test_commit_rejects_duplicate_resolved_targets_before_transaction_write(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "nested").mkdir()
+            target = root / "item.md"
+            target.write_bytes(b"original\n")
+            transaction_dir = (
+                root / ".tracebook-state" / "transactions" / "duplicate"
+            )
+
+            with self.assertRaises(TracebookError):
+                transaction.commit_updates(
+                    root,
+                    "project-demo",
+                    "capture",
+                    {
+                        target: "first\n",
+                        root / "nested" / ".." / "item.md": "second\n",
+                    },
+                    transaction_id="duplicate",
+                )
+
+            self.assertEqual(b"original\n", target.read_bytes())
+            self.assertFalse(transaction_dir.exists())
 
     def test_recovery_rolls_forward_crashes_after_zero_one_and_two_replacements(
         self,
@@ -300,6 +329,46 @@ class TransactionRecoveryTest(unittest.TestCase):
                 self.assertFalse(outside_stage.exists())
                 self.assertTrue(transaction_dir.exists())
 
+    def test_recovery_rejects_staged_symlink_escape_before_target_write(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            updates, transaction_dir = self._prepare_crashed_transaction(
+                root,
+                fail_after=0,
+                transaction_id="staged-symlink",
+                names=("item.md",),
+            )
+            target, content = next(iter(updates.items()))
+            outside_stage = transaction_dir / "outside.stage"
+            outside_stage.write_bytes(content.encode("utf-8"))
+            link = transaction_dir / "staged" / "link"
+            try:
+                link.symlink_to(transaction_dir, target_is_directory=True)
+            except NotImplementedError as error:
+                self.skipTest(f"platform denied test symlink creation: {error}")
+            except OSError as error:
+                unavailable_errnos = {errno.EACCES, errno.EPERM}
+                for name in ("ENOTSUP", "EOPNOTSUPP"):
+                    value = getattr(errno, name, None)
+                    if value is not None:
+                        unavailable_errnos.add(value)
+                if (
+                    error.errno in unavailable_errnos
+                    or getattr(error, "winerror", None) == 1314
+                ):
+                    self.skipTest(f"platform denied test symlink creation: {error}")
+                raise
+            _, manifest = self._read_manifest(transaction_dir)
+            manifest["updates"][0]["staged"] = "staged/link/outside.stage"
+            self._write_manifest(transaction_dir, manifest)
+
+            with self.assertRaises(TracebookError) as raised:
+                transaction.recover_transactions(root)
+
+            self.assertEqual("PATH_OUTSIDE_ROOT", raised.exception.code)
+            self.assertEqual(b"old:item.md\n", target.read_bytes())
+            self.assertTrue(outside_stage.exists())
+
     def test_recovery_acquires_maintenance_then_scope_and_reloads_manifest(
         self,
     ) -> None:
@@ -352,6 +421,39 @@ class TransactionRecoveryTest(unittest.TestCase):
             )
             for target, content in updates.items():
                 self.assertEqual(content, target.read_text(encoding="utf-8"))
+            self.assertFalse(transaction_dir.exists())
+
+    def test_recovery_skips_transaction_deleted_before_initial_manifest_read(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            _, transaction_dir = self._prepare_crashed_transaction(
+                root,
+                fail_after=0,
+                transaction_id="deleted-before-read",
+                names=("one.md",),
+            )
+            original_read_manifest = transaction._read_manifest
+            read_count = 0
+
+            def delete_then_read(path: Path):
+                nonlocal read_count
+                read_count += 1
+                if read_count == 1:
+                    shutil.rmtree(path)
+                    raise FileNotFoundError(path / "manifest.json")
+                return original_read_manifest(path)
+
+            with patch.object(
+                transaction,
+                "_read_manifest",
+                side_effect=delete_then_read,
+            ):
+                recovered = transaction.recover_transactions(root)
+
+            self.assertEqual((), recovered)
+            self.assertEqual(1, read_count)
             self.assertFalse(transaction_dir.exists())
 
 
