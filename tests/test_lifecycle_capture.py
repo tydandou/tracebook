@@ -116,6 +116,8 @@ class LifecycleCaptureTest(unittest.TestCase):
                 "decisions/../../escape.md",
                 "/absolute/escape.md",
                 r"C:\absolute\escape.md",
+                "C:escape.md",
+                "ftp://host/replacement.md",
             ):
                 with self.subTest(replacement=replacement):
                     with self.assertRaisesRegex(ValueError, "replacement"):

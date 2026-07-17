@@ -77,8 +77,12 @@ class CaptureTest(unittest.TestCase):
             ("command:\t",),
             ("human:",),
             ("README",),
+            ("ftp://host/file",),
+            ("HTTP://host/file",),
+            ("ssh://host/file.py",),
             ("/absolute/source.py:L2",),
             (r"C:\absolute\source.py:L2",),
+            ("C:relative/file.py",),
             ("src/../secret.py:L2",),
         ):
             with self.subTest(evidence=evidence):

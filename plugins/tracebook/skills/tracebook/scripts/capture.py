@@ -48,7 +48,7 @@ PROJECT_DOCUMENTS = {
 }
 CATEGORY = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 LINE_SUFFIX = re.compile(r":L\d+(?:-L\d+)?$")
-WINDOWS_ABSOLUTE = re.compile(r"^[a-zA-Z]:/")
+SCHEME_OR_DRIVE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 EVENT_MARKER = "<!-- tracebook:event:{event_id} -->"
 
 
@@ -68,7 +68,7 @@ def _safe_relative_path(value: str) -> bool:
     return not (
         not normalized
         or path.is_absolute()
-        or WINDOWS_ABSOLUTE.match(normalized)
+        or SCHEME_OR_DRIVE.match(normalized)
         or ".." in path.parts
     )
 
