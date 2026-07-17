@@ -34,6 +34,7 @@ _MANIFEST_KEYS = {
 _UPDATE_KEYS = {"target", "staged", "original_hash", "staged_hash"}
 _LOCK_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_RESERVED_SCOPES = {"maintenance"}
 
 
 def _failure(operation: str, message: str) -> TracebookError:
@@ -42,6 +43,22 @@ def _failure(operation: str, message: str) -> TracebookError:
         message,
         operation,
     )
+
+
+def _validate_scope(
+    scope: object,
+    *,
+    operation: str,
+    manifest_path: Path | None = None,
+) -> str:
+    if (
+        not isinstance(scope, str)
+        or _LOCK_NAME.fullmatch(scope) is None
+        or scope in _RESERVED_SCOPES
+    ):
+        location = f" in {manifest_path}" if manifest_path is not None else ""
+        raise _failure(operation, f"Invalid transaction scope{location}")
+    return scope
 
 
 def _transactions_directory(root: Path, *, operation: str) -> Path:
@@ -102,11 +119,11 @@ def _read_manifest(transaction_dir: Path) -> dict[str, Any]:
         raise _failure(operation, f"Invalid transaction id in {manifest_path}")
     if not isinstance(manifest["operation"], str) or not manifest["operation"]:
         raise _failure(operation, f"Invalid operation in {manifest_path}")
-    if (
-        not isinstance(manifest["scope"], str)
-        or _LOCK_NAME.fullmatch(manifest["scope"]) is None
-    ):
-        raise _failure(operation, f"Invalid lock scope in {manifest_path}")
+    _validate_scope(
+        manifest["scope"],
+        operation=operation,
+        manifest_path=manifest_path,
+    )
     if manifest["state"] not in {"prepared", "committed"}:
         raise _failure(operation, f"Invalid transaction state in {manifest_path}")
     if not isinstance(manifest["created_at"], str) or not manifest["created_at"]:
@@ -151,6 +168,7 @@ def _validated_updates(
         )
     validated: list[dict[str, Any]] = []
     seen_targets: set[Path] = set()
+    seen_staged: set[Path] = set()
     for update in manifest["updates"]:
         if not isinstance(update, dict) or set(update) != _UPDATE_KEYS:
             raise _failure(operation, "Invalid update entry in transaction manifest")
@@ -193,7 +211,10 @@ def _validated_updates(
             ) from None
         if target in seen_targets:
             raise _failure(operation, f"Duplicate transaction target {target}")
+        if staged in seen_staged:
+            raise _failure(operation, f"Duplicate transaction staged path {staged}")
         seen_targets.add(target)
+        seen_staged.add(staged)
         validated.append(
             {
                 "target": target,
@@ -256,6 +277,7 @@ def commit_updates(
     if not updates:
         return ()
 
+    _validate_scope(scope, operation=operation)
     resolved_root = root.resolve()
     ordered: list[tuple[Path, str]] = []
     seen_targets: set[Path] = set()

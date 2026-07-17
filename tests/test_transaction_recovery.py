@@ -7,9 +7,37 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from plugins.tracebook.skills.tracebook.scripts.errors import TracebookError
+from plugins.tracebook.skills.tracebook.scripts.errors import (
+    LockTimeoutError,
+    TracebookError,
+)
 from plugins.tracebook.skills.tracebook.scripts.storage import sha256_bytes
 from plugins.tracebook.skills.tracebook.scripts import transaction
+
+
+def _symlink_or_skip(
+    test: unittest.TestCase,
+    link: Path,
+    target: Path,
+    *,
+    target_is_directory: bool,
+) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except NotImplementedError as error:
+        test.skipTest(f"platform denied test symlink creation: {error}")
+    except OSError as error:
+        unavailable_errnos = {errno.EACCES, errno.EPERM}
+        for name in ("ENOTSUP", "EOPNOTSUPP"):
+            value = getattr(errno, name, None)
+            if value is not None:
+                unavailable_errnos.add(value)
+        if (
+            error.errno in unavailable_errnos
+            or getattr(error, "winerror", None) == 1314
+        ):
+            test.skipTest(f"platform denied test symlink creation: {error}")
+        raise
 
 
 class TransactionRecoveryTest(unittest.TestCase):
@@ -81,16 +109,69 @@ class TransactionRecoveryTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _assert_duplicate_stage_rejected_without_writes(
+        self,
+        root: Path,
+        updates: dict[Path, str],
+        transaction_dir: Path,
+        shared_stage: Path,
+    ) -> None:
+        with self.assertRaises(Exception) as raised:
+            transaction.recover_transactions(root)
+
+        for target in updates:
+            self.assertEqual(
+                f"old:{target.relative_to(root).as_posix()}\n".encode("utf-8"),
+                target.read_bytes(),
+            )
+        self.assertTrue(shared_stage.exists())
+        self.assertIsInstance(raised.exception, TracebookError)
+        self.assertEqual(
+            "TRANSACTION_RECOVERY_FAILED",
+            raised.exception.code,
+        )
+        self.assertFalse(raised.exception.retryable)
+        self.assertTrue(transaction_dir.exists())
+
     def test_empty_updates_return_without_creating_transaction_state(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp)
 
-            self.assertEqual(
-                (),
-                transaction.commit_updates(root, "project-demo", "capture", {}),
-            )
+            for scope in ("project-demo", "maintenance", "project_demo"):
+                with self.subTest(scope=scope):
+                    self.assertEqual(
+                        (),
+                        transaction.commit_updates(root, scope, "capture", {}),
+                    )
 
             self.assertFalse((root / ".tracebook-state").exists())
+
+    def test_nonempty_commit_rejects_invalid_or_reserved_scope_before_writes(
+        self,
+    ) -> None:
+        for scope in ("project_demo", "maintenance"):
+            with self.subTest(scope=scope), TemporaryDirectory() as temp:
+                root = Path(temp)
+                target = root / "item.md"
+                target.write_bytes(b"original\n")
+
+                with self.assertRaises(TracebookError) as raised:
+                    transaction.commit_updates(
+                        root,
+                        scope,
+                        "capture",
+                        {target: "replacement\n"},
+                        transaction_id="invalid-scope",
+                    )
+
+                self.assertEqual(
+                    "TRANSACTION_RECOVERY_FAILED",
+                    raised.exception.code,
+                )
+                self.assertEqual("capture", raised.exception.operation)
+                self.assertFalse(raised.exception.retryable)
+                self.assertEqual(b"original\n", target.read_bytes())
+                self.assertFalse((root / ".tracebook-state").exists())
 
     def test_commit_applies_sorted_updates_and_removes_transaction(self) -> None:
         with TemporaryDirectory() as temp:
@@ -296,6 +377,61 @@ class TransactionRecoveryTest(unittest.TestCase):
                 )
             self.assertTrue(transaction_dir.exists())
 
+    def test_duplicate_resolved_staged_path_is_rejected_before_target_write(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            updates, transaction_dir = self._prepare_crashed_transaction(
+                root,
+                fail_after=0,
+                transaction_id="duplicate-stage",
+                names=("a-first.md", "b-second.md"),
+            )
+            _, manifest = self._read_manifest(transaction_dir)
+            first_entry, second_entry = manifest["updates"]
+            second_entry["staged"] = first_entry["staged"]
+            second_entry["staged_hash"] = first_entry["staged_hash"]
+            self._write_manifest(transaction_dir, manifest)
+            shared_stage = transaction_dir / first_entry["staged"]
+
+            self._assert_duplicate_stage_rejected_without_writes(
+                root,
+                updates,
+                transaction_dir,
+                shared_stage,
+            )
+
+    def test_staged_symlink_alias_is_rejected_before_target_write(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            updates, transaction_dir = self._prepare_crashed_transaction(
+                root,
+                fail_after=0,
+                transaction_id="duplicate-stage-alias",
+                names=("a-first.md", "b-second.md"),
+            )
+            _, manifest = self._read_manifest(transaction_dir)
+            first_entry, second_entry = manifest["updates"]
+            shared_stage = transaction_dir / first_entry["staged"]
+            alias = transaction_dir / "staged" / "shared-alias.stage"
+            _symlink_or_skip(
+                self,
+                alias,
+                Path(shared_stage.name),
+                target_is_directory=False,
+            )
+            second_entry["staged"] = alias.relative_to(transaction_dir).as_posix()
+            second_entry["staged_hash"] = first_entry["staged_hash"]
+            self._write_manifest(transaction_dir, manifest)
+
+            self._assert_duplicate_stage_rejected_without_writes(
+                root,
+                updates,
+                transaction_dir,
+                shared_stage,
+            )
+
     def test_manifest_path_escape_is_rejected_before_any_target_write(self) -> None:
         for escaped_field, escaped_value in (
             ("target", "../outside.md"),
@@ -342,22 +478,12 @@ class TransactionRecoveryTest(unittest.TestCase):
             outside_stage = transaction_dir / "outside.stage"
             outside_stage.write_bytes(content.encode("utf-8"))
             link = transaction_dir / "staged" / "link"
-            try:
-                link.symlink_to(transaction_dir, target_is_directory=True)
-            except NotImplementedError as error:
-                self.skipTest(f"platform denied test symlink creation: {error}")
-            except OSError as error:
-                unavailable_errnos = {errno.EACCES, errno.EPERM}
-                for name in ("ENOTSUP", "EOPNOTSUPP"):
-                    value = getattr(errno, name, None)
-                    if value is not None:
-                        unavailable_errnos.add(value)
-                if (
-                    error.errno in unavailable_errnos
-                    or getattr(error, "winerror", None) == 1314
-                ):
-                    self.skipTest(f"platform denied test symlink creation: {error}")
-                raise
+            _symlink_or_skip(
+                self,
+                link,
+                transaction_dir,
+                target_is_directory=True,
+            )
             _, manifest = self._read_manifest(transaction_dir)
             manifest["updates"][0]["staged"] = "staged/link/outside.stage"
             self._write_manifest(transaction_dir, manifest)
@@ -422,6 +548,49 @@ class TransactionRecoveryTest(unittest.TestCase):
             for target, content in updates.items():
                 self.assertEqual(content, target.read_text(encoding="utf-8"))
             self.assertFalse(transaction_dir.exists())
+
+    def test_recovery_rejects_reserved_scope_before_nested_lock(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            updates, transaction_dir = self._prepare_crashed_transaction(
+                root,
+                fail_after=0,
+                transaction_id="reserved-scope",
+                names=("one.md",),
+            )
+            _, manifest = self._read_manifest(transaction_dir)
+            manifest["scope"] = "maintenance"
+            self._write_manifest(transaction_dir, manifest)
+            lock_events: list[str] = []
+
+            @contextmanager
+            def recording_lock(
+                lock_root: Path,
+                name: str,
+                *,
+                operation: str,
+                **_: object,
+            ):
+                self.assertEqual(root.resolve(), lock_root.resolve())
+                lock_events.append(name)
+                if len(lock_events) > 1:
+                    raise LockTimeoutError(name, 0, operation)
+                yield
+
+            with patch.object(transaction, "file_lock", recording_lock):
+                with self.assertRaises(TracebookError) as raised:
+                    transaction.recover_transactions(root)
+
+            self.assertEqual(
+                "TRANSACTION_RECOVERY_FAILED",
+                raised.exception.code,
+            )
+            self.assertEqual("capture", raised.exception.operation)
+            self.assertFalse(raised.exception.retryable)
+            self.assertEqual(["maintenance"], lock_events)
+            for target in updates:
+                self.assertEqual(b"old:one.md\n", target.read_bytes())
+            self.assertTrue(transaction_dir.exists())
 
     def test_recovery_skips_transaction_deleted_before_initial_manifest_read(
         self,
