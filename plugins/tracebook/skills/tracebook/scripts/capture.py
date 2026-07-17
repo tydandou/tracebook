@@ -66,13 +66,10 @@ MANAGED_BACKLINK_MARKER = "<!-- tracebook:managed-pointer-backlink -->"
 MANAGED_POINTER_TARGET = re.compile(
     r"(?m)^Managed Entity Authority: \[[^\]\n]+\]\(([^)\n]+)\)$"
 )
-MANAGED_BACKLINK_TARGET = re.compile(
-    r"(?m)^Managed Pointer: \[[^\]\n]+\]\(([^)\n]+)\)$"
-)
 MANAGED_BACKLINK_LINE = re.compile(r"(?m)^Managed Pointer:.*$")
 MANAGED_BACKLINK_BLOCK = re.compile(
     r"\n*<!-- tracebook:managed-pointer-backlink -->\n"
-    r"Managed Pointer: \[[^\]\n]+\]\([^)\n]+\)\n*"
+    r"Managed Pointer: \[[^\]\n]+\]\(([^)\n]+)\)\n*"
 )
 
 
@@ -494,14 +491,24 @@ def _managed_backlink_target(
     authority: Path,
     content: str,
 ) -> Path | None:
-    marker_count = content.count(MANAGED_BACKLINK_MARKER)
-    matches = MANAGED_BACKLINK_TARGET.findall(content)
-    lines = MANAGED_BACKLINK_LINE.findall(content)
-    if marker_count == 0 and not lines:
+    has_marker = MANAGED_BACKLINK_MARKER in content
+    has_line = MANAGED_BACKLINK_LINE.search(content) is not None
+    if not has_marker and not has_line:
         return None
-    if marker_count != 1 or len(matches) != 1 or len(lines) != 1:
+    blocks = list(MANAGED_BACKLINK_BLOCK.finditer(content))
+    if len(blocks) != 1:
         raise _invalid_request("entity state", "contains a corrupt managed backlink")
-    link = matches[0]
+    block = blocks[0]
+    before = content[: block.start()]
+    after = content[block.end() :]
+    if (
+        MANAGED_BACKLINK_MARKER in before
+        or MANAGED_BACKLINK_MARKER in after
+        or MANAGED_BACKLINK_LINE.search(before) is not None
+        or MANAGED_BACKLINK_LINE.search(after) is not None
+    ):
+        raise _invalid_request("entity state", "contains a corrupt managed backlink")
+    link = block.group(1)
     if "\\" in link or SCHEME_OR_DRIVE.match(link) or PurePosixPath(link).is_absolute():
         raise _invalid_request("entity state", "contains a corrupt managed backlink")
     target = authority.parent.joinpath(*PurePosixPath(link).parts).resolve()

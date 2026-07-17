@@ -409,6 +409,8 @@ class LifecycleCaptureTest(unittest.TestCase):
             "duplicate-target",
             "malformed",
             "wrong-target",
+            "blank-separated",
+            "text-separated",
         )
         for kind in ("decision", "synthesis"):
             category = "adr-0001" if kind == "decision" else "refund-flow"
@@ -491,10 +493,22 @@ class LifecycleCaptureTest(unittest.TestCase):
                                 "Managed Pointer: malformed",
                                 1,
                             )
-                        else:
+                        elif scenario == "wrong-target":
                             corrupted = content.replace(
                                 target,
                                 f"Managed Pointer: [{category}](wrong.md)",
+                                1,
+                            )
+                        elif scenario == "blank-separated":
+                            corrupted = content.replace(
+                                f"{marker}\n{target}",
+                                f"{marker}\n\n{target}",
+                                1,
+                            )
+                        else:
+                            corrupted = content.replace(
+                                f"{marker}\n{target}",
+                                f"{marker}\nUnexpected backlink separator.\n{target}",
                                 1,
                             )
                         self.assertNotEqual(content, corrupted)
@@ -502,11 +516,18 @@ class LifecycleCaptureTest(unittest.TestCase):
                         authority.write_text(corrupted, encoding="utf-8")
                         before = self._knowledge_snapshot(context.root)
 
-                        with self.assertRaisesRegex(
-                            ValueError,
-                            "INVALID_REQUEST.*backlink",
-                        ):
-                            capture(context, request, date(2026, 7, 15))
+                        try:
+                            retry = capture(context, request, date(2026, 7, 15))
+                        except ValueError as error:
+                            self.assertRegex(
+                                str(error),
+                                "INVALID_REQUEST.*backlink",
+                            )
+                        else:
+                            self.fail(
+                                "exact retry was incorrectly "
+                                f"skipped={retry.skipped} for {scenario} backlink"
+                            )
 
                         self.assertEqual(
                             before,
