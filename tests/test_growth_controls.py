@@ -110,6 +110,65 @@ class GrowthControlsTest(unittest.TestCase):
             self.assertIn(marker, july_log.read_text(encoding="utf-8"))
             self.assertFalse((document.parent / "logs" / "2026-08.md").exists())
 
+    def test_retry_without_topic_remains_idempotent_after_crossing_split_threshold(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            context, _ = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+            main = project / "business-rules.md"
+            main.write_text(
+                "# Business Rules\n" + "rule\n" * 299,
+                encoding="utf-8",
+            )
+            self.assertEqual(300, len(main.read_text(encoding="utf-8").splitlines()))
+            request = self._request(title="Threshold crossing rule")
+
+            first = capture(context, request, date(2026, 7, 13))
+            self.assertGreater(
+                len(main.read_text(encoding="utf-8").splitlines()),
+                300,
+            )
+            try:
+                second = capture(context, request, date(2026, 8, 2))
+            except ValueError as error:
+                self.fail(f"idempotent retry unexpectedly required topic: {error}")
+
+            self.assertTrue(second.skipped)
+            self.assertEqual(first.event_id, second.event_id)
+            self.assertEqual((), second.changed_paths)
+            self.assertFalse((project / "logs" / "2026-08.md").exists())
+
+    def test_retry_with_topic_uses_original_base_event_after_threshold_change(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            context, _ = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+            main = project / "business-rules.md"
+            main.write_text(
+                "# Business Rules\n" + "rule\n" * 299,
+                encoding="utf-8",
+            )
+            request = self._request(
+                title="Preclassified threshold rule",
+                topic="refunds",
+            )
+
+            first = capture(context, request, date(2026, 7, 13))
+            self.assertEqual(main, first.changed_paths[0])
+            self.assertGreater(
+                len(main.read_text(encoding="utf-8").splitlines()),
+                300,
+            )
+            second = capture(context, request, date(2026, 8, 2))
+
+            self.assertTrue(second.skipped)
+            self.assertEqual(first.event_id, second.event_id)
+            self.assertEqual((), second.changed_paths)
+            self.assertFalse((project / "business-rules" / "refunds.md").exists())
+            self.assertFalse((project / "logs" / "2026-08.md").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

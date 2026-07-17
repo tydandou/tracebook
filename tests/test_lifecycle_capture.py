@@ -126,6 +126,63 @@ class LifecycleCaptureTest(unittest.TestCase):
             self.assertIn("Status: Current", after)
             self.assertIn("Status: Pending", after)
 
+    def test_next_capture_migrates_legacy_collection_status_to_current(self) -> None:
+        for scope, kind, namespace, legacy_status in (
+            ("domain", "domain", "02-domain", "unconfirmed"),
+            ("pattern", "pattern", "03-patterns", "deprecated"),
+        ):
+            with self.subTest(scope=scope), TemporaryDirectory() as temp:
+                context = self._context(Path(temp))
+                page = context.root / namespace / "legacy-container.md"
+                page.write_text(
+                    "\n".join(
+                        [
+                            "---",
+                            f"type: {'pattern' if scope == 'pattern' else 'knowledge'}",
+                            f"status: {legacy_status}",
+                            f"scope: {scope}",
+                            "owner_project: legacy-owner",
+                            "created: 2025-01-02",
+                            "updated: 2025-02-03",
+                            "custom_field: preserve-me",
+                            "---",
+                            "# Legacy collection",
+                            "",
+                            "Legacy collection body must remain byte-for-byte present.",
+                            "",
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
+
+                capture(
+                    context,
+                    self._request(
+                        scope=scope,
+                        kind=kind,
+                        category="legacy-container",
+                        title="Pending managed entry",
+                        body="This entry remains pending human confirmation.",
+                        evidence=(),
+                        status="Pending",
+                    ),
+                    date(2026, 7, 15),
+                )
+
+                content = page.read_text(encoding="utf-8")
+                frontmatter = content.split("---", 2)[1]
+                self.assertIn("status: current", frontmatter)
+                self.assertNotIn(f"status: {legacy_status}", frontmatter)
+                self.assertIn("owner_project: legacy-owner", frontmatter)
+                self.assertIn("created: 2025-01-02", frontmatter)
+                self.assertIn("updated: 2025-02-03", frontmatter)
+                self.assertIn("custom_field: preserve-me", frontmatter)
+                self.assertIn(
+                    "Legacy collection body must remain byte-for-byte present.",
+                    content,
+                )
+                self.assertIn("Status: Pending", content)
+
     def test_decision_rejects_a_different_title_for_the_same_category(self) -> None:
         with TemporaryDirectory() as temp:
             context = self._context(Path(temp))
@@ -149,6 +206,59 @@ class LifecycleCaptureTest(unittest.TestCase):
                 )
 
             self.assertEqual(before, page.read_text(encoding="utf-8"))
+
+    def test_decision_archive_rejects_title_conflict_with_active_entity(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            capture(context, self._request(), date(2026, 7, 13))
+            project = context.root / context.record.relative_path
+            active = project / "decisions" / "adr-0001.md"
+            archived = project / "archive" / "decisions" / "adr-0001.md"
+            index = project / "index.md"
+            active_before = active.read_text(encoding="utf-8")
+            index_before = index.read_text(encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "INVALID_REQUEST.*title"):
+                capture(
+                    context,
+                    self._request(
+                        title="Archive a different decision",
+                        body="This is not the entity identified by adr-0001.",
+                        status="Deprecated",
+                    ),
+                    date(2026, 7, 14),
+                )
+
+            self.assertEqual(active_before, active.read_text(encoding="utf-8"))
+            self.assertEqual(index_before, index.read_text(encoding="utf-8"))
+            self.assertFalse(archived.exists())
+
+    def test_same_title_deprecated_decision_keeps_archive_routing(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            capture(context, self._request(), date(2026, 7, 13))
+            project = context.root / context.record.relative_path
+            active = project / "decisions" / "adr-0001.md"
+            active_before = active.read_text(encoding="utf-8")
+
+            result = capture(
+                context,
+                self._request(
+                    body="This decision has been retired from active use.",
+                    status="Deprecated",
+                ),
+                date(2026, 7, 14),
+            )
+
+            archived = project / "archive" / "decisions" / "adr-0001.md"
+            self.assertIn(archived, result.changed_paths)
+            self.assertTrue(archived.is_file())
+            self.assertIn("Status: Deprecated", archived.read_text(encoding="utf-8"))
+            self.assertEqual(active_before, active.read_text(encoding="utf-8"))
+            self.assertIn(
+                "archive/decisions/adr-0001.md",
+                (project / "index.md").read_text(encoding="utf-8"),
+            )
 
     def test_decision_update_keeps_one_entity_and_updates_lifecycle(self) -> None:
         with TemporaryDirectory() as temp:

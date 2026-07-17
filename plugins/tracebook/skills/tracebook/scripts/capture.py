@@ -48,6 +48,12 @@ PROJECT_DOCUMENTS = {
     "source-map": "source-map.md",
     "terminology": "terminology.md",
 }
+SPLIT_DIRECTORIES = {
+    "business-rule": "business-rules",
+    "api": "api",
+    "database": "database",
+    "source-map": "source-map",
+}
 CATEGORY = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 LINE_SUFFIX = re.compile(r":L\d+(?:-L\d+)?$")
 SCHEME_OR_DRIVE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
@@ -143,6 +149,12 @@ def validate_capture(request: CaptureRequest) -> None:
     else:
         raise _invalid_request("scope", "is unsupported")
 
+    if request.topic is not None and (
+        not isinstance(request.topic, str)
+        or CATEGORY.fullmatch(request.topic) is None
+    ):
+        raise _invalid_request("topic", "is unsupported")
+
     if request.status == "Superseded" and not request.replacement:
         raise _invalid_request("replacement", "is required for Superseded knowledge")
     if request.replacement is not None:
@@ -169,20 +181,17 @@ def _capture_destination(
     root: Path,
     record: ProjectRecord,
     request: CaptureRequest,
+    *,
+    allow_split: bool = True,
 ) -> tuple[Path, Path]:
     category = request.category
     if request.scope == "project":
         directory = _project_directory(root, record)
         if request.kind in PROJECT_DOCUMENTS:
             document = directory / PROJECT_DOCUMENTS[request.kind]
-            split_directories = {
-                "business-rule": "business-rules",
-                "api": "api",
-                "database": "database",
-                "source-map": "source-map",
-            }
             if (
-                request.kind in split_directories
+                allow_split
+                and request.kind in SPLIT_DIRECTORIES
                 and document.exists()
                 and len(document.read_text(encoding="utf-8").splitlines()) > 300
             ):
@@ -193,7 +202,7 @@ def _capture_destination(
                     )
                 document = (
                     directory
-                    / split_directories[request.kind]
+                    / SPLIT_DIRECTORIES[request.kind]
                     / f"{_safe_category(request.topic)}.md"
                 )
         elif request.kind == "decision":
@@ -296,7 +305,18 @@ def _with_frontmatter(
     entity_page = request.kind in {"decision", "synthesis"}
     if current.startswith("---\n"):
         if not entity_page:
-            return current
+            frontmatter_end = current.find("\n---\n", 4)
+            if frontmatter_end == -1:
+                return current
+            body_start = frontmatter_end + len("\n---\n")
+            frontmatter = current[:body_start]
+            frontmatter = re.sub(
+                r"(?m)^status: .*$",
+                "status: current",
+                frontmatter,
+                count=1,
+            )
+            return frontmatter + current[body_start:]
         status = _frontmatter_status(request.status)
         current = re.sub(
             r"(?m)^status: .*$",
@@ -345,6 +365,20 @@ def _validate_entity_title(current: str, request: CaptureRequest) -> None:
             "title",
             f"must match the existing {request.kind} entity: {title!r}",
         )
+
+
+def _entity_identity_paths(
+    root: Path,
+    record: ProjectRecord,
+    request: CaptureRequest,
+) -> tuple[Path, ...]:
+    if request.kind not in {"decision", "synthesis"}:
+        return ()
+    project = _project_directory(root, record)
+    directory = "decisions" if request.kind == "decision" else "synthesis"
+    active = project / directory / f"{request.category}.md"
+    archived = project / "archive" / active.relative_to(project)
+    return active, archived
 
 
 def _knowledge_content(
@@ -435,6 +469,27 @@ def capture_knowledge(
     root = root.expanduser().resolve()
     scope = capture_lock_name(record, request)
     with file_lock(root, scope, operation="capture"):
+        for identity_path in _entity_identity_paths(root, record, request):
+            _validate_entity_title(_read_text(identity_path), request)
+
+        if request.scope == "project" and request.kind in SPLIT_DIRECTORIES:
+            base_document, _ = _capture_destination(
+                root,
+                record,
+                request,
+                allow_split=False,
+            )
+            base_event_id = _event_id(root, record, base_document, request)
+            base_marker = EVENT_MARKER.format(event_id=base_event_id)
+            if base_marker in _read_text(base_document):
+                return CaptureResult(
+                    changed_paths=(),
+                    new_paths=(),
+                    skipped=True,
+                    health_scope=health_scope,
+                    event_id=base_event_id,
+                )
+
         document, index = _capture_destination(root, record, request)
         event_id = _event_id(root, record, document, request)
         marker = EVENT_MARKER.format(event_id=event_id)

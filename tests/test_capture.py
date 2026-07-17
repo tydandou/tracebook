@@ -110,6 +110,28 @@ class CaptureTest(unittest.TestCase):
 
             locked.assert_not_called()
 
+    def test_unsafe_provided_topic_is_rejected_before_scope_lock(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            context = resolve(base / "knowledge", repo)
+
+            for topic in ("../escape", "nested/topic", "Refunds", ""):
+                with self.subTest(topic=topic), patch.object(
+                    capture_module,
+                    "file_lock",
+                    wraps=file_lock,
+                ) as locked:
+                    with self.assertRaisesRegex(ValueError, "topic"):
+                        capture(
+                            context,
+                            self._request(topic=topic),
+                            date(2026, 7, 13),
+                        )
+
+                    locked.assert_not_called()
+
     def test_capture_lock_name_matches_transaction_scope(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)
