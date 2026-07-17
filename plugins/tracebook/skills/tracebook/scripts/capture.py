@@ -66,6 +66,10 @@ MANAGED_BACKLINK_MARKER = "<!-- tracebook:managed-pointer-backlink -->"
 MANAGED_POINTER_TARGET = re.compile(
     r"(?m)^Managed Entity Authority: \[[^\]\n]+\]\(([^)\n]+)\)$"
 )
+MANAGED_BACKLINK_TARGET = re.compile(
+    r"(?m)^Managed Pointer: \[[^\]\n]+\]\(([^)\n]+)\)$"
+)
+MANAGED_BACKLINK_LINE = re.compile(r"(?m)^Managed Pointer:.*$")
 MANAGED_BACKLINK_BLOCK = re.compile(
     r"\n*<!-- tracebook:managed-pointer-backlink -->\n"
     r"Managed Pointer: \[[^\]\n]+\]\([^)\n]+\)\n*"
@@ -485,6 +489,32 @@ def _pointer_target(root: Path, pointer: Path, content: str) -> Path | None:
     return target
 
 
+def _managed_backlink_target(
+    root: Path,
+    authority: Path,
+    content: str,
+) -> Path | None:
+    marker_count = content.count(MANAGED_BACKLINK_MARKER)
+    matches = MANAGED_BACKLINK_TARGET.findall(content)
+    lines = MANAGED_BACKLINK_LINE.findall(content)
+    if marker_count == 0 and not lines:
+        return None
+    if marker_count != 1 or len(matches) != 1 or len(lines) != 1:
+        raise _invalid_request("entity state", "contains a corrupt managed backlink")
+    link = matches[0]
+    if "\\" in link or SCHEME_OR_DRIVE.match(link) or PurePosixPath(link).is_absolute():
+        raise _invalid_request("entity state", "contains a corrupt managed backlink")
+    target = authority.parent.joinpath(*PurePosixPath(link).parts).resolve()
+    try:
+        target.relative_to(root.resolve())
+    except ValueError as error:
+        raise _invalid_request(
+            "entity state",
+            "contains a managed backlink outside the knowledge root",
+        ) from error
+    return target
+
+
 def _entity_storage_state(
     root: Path,
     record: ProjectRecord,
@@ -494,6 +524,7 @@ def _entity_storage_state(
     contents = {active: _read_text(active), archived: _read_text(archived)}
     entities: list[Path] = []
     pointers: list[Path] = []
+    backlinks: dict[Path, Path | None] = {}
     for path, content in contents.items():
         if not content:
             continue
@@ -511,11 +542,31 @@ def _entity_storage_state(
             raise _invalid_request("entity state", "contains an unrecognized page")
         _validate_entity_title(content, request)
         entities.append(path)
+        backlinks[path] = _managed_backlink_target(root, path, content)
 
     if len(entities) > 1 or len(pointers) > 1:
         raise _invalid_request("entity state", "contains multiple authorities")
     if pointers and (not entities or pointers[0] == entities[0]):
         raise _invalid_request("entity state", "contains an orphan managed pointer")
+    if entities:
+        authority = entities[0]
+        backlink = backlinks[authority]
+        if pointers:
+            if backlink is None:
+                raise _invalid_request(
+                    "entity state",
+                    "is missing its managed backlink",
+                )
+            if backlink != pointers[0].resolve():
+                raise _invalid_request(
+                    "entity state",
+                    "contains a managed backlink to the wrong pointer",
+                )
+        elif backlink is not None:
+            raise _invalid_request(
+                "entity state",
+                "contains a managed backlink without a pointer",
+            )
     return (
         active,
         archived,

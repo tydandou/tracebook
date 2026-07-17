@@ -28,6 +28,18 @@ class LifecycleCaptureTest(unittest.TestCase):
         (repo / ".git").mkdir(parents=True)
         return resolve(base / "knowledge", repo)
 
+    @staticmethod
+    def _knowledge_snapshot(root: Path) -> dict[str, bytes]:
+        snapshot: dict[str, bytes] = {}
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(root)
+            if relative.parts and relative.parts[0] == ".tracebook-state":
+                continue
+            snapshot[relative.as_posix()] = path.read_bytes()
+        return snapshot
+
     def test_high_value_documents_start_with_frontmatter(self) -> None:
         with TemporaryDirectory() as temp:
             context = self._context(Path(temp))
@@ -387,6 +399,175 @@ class LifecycleCaptureTest(unittest.TestCase):
                     archive_before,
                     archived.read_text(encoding="utf-8"),
                 )
+
+    def test_entity_capture_rejects_corrupt_authority_backlinks_before_event_no_op(
+        self,
+    ) -> None:
+        scenarios = (
+            "missing",
+            "duplicate-marker",
+            "duplicate-target",
+            "malformed",
+            "wrong-target",
+        )
+        for kind in ("decision", "synthesis"):
+            category = "adr-0001" if kind == "decision" else "refund-flow"
+            title = (
+                "Persist idempotency keys first"
+                if kind == "decision"
+                else "Refund flow synthesis"
+            )
+            directory = "decisions" if kind == "decision" else "synthesis"
+            for authority_location in ("active", "archive"):
+                seed_status = (
+                    "Historical" if authority_location == "active" else "Current"
+                )
+                authority_status = (
+                    "Current" if authority_location == "active" else "Historical"
+                )
+                for scenario in scenarios:
+                    with (
+                        self.subTest(
+                            kind=kind,
+                            authority=authority_location,
+                            scenario=scenario,
+                        ),
+                        TemporaryDirectory() as temp,
+                    ):
+                        context = self._context(Path(temp))
+                        seed = self._request(
+                            kind=kind,
+                            category=category,
+                            title=title,
+                            body=f"Seed {kind} history in {seed_status} authority.",
+                            status=seed_status,
+                        )
+                        request = self._request(
+                            kind=kind,
+                            category=category,
+                            title=title,
+                            body=f"Stable {authority_location} {kind} authority event.",
+                            status=authority_status,
+                        )
+                        capture(context, seed, date(2026, 7, 13))
+                        result = capture(context, request, date(2026, 7, 14))
+
+                        project = context.root / context.record.relative_path
+                        active = project / directory / f"{category}.md"
+                        archived = project / "archive" / directory / f"{category}.md"
+                        authority = (
+                            active if authority_location == "active" else archived
+                        )
+                        pointer = archived if authority == active else active
+                        self.assertTrue(pointer.is_file())
+                        content = authority.read_text(encoding="utf-8")
+                        marker = "<!-- tracebook:managed-pointer-backlink -->"
+                        marker_index = content.splitlines().index(marker)
+                        target = content.splitlines()[marker_index + 1]
+                        event_marker = f"<!-- tracebook:event:{result.event_id} -->"
+                        self.assertIn(event_marker, content)
+
+                        if scenario == "missing":
+                            corrupted = content.replace(
+                                f"{marker}\n{target}\n",
+                                "",
+                                1,
+                            )
+                        elif scenario == "duplicate-marker":
+                            corrupted = content.replace(
+                                marker,
+                                f"{marker}\n{marker}",
+                                1,
+                            )
+                        elif scenario == "duplicate-target":
+                            corrupted = content.replace(
+                                target,
+                                f"{target}\n{target}",
+                                1,
+                            )
+                        elif scenario == "malformed":
+                            corrupted = content.replace(
+                                target,
+                                "Managed Pointer: malformed",
+                                1,
+                            )
+                        else:
+                            corrupted = content.replace(
+                                target,
+                                f"Managed Pointer: [{category}](wrong.md)",
+                                1,
+                            )
+                        self.assertNotEqual(content, corrupted)
+                        self.assertIn(event_marker, corrupted)
+                        authority.write_text(corrupted, encoding="utf-8")
+                        before = self._knowledge_snapshot(context.root)
+
+                        with self.assertRaisesRegex(
+                            ValueError,
+                            "INVALID_REQUEST.*backlink",
+                        ):
+                            capture(context, request, date(2026, 7, 15))
+
+                        self.assertEqual(
+                            before,
+                            self._knowledge_snapshot(context.root),
+                        )
+
+    def test_entity_authority_without_pointer_rejects_managed_backlink(
+        self,
+    ) -> None:
+        for kind in ("decision", "synthesis"):
+            category = "adr-0001" if kind == "decision" else "refund-flow"
+            title = (
+                "Persist idempotency keys first"
+                if kind == "decision"
+                else "Refund flow synthesis"
+            )
+            directory = "decisions" if kind == "decision" else "synthesis"
+            for authority_location in ("active", "archive"):
+                with (
+                    self.subTest(kind=kind, authority=authority_location),
+                    TemporaryDirectory() as temp,
+                ):
+                    context = self._context(Path(temp))
+                    status = (
+                        "Current" if authority_location == "active" else "Historical"
+                    )
+                    request = self._request(
+                        kind=kind,
+                        category=category,
+                        title=title,
+                        body=f"Standalone {authority_location} {kind} authority.",
+                        status=status,
+                    )
+                    result = capture(context, request, date(2026, 7, 13))
+                    project = context.root / context.record.relative_path
+                    active = project / directory / f"{category}.md"
+                    archived = project / "archive" / directory / f"{category}.md"
+                    authority = active if authority_location == "active" else archived
+                    pointer = archived if authority == active else active
+                    self.assertFalse(pointer.exists())
+                    content = authority.read_text(encoding="utf-8")
+                    event_marker = f"<!-- tracebook:event:{result.event_id} -->"
+                    self.assertIn(event_marker, content)
+                    authority.write_text(
+                        content.rstrip()
+                        + "\n\n<!-- tracebook:managed-pointer-backlink -->\n"
+                        + f"Managed Pointer: [{category}](wrong.md)\n",
+                        encoding="utf-8",
+                    )
+                    before = self._knowledge_snapshot(context.root)
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "INVALID_REQUEST.*backlink",
+                    ):
+                        capture(context, request, date(2026, 7, 14))
+
+                    self.assertEqual(
+                        before,
+                        self._knowledge_snapshot(context.root),
+                    )
 
     def test_entity_transition_retries_are_idempotent_across_dates(self) -> None:
         with TemporaryDirectory() as temp:
