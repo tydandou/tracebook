@@ -5,10 +5,15 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import subprocess
 from urllib.parse import urlsplit
+
+from .errors import TracebookError
+from .knowledge_root import validate_external_root
+from .locking import file_lock
+from .storage import atomic_write_text, confined_path
 
 
 @dataclass(frozen=True)
@@ -88,15 +93,88 @@ def registry_path(knowledge_root: Path) -> Path:
     return knowledge_root / "registry.json"
 
 
-def _load_registry(path: Path) -> dict[str, ProjectRecord]:
+def _corrupt_registry(path: Path, message: str) -> TracebookError:
+    return TracebookError(
+        "CORRUPT_REGISTRY",
+        f"Invalid registry {path}: {message}",
+        "resolve",
+    )
+
+
+def _validated_project_path(
+    root: Path,
+    relative_path: str,
+    *,
+    registry: Path,
+) -> Path:
+    relative = PurePosixPath(relative_path)
+    if (
+        relative.is_absolute()
+        or len(relative.parts) < 2
+        or relative.parts[0] != "01-projects"
+        or ".." in relative.parts
+        or relative.as_posix() != relative_path
+    ):
+        raise _corrupt_registry(
+            registry,
+            f"unconfined project relative_path {relative_path!r}",
+        )
+    try:
+        projects_root = confined_path(
+            root,
+            root / "01-projects",
+            operation="resolve",
+        )
+        return confined_path(
+            projects_root,
+            root.joinpath(*relative.parts),
+            operation="resolve",
+        )
+    except TracebookError:
+        raise _corrupt_registry(
+            registry,
+            f"unconfined project relative_path {relative_path!r}",
+        ) from None
+
+
+def _load_registry(path: Path, root: Path) -> dict[str, ProjectRecord]:
     if not path.exists():
         return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    projects = payload.get("projects", {})
-    return {
-        identity: ProjectRecord(**record)
-        for identity, record in projects.items()
-    }
+    try:
+        payload = json.loads(path.read_bytes().decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise _corrupt_registry(path, str(error)) from None
+
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"version", "projects"}
+        or type(payload["version"]) is not int
+        or payload["version"] != 1
+        or not isinstance(payload["projects"], dict)
+    ):
+        raise _corrupt_registry(path, "expected version 1 and a projects object")
+
+    records: dict[str, ProjectRecord] = {}
+    for identity, value in payload["projects"].items():
+        if (
+            not isinstance(identity, str)
+            or not identity
+            or not isinstance(value, dict)
+            or set(value) != {"identity", "slug", "relative_path"}
+            or any(
+                not isinstance(value[field], str) or not value[field]
+                for field in ("identity", "slug", "relative_path")
+            )
+            or value["identity"] != identity
+        ):
+            raise _corrupt_registry(path, f"invalid project record {identity!r}")
+        _validated_project_path(
+            root,
+            value["relative_path"],
+            registry=path,
+        )
+        records[identity] = ProjectRecord(**value)
+    return records
 
 
 def _save_registry(path: Path, records: dict[str, ProjectRecord]) -> None:
@@ -107,7 +185,11 @@ def _save_registry(path: Path, records: dict[str, ProjectRecord]) -> None:
             for identity, record in sorted(records.items())
         },
     }
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(
+        path,
+        json.dumps(payload, indent=2) + "\n",
+        operation="resolve",
+    )
 
 
 def _slug(identity: str, records: dict[str, ProjectRecord]) -> str:
@@ -121,9 +203,11 @@ def _slug(identity: str, records: dict[str, ProjectRecord]) -> str:
 
 
 def _write_minimal_project_files(project_dir: Path, record: ProjectRecord) -> None:
+    project_dir.mkdir(parents=True, exist_ok=True)
     index = project_dir / "index.md"
-    if not index.exists():
-        index.write_text(
+    if not index.exists() and not index.is_symlink():
+        atomic_write_text(
+            index,
             "\n".join(
                 [
                     f"# {record.slug}",
@@ -135,39 +219,51 @@ def _write_minimal_project_files(project_dir: Path, record: ProjectRecord) -> No
                     "",
                 ]
             ),
-            encoding="utf-8",
+            operation="resolve",
         )
 
     status = project_dir / "project-status.md"
-    if not status.exists():
-        status.write_text(
+    if not status.exists() and not status.is_symlink():
+        atomic_write_text(
+            status,
             "# Project Status\n\n## Current Status\n- Initialized by Tracebook.\n",
-            encoding="utf-8",
+            operation="resolve",
         )
 
 
 def ensure_project(knowledge_root: Path, repo: Path) -> ProjectRecord:
     """Register a repository and create only its minimal knowledge documents."""
-    root = knowledge_root.resolve()
+    repository = repository_root(repo)
+    root, repository = validate_external_root(knowledge_root, repository)
     projects_root = root / "01-projects"
     if not projects_root.is_dir():
         raise ValueError(f"Knowledge root is missing {projects_root}")
 
-    identity = project_identity(repo)
+    identity = project_identity(repository)
     path = registry_path(root)
-    records = _load_registry(path)
-    record = records.get(identity)
-    if record is None:
-        slug = _slug(identity, records)
-        record = ProjectRecord(
-            identity=identity,
-            slug=slug,
-            relative_path=f"01-projects/{slug}",
-        )
-        records[identity] = record
-        _save_registry(path, records)
+    with file_lock(root, "registry", operation="resolve"):
+        records = _load_registry(path, root)
+        record = records.get(identity)
+        if record is None:
+            slug = _slug(identity, records)
+            record = ProjectRecord(
+                identity=identity,
+                slug=slug,
+                relative_path=f"01-projects/{slug}",
+            )
+            project_dir = _validated_project_path(
+                root,
+                record.relative_path,
+                registry=path,
+            )
+            records[identity] = record
+            _save_registry(path, records)
+        else:
+            project_dir = _validated_project_path(
+                root,
+                record.relative_path,
+                registry=path,
+            )
 
-    project_dir = root / record.relative_path
-    project_dir.mkdir(parents=True, exist_ok=True)
-    _write_minimal_project_files(project_dir, record)
-    return record
+        _write_minimal_project_files(project_dir, record)
+        return record

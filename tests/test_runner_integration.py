@@ -13,7 +13,7 @@ RUNNER = SKILL_ROOT / "scripts" / "tracebook_runner.py"
 
 class RunnerIntegrationTest(unittest.TestCase):
     def test_installed_runner_resolves_project_from_an_arbitrary_working_directory(self) -> None:
-        with TemporaryDirectory(dir=ROOT) as temp:
+        with TemporaryDirectory() as temp:
             base = Path(temp)
             root = base / "knowledge"
             repo = base / "business"
@@ -41,7 +41,7 @@ class RunnerIntegrationTest(unittest.TestCase):
             self.assertFalse((repo / "AGENTS.md").exists())
 
     def test_installed_runner_executes_an_explicit_deep_audit(self) -> None:
-        with TemporaryDirectory(dir=ROOT) as temp:
+        with TemporaryDirectory() as temp:
             base = Path(temp)
             root = base / "knowledge"
             repo = base / "business"

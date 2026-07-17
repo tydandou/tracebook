@@ -14,12 +14,14 @@ import sys
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from scripts.check_knowledge import CheckReport, DeepAuditReport, run_check, run_deep_audit
-    from scripts.knowledge_root import DEFAULT_TEMPLATE
-    from scripts.project_registry import ProjectRecord, ensure_project
+    from scripts.knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
+    from scripts.project_registry import ProjectRecord, ensure_project, repository_root
+    from scripts.transaction import recover_transactions
 else:
     from .check_knowledge import CheckReport, DeepAuditReport, run_check, run_deep_audit
-    from .knowledge_root import DEFAULT_TEMPLATE
-    from .project_registry import ProjectRecord, ensure_project
+    from .knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
+    from .project_registry import ProjectRecord, ensure_project, repository_root
+    from .transaction import recover_transactions
 
 
 def default_root() -> Path:
@@ -42,29 +44,20 @@ class ResolvedContext:
 
 def initialize(root: Path, template: Path = DEFAULT_TEMPLATE) -> InitializeResult:
     """Repair missing template files while preserving existing knowledge."""
-    root = root.expanduser()
-    created: list[Path] = []
-    for source in sorted(template.rglob("*")):
-        relative = source.relative_to(template)
-        destination = root / relative
-        if source.is_dir():
-            destination.mkdir(parents=True, exist_ok=True)
-            continue
-        if destination.exists():
-            continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        content = source.read_text(encoding="utf-8").replace(
-            "{{knowledge_root}}", str(root)
-        )
-        destination.write_text(content, encoding="utf-8")
-        created.append(destination)
-    return InitializeResult(root=root, created_paths=tuple(created))
+    created = repair_knowledge_root(root, template)
+    return InitializeResult(
+        root=root.expanduser().resolve(),
+        created_paths=created,
+    )
 
 
 def resolve(root: Path, cwd: Path) -> ResolvedContext:
     """Initialize a root, register a repository, and return default context."""
-    initialized = initialize(root)
-    record = ensure_project(initialized.root, cwd)
+    repository = repository_root(cwd)
+    resolved_root, repository = validate_external_root(root, repository)
+    recover_transactions(resolved_root)
+    initialized = initialize(resolved_root)
+    record = ensure_project(initialized.root, repository)
     project = initialized.root / record.relative_path
     return ResolvedContext(
         root=initialized.root,

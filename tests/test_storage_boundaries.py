@@ -4,10 +4,56 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from plugins.tracebook.skills.tracebook.scripts.errors import TracebookError
+from plugins.tracebook.skills.tracebook.scripts import knowledge_root
 from plugins.tracebook.skills.tracebook.scripts.storage import confined_path
+from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import resolve
 
 
 class StorageBoundaryTest(unittest.TestCase):
+    def test_external_root_is_resolved_for_allowed_sibling_and_parent(self) -> None:
+        for relationship in ("sibling", "parent"):
+            with self.subTest(relationship=relationship), TemporaryDirectory() as temp:
+                base = Path(temp)
+                repository = base / "business"
+                (repository / ".git").mkdir(parents=True)
+                root = base / "knowledge" if relationship == "sibling" else base
+
+                resolved_root, resolved_repository = (
+                    knowledge_root.validate_external_root(root, repository)
+                )
+
+                self.assertEqual(root.resolve(), resolved_root)
+                self.assertEqual(repository.resolve(), resolved_repository)
+
+                context = resolve(root, repository)
+                self.assertEqual(root.resolve(), context.root)
+                self.assertTrue((root / "registry.json").is_file())
+                self.assertFalse((repository / "AGENTS.md").exists())
+
+    def test_resolve_rejects_root_equal_to_or_below_repository_before_write(
+        self,
+    ) -> None:
+        for relationship in ("equal", "descendant"):
+            with self.subTest(relationship=relationship), TemporaryDirectory() as temp:
+                repository = Path(temp) / "business"
+                (repository / ".git").mkdir(parents=True)
+                root = (
+                    repository
+                    if relationship == "equal"
+                    else repository / "knowledge"
+                )
+
+                with self.assertRaises(TracebookError) as raised:
+                    resolve(root, repository)
+
+                self.assertEqual("ROOT_INSIDE_REPOSITORY", raised.exception.code)
+                self.assertEqual("resolve", raised.exception.operation)
+                self.assertFalse(raised.exception.retryable)
+                self.assertFalse((repository / ".tracebook-state").exists())
+                self.assertFalse((repository / "AGENTS.md").exists())
+                if relationship == "descendant":
+                    self.assertFalse(root.exists())
+
     def test_confined_path_resolves_path_within_root(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp) / "knowledge"

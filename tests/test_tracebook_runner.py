@@ -27,6 +27,21 @@ class TracebookRunnerTest(unittest.TestCase):
             self.assertIn(root / "00-global" / "health" / "health-status.md", result.created_paths)
             self.assertTrue((root / "01-projects" / "index.md").is_file())
 
+    def test_initialize_delegates_to_knowledge_root_repair(self) -> None:
+        root = Path("D:/knowledge")
+        template = Path("D:/template")
+        repaired = (root / "AGENTS.md",)
+
+        with patch(
+            "plugins.tracebook.skills.tracebook.scripts.tracebook_runner.repair_knowledge_root",
+            return_value=repaired,
+        ) as repair:
+            result = initialize(root, template)
+
+        repair.assert_called_once_with(root, template)
+        self.assertEqual(root, result.root)
+        self.assertEqual(repaired, result.created_paths)
+
     def test_resolve_returns_ordered_context_for_current_project(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)
