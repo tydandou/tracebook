@@ -63,6 +63,155 @@ class LifecycleCaptureTest(unittest.TestCase):
             self.assertIn("scope: domain", domain.read_text(encoding="utf-8"))
             self.assertIn("type: pattern", pattern.read_text(encoding="utf-8"))
 
+    def test_domain_and_pattern_entries_record_owner_project_identity(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+
+            for scope, kind, category in (
+                ("domain", "domain", "settlement"),
+                ("pattern", "pattern", "idempotency"),
+            ):
+                with self.subTest(scope=scope):
+                    capture(
+                        context,
+                        self._request(
+                            scope=scope,
+                            kind=kind,
+                            category=category,
+                            title=f"{scope.title()} owned entry",
+                        ),
+                        date(2026, 7, 13),
+                    )
+                    namespace = "02-domain" if scope == "domain" else "03-patterns"
+                    content = (context.root / namespace / f"{category}.md").read_text(
+                        encoding="utf-8"
+                    )
+                    self.assertIn(
+                        f"Owner Project: `{context.record.identity}`",
+                        content,
+                    )
+
+    def test_collection_frontmatter_stays_stable_across_entry_lifecycles(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            first_request = self._request(
+                scope="domain",
+                kind="domain",
+                category="settlement",
+                title="Settlement term",
+            )
+            capture(context, first_request, date(2026, 7, 13))
+            page = context.root / "02-domain" / "settlement.md"
+            before = page.read_text(encoding="utf-8")
+            before_frontmatter = before.split("---", 2)[1]
+
+            capture(
+                context,
+                self._request(
+                    scope="domain",
+                    kind="domain",
+                    category="settlement",
+                    title="Pending settlement exception",
+                    body="The exception still requires service-owner confirmation.",
+                    evidence=(),
+                    status="Pending",
+                ),
+                date(2026, 7, 14),
+            )
+
+            after = page.read_text(encoding="utf-8")
+            after_frontmatter = after.split("---", 2)[1]
+            self.assertEqual(before_frontmatter, after_frontmatter)
+            self.assertIn("status: current", after_frontmatter)
+            self.assertIn("Status: Current", after)
+            self.assertIn("Status: Pending", after)
+
+    def test_decision_rejects_a_different_title_for_the_same_category(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            capture(context, self._request(), date(2026, 7, 13))
+            page = (
+                context.root
+                / context.record.relative_path
+                / "decisions"
+                / "adr-0001.md"
+            )
+            before = page.read_text(encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "INVALID_REQUEST.*title"):
+                capture(
+                    context,
+                    self._request(
+                        title="Adopt a different decision",
+                        body="This must not be appended to the existing entity.",
+                    ),
+                    date(2026, 7, 14),
+                )
+
+            self.assertEqual(before, page.read_text(encoding="utf-8"))
+
+    def test_decision_update_keeps_one_entity_and_updates_lifecycle(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            first = capture(context, self._request(), date(2026, 7, 13))
+            replacement = "decisions/adr-0002.md"
+            updated_body = "Persist the key and outcome before acknowledging the message."
+
+            second = capture(
+                context,
+                self._request(
+                    body=updated_body,
+                    status="Superseded",
+                    replacement=replacement,
+                ),
+                date(2026, 7, 14),
+            )
+
+            page = (
+                context.root
+                / context.record.relative_path
+                / "decisions"
+                / "adr-0001.md"
+            )
+            content = page.read_text(encoding="utf-8")
+            self.assertNotEqual(first.event_id, second.event_id)
+            self.assertIn(self._request().body, content)
+            self.assertIn(updated_body, content)
+            self.assertIn("status: superseded", content.split("---", 2)[1])
+            self.assertIn(f"Replacement: `{replacement}`", content)
+            self.assertEqual([page], list(page.parent.glob("adr-0001.md")))
+
+    def test_legacy_first_h2_is_the_entity_title(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            page = (
+                context.root
+                / context.record.relative_path
+                / "decisions"
+                / "adr-0001.md"
+            )
+            page.parent.mkdir(parents=True, exist_ok=True)
+            page.write_text(
+                "---\ntype: decision\nstatus: current\n---\n\n"
+                "## Persist idempotency keys first\n\nLegacy decision body.\n",
+                encoding="utf-8",
+            )
+
+            capture(
+                context,
+                self._request(body="A current update to the legacy decision."),
+                date(2026, 7, 13),
+            )
+            with self.assertRaisesRegex(ValueError, "INVALID_REQUEST.*title"):
+                capture(
+                    context,
+                    self._request(
+                        title="Replace the legacy entity identity",
+                        body="This title identifies a different entity.",
+                    ),
+                    date(2026, 7, 14),
+                )
+
     def test_deprecated_knowledge_moves_to_archive_and_updates_index_link(self) -> None:
         with TemporaryDirectory() as temp:
             context = self._context(Path(temp))

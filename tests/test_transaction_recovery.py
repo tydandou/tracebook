@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from datetime import date
 import errno
 import json
 from pathlib import Path
@@ -13,6 +14,11 @@ from plugins.tracebook.skills.tracebook.scripts.errors import (
 )
 from plugins.tracebook.skills.tracebook.scripts.storage import sha256_bytes
 from plugins.tracebook.skills.tracebook.scripts import transaction
+from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import (
+    CaptureRequest,
+    capture,
+    resolve,
+)
 
 
 def _symlink_or_skip(
@@ -624,6 +630,69 @@ class TransactionRecoveryTest(unittest.TestCase):
             self.assertEqual((), recovered)
             self.assertEqual(1, read_count)
             self.assertFalse(transaction_dir.exists())
+
+    def test_resolve_recovers_a_crashed_project_capture_as_one_transaction(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            repository = base / "business"
+            (repository / ".git").mkdir(parents=True)
+            context = resolve(root, repository)
+            request = CaptureRequest(
+                scope="project",
+                kind="business-rule",
+                category="business-rules",
+                title="Recovered capture rule",
+                body="Every managed capture target must roll forward together.",
+                evidence=("src/recovery.py:L1-L12",),
+                status="Current",
+                write_intent="durable",
+                content_kind="knowledge",
+            )
+            original_replace = transaction._replace_target
+            replacements = 0
+
+            def crash_after_first_replacement(
+                target: Path,
+                staged: Path,
+                *,
+                operation: str,
+            ) -> None:
+                nonlocal replacements
+                if replacements == 1:
+                    raise OSError("capture crashed after first replacement")
+                original_replace(target, staged, operation=operation)
+                replacements += 1
+
+            with patch.object(
+                transaction,
+                "_replace_target",
+                side_effect=crash_after_first_replacement,
+            ):
+                with self.assertRaisesRegex(
+                    OSError,
+                    "capture crashed after first replacement",
+                ):
+                    capture(context, request, date(2026, 7, 13))
+
+            transactions = root / ".tracebook-state" / "transactions"
+            self.assertEqual(1, len(list(transactions.iterdir())))
+
+            recovered_context = resolve(root, repository)
+
+            project = recovered_context.root / recovered_context.record.relative_path
+            document = project / "business-rules.md"
+            index = project / "index.md"
+            status = project / "project-status.md"
+            log = project / "logs" / "2026-07.md"
+            marker = "<!-- tracebook:event:"
+            self.assertIn("Recovered capture rule", document.read_text(encoding="utf-8"))
+            self.assertIn("business-rules.md", index.read_text(encoding="utf-8"))
+            self.assertIn("Recovered capture rule", status.read_text(encoding="utf-8"))
+            self.assertEqual(1, log.read_text(encoding="utf-8").count(marker))
+            self.assertEqual([], list(transactions.iterdir()))
 
 
 if __name__ == "__main__":

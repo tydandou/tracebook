@@ -2,7 +2,11 @@ from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
+from plugins.tracebook.skills.tracebook.scripts import capture as capture_module
+from plugins.tracebook.skills.tracebook.scripts import transaction
+from plugins.tracebook.skills.tracebook.scripts.locking import file_lock
 from plugins.tracebook.skills.tracebook.scripts import tracebook_runner
 from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import CaptureRequest, capture, resolve
 
@@ -43,6 +47,140 @@ class CaptureTest(unittest.TestCase):
             self.assertIn("business-rules.md", (document.parent / "index.md").read_text(encoding="utf-8"))
             self.assertIn("Refund status rule", (document.parent / "project-status.md").read_text(encoding="utf-8"))
             self.assertTrue((document.parent / "logs" / "2026-07.md").is_file())
+
+    def test_project_capture_commits_document_index_status_and_log_once(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            context = resolve(base / "knowledge", repo)
+
+            with patch.object(
+                capture_module,
+                "file_lock",
+                wraps=file_lock,
+                create=True,
+            ) as locked, patch.object(
+                capture_module,
+                "commit_updates",
+                wraps=transaction.commit_updates,
+                create=True,
+            ) as committed:
+                result = capture(context, self._request(), date(2026, 7, 13))
+
+            expected_scope = f"project-{context.record.slug}"
+            locked.assert_called_once()
+            self.assertEqual(expected_scope, locked.call_args.args[1])
+            committed.assert_called_once()
+            root, scope, operation, updates = committed.call_args.args
+            project = context.root / context.record.relative_path
+            expected = {
+                project / "business-rules.md",
+                project / "index.md",
+                project / "project-status.md",
+                project / "logs" / "2026-07.md",
+            }
+            self.assertEqual(context.root, root)
+            self.assertEqual(expected_scope, scope)
+            self.assertEqual("capture", operation)
+            self.assertEqual(expected, set(updates))
+            self.assertEqual(expected, set(result.changed_paths))
+            self.assertFalse(
+                any(call.args[1] == "global-health" for call in locked.call_args_list)
+            )
+
+    def test_invalid_capture_is_rejected_before_waiting_for_scope_lock(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            context = resolve(base / "knowledge", repo)
+
+            with patch.object(
+                capture_module,
+                "file_lock",
+                create=True,
+            ) as locked:
+                with self.assertRaisesRegex(ValueError, "title"):
+                    capture(
+                        context,
+                        self._request(title=""),
+                        date(2026, 7, 13),
+                    )
+
+            locked.assert_not_called()
+
+    def test_capture_lock_name_matches_transaction_scope(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            context = resolve(base / "knowledge", repo)
+
+            self.assertEqual(
+                f"project-{context.record.slug}",
+                tracebook_runner.capture_lock_name(context.record, self._request()),
+            )
+            self.assertEqual(
+                "domain",
+                tracebook_runner.capture_lock_name(
+                    context.record,
+                    self._request(
+                        scope="domain",
+                        kind="domain",
+                        category="settlement",
+                    ),
+                ),
+            )
+            self.assertEqual(
+                "pattern",
+                tracebook_runner.capture_lock_name(
+                    context.record,
+                    self._request(
+                        scope="pattern",
+                        kind="pattern",
+                        category="idempotency",
+                    ),
+                ),
+            )
+
+    def test_same_title_with_different_body_creates_distinct_events(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            context = resolve(base / "knowledge", repo)
+
+            first = capture(context, self._request(), date(2026, 7, 13))
+            second_body = "REFUNDING remains incomplete until settlement succeeds."
+            second = capture(
+                context,
+                self._request(body=second_body),
+                date(2026, 7, 14),
+            )
+
+            self.assertNotEqual(first.event_id, second.event_id)
+            self.assertFalse(second.skipped)
+            project = context.root / context.record.relative_path
+            document_content = (project / "business-rules.md").read_text(
+                encoding="utf-8"
+            )
+            log_content = (project / "logs" / "2026-07.md").read_text(
+                encoding="utf-8"
+            )
+            status_content = (project / "project-status.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn(self._request().body, document_content)
+            self.assertIn(second_body, document_content)
+            for event_id in (first.event_id, second.event_id):
+                marker = f"<!-- tracebook:event:{event_id} -->"
+                self.assertEqual(1, document_content.count(marker))
+                self.assertEqual(1, log_content.count(marker))
+            self.assertIn(
+                f"<!-- tracebook:last-event:{second.event_id} -->",
+                status_content,
+            )
 
     def test_capture_public_interfaces_remain_available_from_runner(self) -> None:
         self.assertEqual(

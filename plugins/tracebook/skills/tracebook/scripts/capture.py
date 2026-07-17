@@ -9,7 +9,9 @@ import json
 from pathlib import Path, PurePosixPath
 import re
 
+from .locking import file_lock
 from .project_registry import ProjectRecord
+from .transaction import commit_updates
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,8 @@ CATEGORY = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 LINE_SUFFIX = re.compile(r":L\d+(?:-L\d+)?$")
 SCHEME_OR_DRIVE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 EVENT_MARKER = "<!-- tracebook:event:{event_id} -->"
+LAST_EVENT_MARKER = "<!-- tracebook:last-event:{event_id} -->"
+LAST_EVENT_PATTERN = re.compile(r"<!-- tracebook:last-event:[0-9a-f]+ -->")
 
 
 def _invalid_request(field: str, reason: str) -> ValueError:
@@ -149,11 +153,11 @@ def validate_capture(request: CaptureRequest) -> None:
 
 
 def capture_lock_name(record: ProjectRecord, request: CaptureRequest) -> str:
-    """Return the future transaction lock scope without acquiring a lock."""
+    """Return the transaction lock scope without acquiring a lock."""
     if request.scope == "project":
-        return f"capture-project-{_safe_category(record.slug)}"
+        return f"project-{_safe_category(record.slug)}"
     if request.scope in {"domain", "pattern"}:
-        return f"capture-{request.scope}"
+        return request.scope
     raise _invalid_request("scope", "is unsupported")
 
 
@@ -245,13 +249,12 @@ def _event_id(
     return hashlib.sha256(payload).hexdigest()[:16]
 
 
-def _append_once(path: Path, text: str) -> bool:
-    current = path.read_text(encoding="utf-8") if path.exists() else ""
-    if text in current:
-        return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(current + text, encoding="utf-8")
-    return True
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def _append_once(current: str, text: str) -> str:
+    return current if text in current else current + text
 
 
 def _requires_frontmatter(request: CaptureRequest) -> bool:
@@ -290,8 +293,11 @@ def _with_frontmatter(
 ) -> str:
     if not _requires_frontmatter(request):
         return current
-    status = _frontmatter_status(request.status)
+    entity_page = request.kind in {"decision", "synthesis"}
     if current.startswith("---\n"):
+        if not entity_page:
+            return current
+        status = _frontmatter_status(request.status)
         current = re.sub(
             r"(?m)^status: .*$",
             f"status: {status}",
@@ -304,6 +310,7 @@ def _with_frontmatter(
             current,
             count=1,
         )
+    status = _frontmatter_status(request.status) if entity_page else "current"
     header = "\n".join(
         [
             "---",
@@ -321,33 +328,90 @@ def _with_frontmatter(
     return header + current
 
 
-def _append_knowledge_entry(
-    path: Path,
-    text: str,
+def _entity_title(current: str) -> str | None:
+    for pattern in (r"(?m)^# (.+?)\s*$", r"(?m)^## (.+?)\s*$"):
+        match = re.search(pattern, current)
+        if match is not None:
+            return match.group(1).strip()
+    return None
+
+
+def _validate_entity_title(current: str, request: CaptureRequest) -> None:
+    if request.kind not in {"decision", "synthesis"}:
+        return
+    title = _entity_title(current)
+    if title is not None and title != request.title.strip():
+        raise _invalid_request(
+            "title",
+            f"must match the existing {request.kind} entity: {title!r}",
+        )
+
+
+def _knowledge_content(
+    current: str,
+    entry: str,
     request: CaptureRequest,
     today: date,
     owner_project: str,
-) -> bool:
-    current = path.read_text(encoding="utf-8") if path.exists() else ""
+) -> str:
     current = _with_frontmatter(current, request, today, owner_project)
-    if text in current:
-        return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(current + text, encoding="utf-8")
-    return True
+    return _append_once(current, entry)
 
 
-def _append_project_log(path: Path, entry: str) -> bool:
-    current = path.read_text(encoding="utf-8") if path.exists() else ""
+def _project_log_content(current: str, entry: str) -> str:
     if entry in current:
-        return False
+        return current
     if "## Knowledge\n" not in current:
         if current and not current.endswith("\n"):
             current += "\n"
         current += "## Knowledge\n\n"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(current + entry, encoding="utf-8")
-    return True
+    return current + entry
+
+
+def _project_status_content(
+    current: str,
+    title: str,
+    today: date,
+    event_id: str,
+) -> str:
+    status_entry = f"- {today.isoformat()}: {title}\n"
+    current = _append_once(current, status_entry)
+    marker = LAST_EVENT_MARKER.format(event_id=event_id)
+    if LAST_EVENT_PATTERN.search(current):
+        return LAST_EVENT_PATTERN.sub(marker, current, count=1)
+    if current and not current.endswith("\n"):
+        current += "\n"
+    return current + marker + "\n"
+
+
+def _entry_text(
+    request: CaptureRequest,
+    event_id: str,
+    owner_project: str,
+) -> str:
+    evidence = list(request.evidence) or ["Pending evidence review"]
+    entry_lines = [
+        f"## {request.title}",
+        "",
+        request.body,
+        "",
+        f"Status: {request.status}",
+    ]
+    if request.scope in {"domain", "pattern"}:
+        entry_lines.extend(["", f"Owner Project: `{owner_project}`"])
+    entry_lines.extend(
+        [
+            "",
+            "Evidence:",
+            *(f"- `{item}`" for item in evidence),
+        ]
+    )
+    if request.replacement:
+        entry_lines.extend(["", f"Replacement: `{request.replacement}`"])
+    entry_lines.extend(
+        ["", EVENT_MARKER.format(event_id=event_id), ""]
+    )
+    return "\n".join(entry_lines)
 
 
 def capture_knowledge(
@@ -369,61 +433,69 @@ def capture_knowledge(
 
     validate_capture(request)
     root = root.expanduser().resolve()
-    document, index = _capture_destination(root, record, request)
-    event_id = _event_id(root, record, document, request)
-    marker = EVENT_MARKER.format(event_id=event_id)
-    if document.exists() and marker in document.read_text(encoding="utf-8"):
+    scope = capture_lock_name(record, request)
+    with file_lock(root, scope, operation="capture"):
+        document, index = _capture_destination(root, record, request)
+        event_id = _event_id(root, record, document, request)
+        marker = EVENT_MARKER.format(event_id=event_id)
+        document_current = _read_text(document)
+        _validate_entity_title(document_current, request)
+        if marker in document_current:
+            return CaptureResult(
+                changed_paths=(),
+                new_paths=(),
+                skipped=True,
+                health_scope=health_scope,
+                event_id=event_id,
+            )
+
+        updates: dict[Path, str] = {}
+        document_is_new = not document.exists()
+        entry = _entry_text(request, event_id, record.identity)
+        document_content = _knowledge_content(
+            document_current,
+            entry,
+            request,
+            today,
+            record.slug,
+        )
+        if document_content != document_current:
+            updates[document] = document_content
+
+        index_current = _read_text(index)
+        link = document.relative_to(index.parent).as_posix()
+        index_entry = f"- [{request.category}]({link})\n"
+        index_content = _append_once(index_current, index_entry)
+        if index_content != index_current:
+            updates[index] = index_content
+
+        if request.scope == "project":
+            project = _project_directory(root, record)
+            status = project / "project-status.md"
+            status_current = _read_text(status)
+            status_content = _project_status_content(
+                status_current,
+                request.title,
+                today,
+                event_id,
+            )
+            if status_content != status_current:
+                updates[status] = status_content
+
+            log = project / "logs" / f"{today:%Y-%m}.md"
+            log_current = _read_text(log)
+            log_entry = f"- {today.isoformat()}: {request.title}\n{marker}\n"
+            log_content = _project_log_content(log_current, log_entry)
+            if log_content != log_current:
+                updates[log] = log_content
+
+        for target in updates:
+            target.parent.mkdir(parents=True, exist_ok=True)
+        commit_updates(root, scope, "capture", updates)
         return CaptureResult(
-            changed_paths=(),
-            new_paths=(),
-            skipped=True,
+            changed_paths=tuple(updates),
+            new_paths=(document,) if document_is_new else (),
+            skipped=False,
             health_scope=health_scope,
             event_id=event_id,
         )
-
-    evidence = list(request.evidence) or ["Pending evidence review"]
-    entry_lines = [
-        f"## {request.title}",
-        "",
-        request.body,
-        "",
-        f"Status: {request.status}",
-        "",
-        "Evidence:",
-        *(f"- `{item}`" for item in evidence),
-    ]
-    if request.replacement:
-        entry_lines.extend(["", f"Replacement: `{request.replacement}`"])
-    entry_lines.extend(["", marker, ""])
-    entry = "\n".join(entry_lines)
-
-    changed: list[Path] = []
-    new_paths: list[Path] = []
-    document_is_new = not document.exists()
-    if _append_knowledge_entry(document, entry, request, today, record.slug):
-        changed.append(document)
-        if document_is_new:
-            new_paths.append(document)
-
-    link = document.relative_to(index.parent).as_posix()
-    index_entry = f"- [{request.category}]({link})\n"
-    if _append_once(index, index_entry):
-        changed.append(index)
-
-    if request.scope == "project":
-        project = _project_directory(root, record)
-        status = project / "project-status.md"
-        if _append_once(status, f"- {today.isoformat()}: {request.title}\n"):
-            changed.append(status)
-        log = project / "logs" / f"{today:%Y-%m}.md"
-        log_entry = f"- {today.isoformat()}: {request.title}\n{marker}\n"
-        if _append_project_log(log, log_entry):
-            changed.append(log)
-
-    return CaptureResult(
-        changed_paths=tuple(changed),
-        new_paths=tuple(new_paths),
-        skipped=False,
-        health_scope=health_scope,
-        event_id=event_id,
-    )

@@ -282,6 +282,8 @@ def main(argv: list[str] | None = None) -> int:
                 "changed_paths": [str(path) for path in result.changed_paths],
                 "new_paths": [str(path) for path in result.new_paths],
                 "skipped": result.skipped,
+                "health_scope": result.health_scope,
+                "event_id": result.event_id,
             }
         )
         return 0
