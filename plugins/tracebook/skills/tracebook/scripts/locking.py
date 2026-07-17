@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import errno
 import os
 from pathlib import Path
 import re
@@ -11,8 +12,12 @@ from .errors import LockTimeoutError
 
 if os.name == "nt":
     import msvcrt
+
+    _LOCK_CONTENTION_ERRNOS = {errno.EACCES}
 else:
     import fcntl
+
+    _LOCK_CONTENTION_ERRNOS = {errno.EACCES, errno.EAGAIN}
 
 
 _LOCK_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
@@ -61,7 +66,9 @@ def file_lock(
             try:
                 _acquire(handle)
                 break
-            except OSError:
+            except OSError as error:
+                if error.errno not in _LOCK_CONTENTION_ERRNOS:
+                    raise
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise LockTimeoutError(name, timeout, operation) from None

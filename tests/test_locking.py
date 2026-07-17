@@ -1,9 +1,11 @@
+import errno
 from pathlib import Path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import time
 import unittest
+from unittest.mock import patch
 
 from plugins.tracebook.skills.tracebook.scripts.errors import (
     LockTimeoutError,
@@ -60,6 +62,19 @@ class LockingTest(unittest.TestCase):
             holder.stdout.close()
             with file_lock(root, "project-widgets", timeout=0.5):
                 pass
+
+    def test_non_contention_os_error_is_propagated(self) -> None:
+        failure = OSError(errno.EIO, "simulated I/O failure")
+        with TemporaryDirectory() as temp:
+            with patch(
+                "plugins.tracebook.skills.tracebook.scripts.locking._acquire",
+                side_effect=failure,
+            ):
+                with self.assertRaises(Exception) as raised:
+                    with file_lock(Path(temp), "project-widgets", timeout=0):
+                        pass
+
+        self.assertIs(failure, raised.exception)
 
 
 if __name__ == "__main__":
