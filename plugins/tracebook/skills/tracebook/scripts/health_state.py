@@ -22,6 +22,7 @@ _MIGRATION_MANIFEST = ".tracebook-state/migrations/health-v1.json"
 _LEGACY_SOURCE = "00-global/health/health-status.md"
 _LEGACY_ARCHIVE = "00-global/health/archive/health-status-pre-v1.md"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_PROJECT_SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
 _TEXT_FIELDS = (
     ("Scope", "scope"),
@@ -88,17 +89,10 @@ def _relative_path(root: Path, value: str, *, operation: str) -> Path:
 
 
 def _project_slug(identity: str) -> str:
-    relative = PurePosixPath(identity)
-    if (
-        not identity
-        or relative.is_absolute()
-        or len(relative.parts) != 1
-        or relative.parts[0] in {".", ".."}
-        or relative.as_posix() != identity
-    ):
+    if not isinstance(identity, str) or _PROJECT_SLUG.fullmatch(identity) is None:
         raise TracebookError(
             "PATH_OUTSIDE_ROOT",
-            f"Project health identity {identity!r} is not one confined path segment",
+            f"Project health identity {identity!r} is not one portable slug",
             "health",
         )
     return identity
@@ -439,15 +433,15 @@ def _ensure_layout_under_maintenance(root: Path) -> tuple[Path, ...]:
                 f"Legacy health source is not UTF-8: {source}: {error}",
                 "health-migration",
             ) from None
-        updates = dict(created)
         if not archive_exists:
-            updates[archive] = legacy_content
+            created[archive] = legacy_content
+        updates = dict(created)
         updates[source] = aggregate
         updates[manifest_path] = _migration_manifest(created, root)
         _ensure_parent_directories(tuple(updates))
         return commit_updates(
             root,
-            "health-migration",
+            "health-aggregate",
             "health-migration",
             updates,
         )
@@ -456,7 +450,8 @@ def _ensure_layout_under_maintenance(root: Path) -> tuple[Path, ...]:
     if not source_exists:
         updates[source] = aggregate
     _ensure_parent_directories(tuple(updates))
-    return commit_updates(root, "health-layout", "health-layout", updates)
+    transaction_scope = "health-aggregate" if source in updates else "health-layout"
+    return commit_updates(root, transaction_scope, "health-layout", updates)
 
 
 def ensure_health_layout(
@@ -491,15 +486,32 @@ def ensure_health_layout(
         )
 
     with file_lock(resolved_root, "maintenance", operation="health-migration"):
-        return _ensure_layout_under_maintenance(resolved_root)
+        with file_lock(
+            resolved_root,
+            "health-aggregate",
+            operation="health-migration",
+        ):
+            return _ensure_layout_under_maintenance(resolved_root)
 
 
 def rebuild_global_health(root: Path) -> Path:
     resolved_root = root.resolve()
     with file_lock(resolved_root, "health-aggregate", operation="resolve"):
+        target = _relative_path(resolved_root, _LEGACY_SOURCE, operation="resolve")
+        manifest_path = _relative_path(
+            resolved_root,
+            _MIGRATION_MANIFEST,
+            operation="resolve",
+        )
+        if target.is_file():
+            current = target.read_bytes()
+            if (
+                _AGGREGATE_START.encode("utf-8") not in current
+                and not manifest_path.exists()
+            ):
+                return target
         projects = _registered_projects(resolved_root)
         content = _render_aggregate(_loaded_states(resolved_root, projects))
-        target = _relative_path(resolved_root, _LEGACY_SOURCE, operation="resolve")
         if target.is_file() and target.read_text(encoding="utf-8") == content:
             return target
         _ensure_parent_directories((target,))
@@ -544,13 +556,14 @@ def _validated_manifest(root: Path, path: Path) -> tuple[Path, Path, tuple[tuple
             "00-global/health/scopes/domain-status.md",
             "00-global/health/scopes/pattern-status.md",
         }
+        allowed_archive = entry["path"] == _LEGACY_ARCHIVE
         allowed_project = (
             len(relative.parts) == 3
             and relative.parts[0] == "01-projects"
             and relative.parts[1] not in {"", ".", ".."}
             and relative.parts[2] == "health-status.md"
         )
-        if not (allowed_namespace or allowed_project):
+        if not (allowed_archive or allowed_namespace or allowed_project):
             raise _review_required(
                 f"Refusing unrecognized migration-created path {entry['path']}",
                 "rollback",
@@ -571,38 +584,42 @@ def rollback_health_migration(root: Path) -> tuple[Path, ...]:
         operation="rollback",
     )
     with file_lock(resolved_root, "maintenance", operation="rollback"):
-        if not manifest_path.exists():
-            return ()
-        source, archive, created = _validated_manifest(resolved_root, manifest_path)
-        if not _regular_file(archive, operation="rollback"):
-            raise _review_required(f"Legacy health archive is missing: {archive}", "rollback")
-        for target, expected_hash in created:
-            current_hash = sha256_file(target)
-            if current_hash is not None and current_hash != expected_hash:
-                raise _review_required(
-                    f"Migration-created health page requires review: {target}",
-                    "rollback",
-                )
-
-        archive_bytes = archive.read_bytes()
-        try:
-            legacy_content = archive_bytes.decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise _review_required(
-                f"Legacy health archive is not UTF-8: {archive}: {error}",
-                "rollback",
-            ) from None
-        _ensure_parent_directories((source,))
-        commit_updates(
+        with file_lock(
             resolved_root,
-            "health-migration",
-            "rollback",
-            {source: legacy_content},
-        )
+            "health-aggregate",
+            operation="rollback",
+        ):
+            if not manifest_path.exists():
+                return ()
+            source, archive, created = _validated_manifest(resolved_root, manifest_path)
+            if not _regular_file(archive, operation="rollback"):
+                raise _review_required(f"Legacy health archive is missing: {archive}", "rollback")
+            for target, expected_hash in created:
+                current_hash = sha256_file(target)
+                if current_hash is not None and current_hash != expected_hash:
+                    raise _review_required(
+                        f"Migration-created health page requires review: {target}",
+                        "rollback",
+                    )
 
-        for target, expected_hash in created:
-            if sha256_file(target) == expected_hash:
-                target.unlink()
-        archive.unlink()
-        manifest_path.unlink()
-        return tuple(target for target, _ in created)
+            archive_bytes = archive.read_bytes()
+            try:
+                legacy_content = archive_bytes.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise _review_required(
+                    f"Legacy health archive is not UTF-8: {archive}: {error}",
+                    "rollback",
+                ) from None
+            _ensure_parent_directories((source,))
+            commit_updates(
+                resolved_root,
+                "health-aggregate",
+                "rollback",
+                {source: legacy_content},
+            )
+
+            for target, expected_hash in created:
+                if sha256_file(target) == expected_hash:
+                    target.unlink()
+            manifest_path.unlink()
+            return tuple(target for target, _ in created)

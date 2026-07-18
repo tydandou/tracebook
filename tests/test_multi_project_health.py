@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date
 import hashlib
@@ -5,7 +6,9 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
+from plugins.tracebook.skills.tracebook.scripts import health_state
 from plugins.tracebook.skills.tracebook.scripts.errors import TracebookError
 from plugins.tracebook.skills.tracebook.scripts.health_state import (
     HealthState,
@@ -85,8 +88,30 @@ class MultiProjectHealthTest(unittest.TestCase):
                 root / "00-global" / "health" / "logs" / "pattern" / "2026-07.md",
                 health_log_path(root, "pattern", "pattern", month),
             )
-            with self.assertRaises(TracebookError):
-                health_path(root, "project", "../escape")
+            invalid_slugs = (
+                "",
+                "widgets/team",
+                r"widgets\team",
+                ".",
+                "..",
+                "/absolute",
+                r"\absolute",
+                "C:drive",
+                "C:/drive",
+                r"C:\drive",
+                "Widgets",
+                "-widgets",
+                "widgets-",
+                "widgets--api",
+                "widgets_api",
+            )
+            for slug in invalid_slugs:
+                with self.subTest(slug=slug):
+                    with self.assertRaises(TracebookError):
+                        health_path(root, "project", slug)
+                    with self.assertRaises(TracebookError):
+                        health_log_path(root, "project", slug, month)
+            self.assertFalse((root / "01-projects").exists())
 
     def test_migration_archives_legacy_bytes_and_creates_a_hashed_v1_manifest(
         self,
@@ -125,6 +150,7 @@ class MultiProjectHealthTest(unittest.TestCase):
                 manifest["archive"],
             )
             expected_created = [
+                "00-global/health/archive/health-status-pre-v1.md",
                 "00-global/health/scopes/domain-status.md",
                 "00-global/health/scopes/pattern-status.md",
                 "01-projects/alpha/health-status.md",
@@ -162,6 +188,32 @@ class MultiProjectHealthTest(unittest.TestCase):
             self.assertNotIn("77", aggregate)
             self.assertIn("github.com/acme/alpha", aggregate)
             self.assertIn("github.com/acme/beta", aggregate)
+
+    def test_preexisting_matching_archive_is_not_owned_or_deleted(self) -> None:
+        with TemporaryDirectory() as temp:
+            root, legacy, _ = self._legacy_root(Path(temp))
+            archive = root / "00-global" / "health" / "archive" / "health-status-pre-v1.md"
+            archive.parent.mkdir(parents=True)
+            archive.write_bytes(legacy)
+
+            ensure_health_layout(root)
+
+            manifest_path = root / ".tracebook-state" / "migrations" / "health-v1.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertNotIn(
+                "00-global/health/archive/health-status-pre-v1.md",
+                [entry["path"] for entry in manifest["created"]],
+            )
+
+            rollback_health_migration(root)
+
+            self.assertTrue(archive.exists())
+            self.assertEqual(legacy, archive.read_bytes())
+            self.assertEqual(
+                legacy,
+                (root / "00-global" / "health" / "health-status.md").read_bytes(),
+            )
+            self.assertFalse(manifest_path.exists())
 
     def test_aggregate_is_stably_rebuilt_from_scope_pages(self) -> None:
         with TemporaryDirectory() as temp:
@@ -208,6 +260,75 @@ class MultiProjectHealthTest(unittest.TestCase):
             self.assertEqual(existing, aggregate.read_bytes())
             self.assertTrue(health_path(root, "domain", "domain").is_file())
             self.assertTrue(health_path(root, "pattern", "pattern").is_file())
+
+    def test_migration_and_rollback_lock_root_status_in_maintenance_order(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            root, _, _ = self._legacy_root(Path(temp))
+            actual_lock = health_state.file_lock
+            events: list[str] = []
+
+            @contextmanager
+            def recording_lock(
+                lock_root: Path,
+                name: str,
+                *,
+                operation: str,
+                **options: object,
+            ):
+                events.append(f"enter:{name}")
+                with actual_lock(
+                    lock_root,
+                    name,
+                    operation=operation,
+                    **options,
+                ):
+                    try:
+                        yield
+                    finally:
+                        events.append(f"exit:{name}")
+
+            with patch.object(health_state, "file_lock", recording_lock):
+                ensure_health_layout(root)
+            self.assertEqual(
+                [
+                    "enter:maintenance",
+                    "enter:health-aggregate",
+                    "exit:health-aggregate",
+                    "exit:maintenance",
+                ],
+                events,
+            )
+
+            events.clear()
+            with patch.object(health_state, "file_lock", recording_lock):
+                rollback_health_migration(root)
+            self.assertEqual(
+                [
+                    "enter:maintenance",
+                    "enter:health-aggregate",
+                    "exit:health-aggregate",
+                    "exit:maintenance",
+                ],
+                events,
+            )
+
+    def test_delayed_rebuild_after_rollback_preserves_exact_legacy_status(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            root, legacy, _ = self._legacy_root(Path(temp))
+            ensure_health_layout(root)
+            rollback_health_migration(root)
+
+            rebuilt = rebuild_global_health(root)
+
+            self.assertEqual(
+                root / "00-global" / "health" / "health-status.md",
+                rebuilt,
+            )
+            self.assertEqual(legacy, rebuilt.read_bytes())
 
     def test_rollback_restores_source_and_removes_unchanged_created_pages(
         self,
@@ -266,6 +387,34 @@ class MultiProjectHealthTest(unittest.TestCase):
 
             self.assertEqual("HEALTH_MIGRATION_REVIEW_REQUIRED", raised.exception.code)
             self.assertIn(modified.as_posix(), raised.exception.message.replace("\\", "/"))
+            for path, content in before.items():
+                self.assertEqual(content, path.read_bytes())
+
+    def test_rollback_refuses_modified_migration_owned_archive_without_changes(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            root, _, _ = self._legacy_root(Path(temp))
+            ensure_health_layout(root)
+            source = root / "00-global" / "health" / "health-status.md"
+            archive = root / "00-global" / "health" / "archive" / "health-status-pre-v1.md"
+            manifest_path = root / ".tracebook-state" / "migrations" / "health-v1.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            created = tuple(
+                root.joinpath(*entry["path"].split("/"))
+                for entry in manifest["created"]
+            )
+            archive.write_bytes(b"human modified the migration archive\n")
+            before = {
+                path: path.read_bytes()
+                for path in (source, archive, manifest_path, *created)
+            }
+
+            with self.assertRaises(TracebookError) as raised:
+                rollback_health_migration(root)
+
+            self.assertEqual("HEALTH_MIGRATION_REVIEW_REQUIRED", raised.exception.code)
+            self.assertIn(archive.as_posix(), raised.exception.message.replace("\\", "/"))
             for path, content in before.items():
                 self.assertEqual(content, path.read_bytes())
 
