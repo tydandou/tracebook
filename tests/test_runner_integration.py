@@ -37,7 +37,7 @@ class RunnerIntegrationTest(unittest.TestCase):
 
             payload = json.loads(result.stdout)
             self.assertEqual(payload["root"], str(root))
-            self.assertEqual(len(payload["read_paths"]), 4)
+            self.assertEqual(len(payload["read_paths"]), 5)
             self.assertFalse((repo / "AGENTS.md").exists())
 
     def test_installed_runner_executes_an_explicit_deep_audit(self) -> None:

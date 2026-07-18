@@ -21,7 +21,9 @@ if __package__ in (None, ""):
         validate_capture,
     )
     from scripts.check_knowledge import CheckReport, DeepAuditReport, run_check, run_deep_audit
+    from scripts.health_state import ensure_health_layout, rebuild_global_health
     from scripts.knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
+    from scripts.locking import file_lock
     from scripts.project_registry import ProjectRecord, ensure_project, repository_root
     from scripts.transaction import recover_transactions
 else:
@@ -33,7 +35,9 @@ else:
         validate_capture,
     )
     from .check_knowledge import CheckReport, DeepAuditReport, run_check, run_deep_audit
+    from .health_state import ensure_health_layout, rebuild_global_health
     from .knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
+    from .locking import file_lock
     from .project_registry import ProjectRecord, ensure_project, repository_root
     from .transaction import recover_transactions
 
@@ -72,6 +76,14 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
     recover_transactions(resolved_root)
     initialized = initialize(resolved_root)
     record = ensure_project(initialized.root, repository)
+    ensure_health_layout(initialized.root)
+    with file_lock(
+        initialized.root,
+        f"project-{record.slug}",
+        operation="resolve",
+    ):
+        ensure_health_layout(initialized.root, record)
+    rebuild_global_health(initialized.root)
     project = initialized.root / record.relative_path
     return ResolvedContext(
         root=initialized.root,
@@ -81,6 +93,7 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
             initialized.root / "00-global" / "health" / "health-status.md",
             project / "index.md",
             project / "project-status.md",
+            project / "health-status.md",
         ),
     )
 def capture(
