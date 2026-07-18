@@ -3,7 +3,7 @@ from dataclasses import replace
 from datetime import date
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -295,6 +295,8 @@ class MultiProjectHealthTest(unittest.TestCase):
                 [
                     "enter:maintenance",
                     "enter:health-aggregate",
+                    "enter:registry",
+                    "exit:registry",
                     "exit:health-aggregate",
                     "exit:maintenance",
                 ],
@@ -313,6 +315,81 @@ class MultiProjectHealthTest(unittest.TestCase):
                 ],
                 events,
             )
+
+    def test_registered_project_reads_nest_registry_lock_inside_health_locks(
+        self,
+    ) -> None:
+        actual_lock = health_state.file_lock
+
+        for layout in ("legacy", "template"):
+            with self.subTest(layout=layout), TemporaryDirectory() as temp:
+                if layout == "legacy":
+                    root, _, _ = self._legacy_root(Path(temp))
+                else:
+                    root = Path(temp) / "knowledge"
+                    health = root / "00-global" / "health"
+                    health.mkdir(parents=True)
+                    (root / "01-projects").mkdir(parents=True)
+                    (health / "health-status.md").write_text(
+                        "# Existing aggregate\n\n"
+                        "<!-- tracebook:health-aggregate:start -->\n"
+                        "Existing generated rows.\n"
+                        "<!-- tracebook:health-aggregate:end -->\n",
+                        encoding="utf-8",
+                    )
+                    (root / "registry.json").write_text(
+                        json.dumps({"version": 1, "projects": {}}) + "\n",
+                        encoding="utf-8",
+                    )
+
+                events: list[str] = []
+
+                @contextmanager
+                def recording_lock(
+                    lock_root: Path,
+                    name: str,
+                    *,
+                    operation: str,
+                    **options: object,
+                ):
+                    events.append(f"enter:{name}")
+                    with actual_lock(
+                        lock_root,
+                        name,
+                        operation=operation,
+                        **options,
+                    ):
+                        try:
+                            yield
+                        finally:
+                            events.append(f"exit:{name}")
+
+                with patch.object(health_state, "file_lock", recording_lock):
+                    ensure_health_layout(root)
+                self.assertEqual(
+                    [
+                        "enter:maintenance",
+                        "enter:health-aggregate",
+                        "enter:registry",
+                        "exit:registry",
+                        "exit:health-aggregate",
+                        "exit:maintenance",
+                    ],
+                    events,
+                )
+
+                events.clear()
+                with patch.object(health_state, "file_lock", recording_lock):
+                    rebuild_global_health(root)
+                self.assertEqual(
+                    [
+                        "enter:health-aggregate",
+                        "enter:registry",
+                        "exit:registry",
+                        "exit:health-aggregate",
+                    ],
+                    events,
+                )
 
     def test_delayed_rebuild_after_rollback_preserves_exact_legacy_status(
         self,
@@ -417,6 +494,89 @@ class MultiProjectHealthTest(unittest.TestCase):
             self.assertIn(archive.as_posix(), raised.exception.message.replace("\\", "/"))
             for path, content in before.items():
                 self.assertEqual(content, path.read_bytes())
+
+    def test_manifest_rejects_nonportable_project_created_paths_without_changes(
+        self,
+    ) -> None:
+        invalid_paths = (
+            r"01-projects/widgets\api/health-status.md",
+            "01-projects/../health-status.md",
+            "01-projects/widgets/../health-status.md",
+            "01-projects/C:drive/health-status.md",
+            "01-projects/Widgets/health-status.md",
+            "01-projects/widgets_api/health-status.md",
+            "01-projects/widgets--api/health-status.md",
+            "/01-projects/widgets/health-status.md",
+            "C:/01-projects/widgets/health-status.md",
+        )
+        for invalid_path in invalid_paths:
+            with self.subTest(path=invalid_path), TemporaryDirectory() as temp:
+                root, legacy, _ = self._legacy_root(Path(temp))
+                source = root / "00-global" / "health" / "health-status.md"
+                archive = root / "00-global" / "health" / "archive" / "health-status-pre-v1.md"
+                manifest_path = root / ".tracebook-state" / "migrations" / "health-v1.json"
+                domain = root / "00-global" / "health" / "scopes" / "domain-status.md"
+                unrelated = root / "unrelated.md"
+                source.write_bytes(b"aggregate before invalid rollback\n")
+                archive.parent.mkdir(parents=True)
+                archive.write_bytes(legacy)
+                domain.parent.mkdir(parents=True)
+                domain.write_bytes(b"created domain page\n")
+                unrelated.write_bytes(b"unrelated bytes stay exact\n")
+
+                invalid_content = b"invalid project-created target\n"
+                relative = PurePosixPath(invalid_path)
+                candidate = root.joinpath(*relative.parts).resolve()
+                try:
+                    candidate.relative_to(root.resolve())
+                except ValueError:
+                    candidate = None
+                if candidate is not None:
+                    candidate.parent.mkdir(parents=True, exist_ok=True)
+                    candidate.write_bytes(invalid_content)
+
+                created = [
+                    {
+                        "path": "00-global/health/archive/health-status-pre-v1.md",
+                        "initial_sha256": hashlib.sha256(legacy).hexdigest(),
+                    },
+                    {
+                        "path": "00-global/health/scopes/domain-status.md",
+                        "initial_sha256": hashlib.sha256(domain.read_bytes()).hexdigest(),
+                    },
+                    {
+                        "path": invalid_path,
+                        "initial_sha256": hashlib.sha256(invalid_content).hexdigest(),
+                    },
+                ]
+                manifest_path.parent.mkdir(parents=True)
+                manifest_path.write_text(
+                    json.dumps(
+                        {
+                            "version": 1,
+                            "source": "00-global/health/health-status.md",
+                            "archive": "00-global/health/archive/health-status-pre-v1.md",
+                            "created": created,
+                        },
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                protected = (source, archive, manifest_path, domain, unrelated)
+                if candidate is not None:
+                    protected += (candidate,)
+                before = {path: path.read_bytes() for path in protected}
+
+                with self.assertRaises(TracebookError) as raised:
+                    rollback_health_migration(root)
+
+                self.assertEqual(
+                    "HEALTH_MIGRATION_REVIEW_REQUIRED",
+                    raised.exception.code,
+                )
+                for path, content in before.items():
+                    self.assertEqual(content, path.read_bytes())
 
     def test_migration_refuses_to_overwrite_inconsistent_archive_or_manifest(
         self,

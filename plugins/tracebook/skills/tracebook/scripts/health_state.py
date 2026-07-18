@@ -268,7 +268,8 @@ def render_health_state(
 
 
 def _registered_projects(root: Path) -> tuple[ProjectRecord, ...]:
-    records = _load_registry(registry_path(root), root)
+    with file_lock(root, "registry", operation="resolve"):
+        records = _load_registry(registry_path(root), root)
     return tuple(records[identity] for identity in sorted(records))
 
 
@@ -559,8 +560,9 @@ def _validated_manifest(root: Path, path: Path) -> tuple[Path, Path, tuple[tuple
         allowed_archive = entry["path"] == _LEGACY_ARCHIVE
         allowed_project = (
             len(relative.parts) == 3
+            and relative.as_posix() == entry["path"]
             and relative.parts[0] == "01-projects"
-            and relative.parts[1] not in {"", ".", ".."}
+            and _PROJECT_SLUG.fullmatch(relative.parts[1]) is not None
             and relative.parts[2] == "health-status.md"
         )
         if not (allowed_archive or allowed_namespace or allowed_project):
