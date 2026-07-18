@@ -258,7 +258,7 @@ def _event_id(
         "body": request.body,
         "evidence": list(request.evidence),
         "status": request.status,
-        "replacement": request.replacement,
+        "replacement": _canonical_replacement(request),
     }
     payload = json.dumps(
         canonical,
@@ -267,6 +267,12 @@ def _event_id(
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _canonical_replacement(request: CaptureRequest) -> str | None:
+    if request.replacement is None:
+        return None
+    return request.replacement.strip().replace("\\", "/")
 
 
 def _split_event_candidates(
@@ -339,6 +345,29 @@ def _frontmatter_status(status: str) -> str:
     }[status]
 
 
+def _upsert_frontmatter_fields(
+    current: str,
+    fields: tuple[tuple[str, str], ...],
+) -> str:
+    frontmatter_end = current.find("\n---\n", 4)
+    if frontmatter_end == -1:
+        return current
+    frontmatter = current[:frontmatter_end]
+    for key, value in fields:
+        pattern = rf"(?m)^{re.escape(key)}: .*$"
+        replacement = f"{key}: {value}"
+        if re.search(pattern, frontmatter):
+            frontmatter = re.sub(
+                pattern,
+                replacement,
+                frontmatter,
+                count=1,
+            )
+        else:
+            frontmatter += f"\n{replacement}"
+    return frontmatter + current[frontmatter_end:]
+
+
 def _with_frontmatter(
     current: str,
     request: CaptureRequest,
@@ -350,30 +379,17 @@ def _with_frontmatter(
     entity_page = request.kind in {"decision", "synthesis"}
     if current.startswith("---\n"):
         if not entity_page:
-            frontmatter_end = current.find("\n---\n", 4)
-            if frontmatter_end == -1:
-                return current
-            body_start = frontmatter_end + len("\n---\n")
-            frontmatter = current[:body_start]
-            frontmatter = re.sub(
-                r"(?m)^status: .*$",
-                "status: current",
-                frontmatter,
-                count=1,
+            return _upsert_frontmatter_fields(
+                current,
+                (("status", "current"),),
             )
-            return frontmatter + current[body_start:]
         status = _frontmatter_status(request.status)
-        current = re.sub(
-            r"(?m)^status: .*$",
-            f"status: {status}",
+        return _upsert_frontmatter_fields(
             current,
-            count=1,
-        )
-        return re.sub(
-            r"(?m)^updated: .*$",
-            f"updated: {today.isoformat()}",
-            current,
-            count=1,
+            (
+                ("status", status),
+                ("updated", today.isoformat()),
+            ),
         )
     status = _frontmatter_status(request.status) if entity_page else "current"
     header = "\n".join(
@@ -650,8 +666,9 @@ def _entry_text(
             *(f"- `{item}`" for item in evidence),
         ]
     )
-    if request.replacement:
-        entry_lines.extend(["", f"Replacement: `{request.replacement}`"])
+    replacement = _canonical_replacement(request)
+    if replacement:
+        entry_lines.extend(["", f"Replacement: `{replacement}`"])
     entry_lines.extend(
         ["", EVENT_MARKER.format(event_id=event_id), ""]
     )
@@ -698,6 +715,7 @@ def capture_knowledge(
         document_is_new = not document.exists()
         entry = _entry_text(request, event_id, record.identity)
         entity_page = request.kind in {"decision", "synthesis"}
+        record_project_event = True
         if entity_page:
             (
                 active,
@@ -722,7 +740,8 @@ def capture_knowledge(
                 if authority_current
                 else authority_current
             )
-            if marker in authority_current:
+            event_in_authority_history = marker in authority_current
+            if event_in_authority_history:
                 document_content = _with_frontmatter(
                     authority_current,
                     request,
@@ -737,6 +756,8 @@ def capture_knowledge(
                     today,
                     record.slug,
                 )
+            if authority is not None and authority != document:
+                record_project_event = not event_in_authority_history
 
             pointer_after = (
                 authority
@@ -805,12 +826,13 @@ def capture_knowledge(
             if status_content != status_current:
                 updates[status] = status_content
 
-            log = project / "logs" / f"{today:%Y-%m}.md"
-            log_current = _read_text(log)
-            log_entry = f"- {today.isoformat()}: {request.title}\n{marker}\n"
-            log_content = _project_log_content(log_current, log_entry)
-            if log_content != log_current:
-                updates[log] = log_content
+            if record_project_event:
+                log = project / "logs" / f"{today:%Y-%m}.md"
+                log_current = _read_text(log)
+                log_entry = f"- {today.isoformat()}: {request.title}\n{marker}\n"
+                log_content = _project_log_content(log_current, log_entry)
+                if log_content != log_current:
+                    updates[log] = log_content
 
         for target in updates:
             target.parent.mkdir(parents=True, exist_ok=True)

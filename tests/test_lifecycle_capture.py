@@ -196,6 +196,107 @@ class LifecycleCaptureTest(unittest.TestCase):
                 )
                 self.assertIn("Status: Pending", content)
 
+    def test_legacy_collection_frontmatter_adds_only_missing_status(self) -> None:
+        for scope, kind, namespace in (
+            ("domain", "domain", "02-domain"),
+            ("pattern", "pattern", "03-patterns"),
+        ):
+            with self.subTest(scope=scope), TemporaryDirectory() as temp:
+                context = self._context(Path(temp))
+                page = context.root / namespace / "legacy-container.md"
+                legacy_body = (
+                    "# Legacy collection\n\n"
+                    "status: body-status\n"
+                    "updated: body-updated\n"
+                    "Legacy collection body must remain unchanged.\n"
+                )
+                page.write_text(
+                    "\n".join(
+                        [
+                            "---",
+                            f"type: {'pattern' if scope == 'pattern' else 'knowledge'}",
+                            f"scope: {scope}",
+                            "owner_project: legacy-owner",
+                            "created: 2025-01-02",
+                            "custom_field: preserve-me",
+                            "---",
+                            legacy_body,
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
+
+                capture(
+                    context,
+                    self._request(
+                        scope=scope,
+                        kind=kind,
+                        category="legacy-container",
+                        title="Pending managed entry",
+                        body="This entry remains pending human confirmation.",
+                        evidence=(),
+                        status="Pending",
+                    ),
+                    date(2026, 7, 15),
+                )
+
+                content = page.read_text(encoding="utf-8")
+                frontmatter, body = content.split("---", 2)[1:]
+                self.assertIn("status: current", frontmatter)
+                self.assertNotIn("updated:", frontmatter)
+                self.assertIn("owner_project: legacy-owner", frontmatter)
+                self.assertIn("created: 2025-01-02", frontmatter)
+                self.assertIn("custom_field: preserve-me", frontmatter)
+                self.assertIn(legacy_body, body)
+
+    def test_legacy_entity_frontmatter_upserts_missing_managed_fields(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            page = (
+                context.root
+                / context.record.relative_path
+                / "decisions"
+                / "adr-0001.md"
+            )
+            page.parent.mkdir(parents=True, exist_ok=True)
+            legacy_body = (
+                "## Persist idempotency keys first\n\n"
+                "status: body-status\n"
+                "updated: body-updated\n"
+                "Legacy entity body must remain unchanged.\n"
+            )
+            page.write_text(
+                "\n".join(
+                    [
+                        "---",
+                        "type: decision",
+                        "scope: project",
+                        "custom_field: preserve-me",
+                        "---",
+                        legacy_body,
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            capture(
+                context,
+                self._request(
+                    status="Superseded",
+                    replacement="decisions/adr-0002.md",
+                ),
+                date(2026, 7, 15),
+            )
+
+            content = page.read_text(encoding="utf-8")
+            frontmatter, body = content.split("---", 2)[1:]
+            self.assertIn("status: superseded", frontmatter)
+            self.assertIn("updated: 2026-07-15", frontmatter)
+            self.assertIn("type: decision", frontmatter)
+            self.assertIn("scope: project", frontmatter)
+            self.assertIn("custom_field: preserve-me", frontmatter)
+            self.assertIn(legacy_body, body)
+
     def test_decision_rejects_a_different_title_for_the_same_category(self) -> None:
         with TemporaryDirectory() as temp:
             context = self._context(Path(temp))
@@ -633,15 +734,22 @@ class LifecycleCaptureTest(unittest.TestCase):
             self.assertFalse(restored.skipped)
             self.assertEqual(original.event_id, restored.event_id)
             self.assertEqual(
-                (active, archived, index, status, log),
+                (active, archived, index, status),
                 restored.changed_paths,
             )
             self.assertEqual((), restored.new_paths)
             active_content = active.read_text(encoding="utf-8")
+            original_marker = f"<!-- tracebook:event:{original.event_id} -->"
             self.assertEqual(
                 1,
-                active_content.count(
-                    f"<!-- tracebook:event:{original.event_id} -->"
+                active_content.count(original_marker),
+            )
+            self.assertEqual(retired_snapshot[log], log.read_text(encoding="utf-8"))
+            self.assertEqual(
+                1,
+                sum(
+                    path.read_text(encoding="utf-8").count(original_marker)
+                    for path in (project / "logs").glob("*.md")
                 ),
             )
 
@@ -664,6 +772,76 @@ class LifecycleCaptureTest(unittest.TestCase):
                     path: path.read_text(encoding="utf-8")
                     for path in restored_snapshot
                 },
+            )
+
+    def test_cross_month_entity_restore_does_not_repeat_original_log_event(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+            active = project / "decisions" / "adr-0001.md"
+            archived = project / "archive" / "decisions" / "adr-0001.md"
+            index = project / "index.md"
+            status = project / "project-status.md"
+            august_log = project / "logs" / "2026-08.md"
+
+            original_request = self._request()
+            original = capture(context, original_request, date(2026, 7, 31))
+            capture(
+                context,
+                self._request(
+                    body="Retire this decision while preserving its full history.",
+                    status="Historical",
+                ),
+                date(2026, 8, 1),
+            )
+            august_before_restore = august_log.read_text(encoding="utf-8")
+
+            restored = capture(context, original_request, date(2026, 8, 2))
+
+            self.assertFalse(restored.skipped)
+            self.assertEqual(original.event_id, restored.event_id)
+            self.assertEqual(
+                (active, archived, index, status),
+                restored.changed_paths,
+            )
+            self.assertEqual((), restored.new_paths)
+            self.assertEqual(
+                august_before_restore,
+                august_log.read_text(encoding="utf-8"),
+            )
+            original_marker = f"<!-- tracebook:event:{original.event_id} -->"
+            self.assertEqual(
+                1,
+                sum(
+                    path.read_text(encoding="utf-8").count(original_marker)
+                    for path in (project / "logs").glob("*.md")
+                ),
+            )
+
+            restored_retry = capture(context, original_request, date(2026, 8, 3))
+            self.assertTrue(restored_retry.skipped)
+            self.assertEqual(original.event_id, restored_retry.event_id)
+            self.assertEqual((), restored_retry.changed_paths)
+            self.assertEqual((), restored_retry.new_paths)
+
+            new_event = capture(
+                context,
+                self._request(
+                    body="Persist the key, outcome, and retry classification.",
+                    evidence=("src/consumer.py:L20-L40",),
+                ),
+                date(2026, 8, 4),
+            )
+            self.assertFalse(new_event.skipped)
+            self.assertNotEqual(original.event_id, new_event.event_id)
+            self.assertIn(august_log, new_event.changed_paths)
+            self.assertEqual(
+                1,
+                august_log.read_text(encoding="utf-8").count(
+                    f"<!-- tracebook:event:{new_event.event_id} -->"
+                ),
             )
 
     def test_multiple_entity_transitions_keep_one_authority_and_each_event_once(self) -> None:
@@ -856,6 +1034,41 @@ class LifecycleCaptureTest(unittest.TestCase):
             )
             decision = context.root / context.record.relative_path / "decisions" / "adr-0001.md"
             self.assertIn("Replacement: `decisions/adr-0002.md`", decision.read_text(encoding="utf-8"))
+
+    def test_semantically_equal_replacement_paths_share_one_event(self) -> None:
+        with TemporaryDirectory() as temp:
+            context = self._context(Path(temp))
+            first = capture(
+                context,
+                self._request(
+                    status="Superseded",
+                    replacement="decisions/adr-0002.md",
+                ),
+                date(2026, 7, 13),
+            )
+            second = capture(
+                context,
+                self._request(
+                    status="Superseded",
+                    replacement=r"decisions\adr-0002.md",
+                ),
+                date(2026, 7, 14),
+            )
+
+            decision = (
+                context.root
+                / context.record.relative_path
+                / "decisions"
+                / "adr-0001.md"
+            )
+            content = decision.read_text(encoding="utf-8")
+            marker = f"<!-- tracebook:event:{first.event_id} -->"
+            self.assertEqual(first.event_id, second.event_id)
+            self.assertTrue(second.skipped)
+            self.assertEqual(1, content.count(marker))
+            self.assertEqual(1, content.count("## Persist idempotency keys first"))
+            self.assertEqual(1, content.count("Replacement: `decisions/adr-0002.md`"))
+            self.assertNotIn(r"Replacement: `decisions\adr-0002.md`", content)
 
     def test_superseded_replacement_must_remain_inside_the_knowledge_root(self) -> None:
         with TemporaryDirectory() as temp:
