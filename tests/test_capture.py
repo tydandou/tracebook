@@ -266,6 +266,81 @@ class CaptureTest(unittest.TestCase):
             with self.subTest(evidence=evidence):
                 validate_capture(self._request(evidence=(evidence,)))
 
+    def test_semantically_equal_source_evidence_paths_share_one_event(self) -> None:
+        for suffix in (":L1-L2", ":L7"):
+            with self.subTest(suffix=suffix), TemporaryDirectory() as temp:
+                base = Path(temp)
+                repo = base / "business"
+                (repo / ".git").mkdir(parents=True)
+                context = resolve(base / "knowledge", repo)
+                canonical_evidence = f"src/rule.py{suffix}"
+
+                first = capture(
+                    context,
+                    self._request(evidence=(canonical_evidence,)),
+                    date(2026, 7, 13),
+                )
+                second = capture(
+                    context,
+                    self._request(evidence=(f"src\\rule.py{suffix}",)),
+                    date(2026, 7, 14),
+                )
+
+                document = (
+                    context.root
+                    / context.record.relative_path
+                    / "business-rules.md"
+                )
+                content = document.read_text(encoding="utf-8")
+                marker = f"<!-- tracebook:event:{first.event_id} -->"
+                self.assertEqual(first.event_id, second.event_id)
+                self.assertTrue(second.skipped)
+                self.assertEqual(1, content.count(marker))
+                self.assertEqual(1, content.count("## Refund status rule"))
+                self.assertEqual(1, content.count(f"- `{canonical_evidence}`"))
+                self.assertNotIn(f"src\\rule.py{suffix}", content)
+
+    def test_non_path_evidence_only_strips_outer_whitespace(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            context = resolve(base / "knowledge", repo)
+            padded_evidence = (
+                r"  http://example.test/incidents\42  ",
+                r"  https://example.test/incidents\43  ",
+                r"  test: python tests\test_capture.py  ",
+                r"  command: python scripts\check.py  ",
+                r"  human: reviewed C:\service\owner  ",
+            )
+            canonical_evidence = tuple(item.strip() for item in padded_evidence)
+
+            first = capture(
+                context,
+                self._request(evidence=padded_evidence),
+                date(2026, 7, 13),
+            )
+            second = capture(
+                context,
+                self._request(evidence=canonical_evidence),
+                date(2026, 7, 14),
+            )
+
+            document = (
+                context.root
+                / context.record.relative_path
+                / "business-rules.md"
+            )
+            content = document.read_text(encoding="utf-8")
+            marker = f"<!-- tracebook:event:{first.event_id} -->"
+            self.assertEqual(first.event_id, second.event_id)
+            self.assertTrue(second.skipped)
+            self.assertEqual(1, content.count(marker))
+            self.assertEqual(1, content.count("## Refund status rule"))
+            for item in canonical_evidence:
+                self.assertEqual(1, content.count(f"- `{item}`"))
+            self.assertNotIn("command: python scripts/check.py", content)
+
     def test_pending_capture_can_be_saved_without_evidence(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)

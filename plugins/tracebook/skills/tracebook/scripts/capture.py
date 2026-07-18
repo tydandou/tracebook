@@ -256,7 +256,9 @@ def _event_id(
         "destination": destination.resolve().relative_to(root.resolve()).as_posix(),
         "title": request.title,
         "body": request.body,
-        "evidence": list(request.evidence),
+        "evidence": [
+            _canonical_evidence_item(item) for item in request.evidence
+        ],
         "status": request.status,
         "replacement": _canonical_replacement(request),
     }
@@ -267,6 +269,15 @@ def _event_id(
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _canonical_evidence_item(item: str) -> str:
+    value = item.strip()
+    if value.startswith(
+        ("http://", "https://", "test:", "command:", "human:")
+    ):
+        return value
+    return value.replace("\\", "/")
 
 
 def _canonical_replacement(request: CaptureRequest) -> str | None:
@@ -649,7 +660,9 @@ def _entry_text(
     event_id: str,
     owner_project: str,
 ) -> str:
-    evidence = list(request.evidence) or ["Pending evidence review"]
+    evidence = [
+        _canonical_evidence_item(item) for item in request.evidence
+    ] or ["Pending evidence review"]
     entry_lines = [
         f"## {request.title}",
         "",
