@@ -23,7 +23,7 @@ matching Git tag is published.
 ### Not Included
 
 - Migration, discovery, import, copying, or modification of an existing
-  existing external knowledge root.
+  external knowledge root.
 - An MCP server, background daemon, cloud sync service, API key, vector
   database, or hook.
 - Automatic assertion that business facts are correct; Deep audit findings are

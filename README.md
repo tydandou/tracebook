@@ -1,168 +1,403 @@
 # Tracebook
 
-Tracebook is a Codex Plugin that bundles a reusable Skill for durable, traceable project knowledge. It keeps
-business terminology, rules, architecture, code paths, incident conclusions,
-and verified engineering decisions in an external Markdown knowledge root.
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-It preserves a governed external-knowledge workflow: layered project/domain/pattern
-knowledge, source attribution, lifecycle labels, indexes, status summaries,
-logs, synthesis pages, and health checks.
+Tracebook is a local, durable knowledge layer for software work. Its Agent
+Skill loads focused project context before a task and captures verified,
+long-lived conclusions afterward, outside the business repository.
+
+The repository provides native marketplace metadata for Codex and Claude Code,
+and the same Skill package can be used by agents that support Open Agent
+Skills. Natural-language use is the normal path; a deterministic JSON runner is
+available for integrations, diagnosis, and advanced workflows.
+
+## Why Tracebook
+
+Important engineering context is easily scattered across conversations,
+incidents, source files, and personal notes. Tracebook keeps that context in a
+governed Markdown knowledge root with evidence, lifecycle status, indexes, and
+health history. Agents can read only the relevant context, while people retain
+an inspectable record of what was captured and why.
+
+The knowledge root stays separate from business code. That separation lets
+multiple repositories use one local knowledge system without installing files,
+hooks, or services into those repositories.
+
+## Features
+
+- Project, domain, and pattern scopes for repository-specific facts, reusable
+  business knowledge, and reusable engineering practice.
+- Evidence-backed capture with `Current`, `Pending`, `Deprecated`,
+  `Superseded`, and `Historical` lifecycle states.
+- Deterministic project resolution, governed writes, index/status/log updates,
+  and structured JSON results.
+- Normalized Git identity so clones of the same remote share project knowledge,
+  while unrelated projects remain isolated.
+- Local, Light, Regular, and explicit Deep health behavior, with Deep findings
+  kept as review candidates rather than automatic facts.
+- Portable generated Markdown links plus Wikilink auditing for compatibility
+  with manually edited Obsidian knowledge.
+- Local storage with a strict zero-write boundary for the business repository.
+
+## Requirements
+
+- A Git repository for project resolution. A repository with no remote is
+  supported through a stable absolute-path fallback identity.
+- Python syntax used by the source requires Python 3.10 or newer. The current
+  full verification environment is Python 3.13.12; this is not a tested
+  multi-version or multi-platform compatibility matrix.
+- For marketplace installation, use Codex or Claude Code. The documented
+  command shapes were checked with Codex CLI 0.144.1 and Claude Code 2.1.138;
+  those versions are evidence, not declared minimum versions.
+- For another Open Agent Skills host, follow its documented method to install
+  the complete Skill directory. The same Python runtime requirement applies.
 
 ## Install
 
-Tracebook uses one shared Skill package and supplies native marketplace metadata
-for both Codex and Claude Code.
+The `1.0.0` entry in [CHANGELOG.md](CHANGELOG.md) is still Unreleased. The
+tagged Codex command below applies after the `v1.0.0` tag is published. Until
+then, use the local development loading instructions.
 
 ### Codex
 
+After the tag is published:
+
 ```text
-codex plugin marketplace add <github-owner>/tracebook --ref v1.0.0
+codex plugin marketplace add tydandou/tracebook --ref v1.0.0
 codex plugin add tracebook@tracebook
 ```
+
+For local development, clone the repository and add its local marketplace:
+
+```text
+git clone https://github.com/tydandou/tracebook.git
+cd tracebook
+codex plugin marketplace add .
+codex plugin add tracebook@tracebook
+```
+
+Start a new Codex session after installation.
 
 ### Claude Code
 
 ```text
-claude plugin marketplace add <github-owner>/tracebook#v1.0.0
+claude plugin marketplace add tydandou/tracebook
 claude plugin install tracebook@tracebook
 ```
 
-Replace `<github-owner>` with the repository owner. Start a new Codex session
-or run `/reload-plugins` in Claude Code after installation. During Claude
-Plugin development, load the local directory directly:
+For local development from a clone, load the plugin directory directly:
 
 ```text
+git clone https://github.com/tydandou/tracebook.git
+cd tracebook
 claude --plugin-dir ./plugins/tracebook
 ```
 
-For another agent that reads Open Agent Skills directly, copy
-`plugins/tracebook/skills/tracebook/` into that agent's global Skill directory.
+Start a new session or run `/reload-plugins` after a marketplace installation.
 
-## Quick Start
+### Open Agent Skills
 
-1. Install the Plugin, then work in any Git repository as usual.
-2. Ask Codex to use Tracebook for a coding, debugging, analysis, or design task
-   that needs durable project context.
-3. On first use, the Skill creates the external knowledge root, resolves the
-   repository identity, and reads only the returned context paths.
-4. After verified work, it captures only durable conclusions and reports the
-   knowledge changes and health result.
+The reusable package is
+[`plugins/tracebook/skills/tracebook/`](plugins/tracebook/skills/tracebook/).
+Copy that complete directory as `tracebook` into the Skill directory documented
+by the target agent, then start a new session. Keep `SKILL.md`, `references/`,
+`assets/`, and `scripts/` together.
 
-No repository setup, project-level `AGENTS.md`, service process, API key, or
-vector database is required. To store knowledge somewhere other than the
-standard local root, set `TRACEBOOK_ROOT` before starting Codex.
+By default, knowledge is stored at `~/.tracebook`. To select another external
+root, set `TRACEBOOK_ROOT` before starting the agent. These examples read the
+existing user-home value; they do not replace or assign `HOME`.
 
-```powershell
-$env:TRACEBOOK_ROOT = (Join-Path $HOME "team-knowledge")
+POSIX shell:
+
+```sh
+export TRACEBOOK_ROOT="$HOME/team-knowledge"
 ```
 
+PowerShell:
 
-## What It Creates
+```powershell
+$env:TRACEBOOK_ROOT = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'team-knowledge'
+```
 
-On first use, Tracebook creates a local external knowledge root:
+## Five-Minute Quick Start
+
+1. Install Tracebook through a marketplace or load the local clone.
+2. Open a new agent session inside the Git repository you are working on.
+3. Ask: `Use Tracebook to load the relevant project knowledge before you
+   diagnose this issue.`
+4. Work normally. Tracebook resolves the external root and project identity,
+   then returns a small ordered set of context paths for the agent to read.
+5. After evidence-backed work, ask: `Capture the verified durable conclusions
+   with Tracebook and report the health result.` Review the reported knowledge
+   changes, evidence, lifecycle status, and health outcome.
+
+Tracebook does not write durable knowledge after temporary Q&A, pure log
+analysis, unverified inference, a user prohibition, or a task with no durable
+conclusion.
+
+## Choose a Knowledge Scope
+
+| Scope | Use it for | Stored under |
+| --- | --- | --- |
+| `project` | Facts specific to one repository | `01-projects/<slug>` |
+| `domain` | Reusable business terminology, rules, processes, or industry knowledge | `02-domain` |
+| `pattern` | Reusable engineering practice | `03-patterns` |
+
+Choose the narrowest accurate scope. Project facts should not be promoted to
+domain or pattern knowledge merely because they might be useful elsewhere.
+
+## Natural-Language Usage
+
+The Plugin is designed to be invoked in normal task language. Examples:
+
+- `Use Tracebook to load architecture and source-map context before changing the order flow.`
+- `Use Tracebook while debugging this incident, but do not capture anything unless the root cause is verified.`
+- `Capture this verified settlement term as reusable domain knowledge with its source evidence.`
+- `Record this idempotent-consumer approach as a reusable pattern, then run the required health check.`
+- `Run a Deep Tracebook audit for the current project; keep findings as candidates for human review.`
+
+Before engineering work, the Skill reads the external-root rules, health
+status, project index, and project status, followed only by relevant documents.
+After the task, it applies the durable-write gate described in
+[`SKILL.md`](plugins/tracebook/skills/tracebook/SKILL.md).
+
+## Deterministic Runner Workflow
+
+Use the runner when building an integration, diagnosing a failure, or needing
+reproducible commands. Natural-language Plugin use remains the primary
+interface. The examples below assume the shell is at the business repository
+root, `SKILL_DIR` points to the installed Tracebook Skill, and
+`TRACEBOOK_ROOT` is set as shown above.
+
+### Resolve
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" resolve \
+  --root "$TRACEBOOK_ROOT" \
+  --cwd .
+```
+
+`resolve` initializes or repairs only missing template files in the configured
+external root, registers the normalized Git identity, and returns `root`,
+`project`, and the ordered `read_paths`. It does not search for or import a
+different existing knowledge root.
+
+### Capture
+
+Save a request outside the business repository, for example in the system
+temporary directory:
+
+```json
+{
+  "scope": "project",
+  "kind": "business-rule",
+  "category": "business-rules",
+  "title": "Order retry eligibility",
+  "body": "Only orders in the retryable state may re-enter fulfillment.",
+  "evidence": [
+    "src/order.py:L20-L38"
+  ],
+  "status": "Current",
+  "write_intent": "durable",
+  "content_kind": "knowledge"
+}
+```
+
+Then run:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
+  --root "$TRACEBOOK_ROOT" \
+  --cwd . \
+  --request "$REQUEST_FILE"
+```
+
+`Current` knowledge requires an evidence list. A durable, explicitly unresolved
+item may use `Pending` with an empty evidence list; `Pending` must not be
+presented as a confirmed fact. The source format
+`src/order.py:L20-L38` identifies the business-repository evidence without
+copying source into the knowledge root.
+
+### Check the captured scope
+
+Integrations must preserve this exact data dependency:
+
+```text
+capture.changed_paths -> repeated check --changed
+capture.new_paths     -> repeated check --new-path
+capture.health_scope  -> check --scope
+check_type Deep       -> audit --scope with the same health_scope
+```
+
+For example, assemble the check command by repeating flags for every returned
+path:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" check \
+  --root "$TRACEBOOK_ROOT" \
+  --cwd . \
+  --source-root . \
+  --changed "$CHANGED_PATH_1" \
+  --changed "$CHANGED_PATH_2" \
+  --new-path "$NEW_PATH_1" \
+  --scope "$HEALTH_SCOPE"
+```
+
+A direct `check` or `audit` that is not following a capture defaults to
+`project` when `--scope` is omitted. After a capture, however, a missing or
+invalid `health_scope` is an error: stop and report the incomplete response;
+never fall back to `project`.
+
+### Run a requested Deep audit
+
+`check_type: Deep` means a Deep audit is required; it does not mean the audit
+has already run. Reuse the same capture `health_scope`:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" audit \
+  --root "$TRACEBOOK_ROOT" \
+  --cwd . \
+  --source-root . \
+  --scope "$HEALTH_SCOPE"
+```
+
+The audit report contains candidates. A person must compare them with their
+evidence before any finding becomes a durable conclusion.
+
+### Structured JSON fields
+
+| Command | Emitted fields | Meaning |
+| --- | --- | --- |
+| `resolve` | `root`, `project`, `read_paths` | Configured root, normalized project record, and focused context paths |
+| `capture` | `changed_paths`, `new_paths`, `skipped`, `health_scope`, `event_id` | Knowledge transaction result and scope required by the following check |
+| `check` | `check_type`, `changed_paths`, `report` | Required health level, persisted health paths, and Markdown report |
+| `audit` | `changed_paths`, `report` | Persisted Deep-health paths and Markdown audit report |
+
+`event_id` identifies the idempotent capture event when one is available.
+`skipped: true` means the capture made no new knowledge write. Consumers should
+use fields only from the command that emitted them.
+
+## Knowledge Layout and Multi-Project Isolation
+
+The default local root has this governed layout:
 
 ```text
 ~/.tracebook/
+├── 00-global/          # shared rules, workflow, and health state
+├── 01-projects/        # one isolated directory per normalized project slug
+├── 02-domain/          # reusable business knowledge
+├── 03-patterns/        # reusable engineering knowledge
+├── raw/                # original material awaiting organization
+└── 99-archive/         # historical material
 ```
 
-The root contains the same global rules, project directories, domain knowledge,
-engineering patterns, raw-material area, archive, indexes, lifecycle rules,
-and health-check rules as the Tracebook design.
+For a repository with `origin`, Tracebook normalizes the remote into a stable
+Git identity. Multiple clones of that remote share the same directory under
+`01-projects/<slug>`. Different repositories receive different project
+records. A local-only repository uses a stable absolute-path fallback identity.
 
-Tracebook identifies Git projects by normalized `origin` remote. Multiple
-clones of the same repository share one knowledge directory. A local-only
-repository uses a stable absolute-path fallback identity.
-
-Set `TRACEBOOK_ROOT` to use a different local knowledge root; otherwise
-Tracebook uses `~/.tracebook`.
+Generated links use standard Markdown label-and-relative-path syntax. Health checks can
+audit both Markdown links and Wikilinks for compatibility with manual Obsidian
+editing, but Tracebook does not generate Wikilinks. See the
+[`directory rules`](plugins/tracebook/skills/tracebook/references/directory-rules.md)
+for the governed destinations.
 
 ## Privacy and Repository Boundaries
 
-- Tracebook stores knowledge locally in its configured root (`~/.tracebook` by default).
-- It does not require an API key, cloud service, vector database, daemon, MCP
-  server, or hook.
-- It does not modify business repositories to install or operate.
-- It does not create project-level `AGENTS.md` files.
-- It does not automatically discover, copy, import, or modify
-  an existing external knowledge root.
+- All Tracebook knowledge and health state stays in the configured local
+  external root (`~/.tracebook` by default).
+- Tracebook reads business files only when context or evidence validation needs
+  them. It does not copy the source tree into the knowledge root.
+- Initialization, capture, check, and audit write only inside the external
+  root. Installing and operating Tracebook requires zero writes to the business
+  repository and does not create a project-level `AGENTS.md` there.
+- No API key, cloud sync, MCP server, vector database, background daemon, or
+  hook is required or provided.
+- Tracebook does not discover, migrate, import, copy, or modify an existing
+  knowledge root automatically. Pointing `TRACEBOOK_ROOT` at a location is an
+  explicit configuration choice, not an import operation.
 
-Existing external knowledge is **not imported automatically**. A
-future migration feature must be explicitly requested, start with a dry-run,
-copy rather than move source files, and provide a rollback manifest.
+## Health Checks and Human Review
 
-## Link Policy
+| Level | Typical behavior |
+| --- | --- |
+| Local | Runs when no higher trigger applies and records basic health state. |
+| Light | Follows a knowledge write or changed knowledge files; checks links, indexes, sources, code paths, and status. |
+| Regular | Triggered by elapsed time or accumulated changes, pages, pending confirmations, or missing sources; adds orphan, drift, duplicate, and log review. |
+| Deep | Requested after the Deep threshold, a large core knowledge page, or an explicit audit request; samples durable conclusions against evidence. |
 
-Markdown links are the canonical output format. Tracebook templates and runner
-writes use standard `[label](path)` links so generated knowledge remains
-portable across Markdown, Git, Codex, Claude Code, and Obsidian.
+The detailed policy is in the
+[`health check rules`](plugins/tracebook/skills/tracebook/references/health-check-rules.md).
+A `check` result can request Deep work, but only `audit` performs it. Deep
+findings are possible fact, source, root-cause, and status issues. They never
+assert business truth automatically and require human review. No health command
+may modify business code.
 
-Wikilinks are accepted as compatibility input for imported knowledge and
-manual Obsidian editing. Health checks audit both link formats, but the runner
-does not generate Wikilinks.
-## Knowledge Capture Policy
+## Troubleshooting
 
-Tracebook reads focused project context before engineering work. After a task,
-it writes only verified durable knowledge, such as business rules, terminology,
-module relations, architecture changes, code paths, API/database changes, bug
-root causes, verification conclusions, important risks, and reusable patterns.
+- **The Plugin is unavailable:** confirm that the marketplace was added before
+  installing `tracebook@tracebook`, then start a new session. In Claude Code,
+  `/reload-plugins` reloads an installed plugin.
+- **Project resolution fails:** run from inside a Git repository and pass its
+  directory as `--cwd`. Check `git remote get-url origin` when clones should
+  share knowledge.
+- **Knowledge is in an unexpected location:** inspect `TRACEBOOK_ROOT` in the
+  environment that launched the agent. If unset, the root is `~/.tracebook`.
+- **Capture is rejected:** verify `write_intent: durable`,
+  `content_kind: knowledge`, an allowed scope/kind/category combination, and
+  evidence for `Current` knowledge. Use `Pending` only for a durable unresolved
+  item.
+- **A post-capture check has no scope:** treat a missing or invalid
+  `health_scope` as an incomplete runner response. Do not retry with the default
+  project scope.
+- **Existing notes do not appear:** Tracebook does not discover or import an
+  existing knowledge root. Existing material must remain untouched unless a
+  separate, explicitly approved migration process is provided.
+- **A link warning appears:** generated knowledge uses Markdown links; manual
+  Wikilinks are audited as compatibility input but are not generated.
 
-It does not write after pure log analysis, temporary Q&A, unverified inference,
-or when the user prohibits a write. Critical facts include a source reference
-or are marked `Pending`.
+## Development and Release Verification
 
-## Daily Workflow
-
-For normal use, invoke the Skill through Codex; the Skill decides whether the
-current task needs knowledge and uses the runner for deterministic operations.
-The workflow is:
-
-1. `resolve` initializes or repairs the external root, identifies the current
-   Git project, and returns the small ordered set of context files to read.
-2. The agent reads that context and performs the engineering task in the
-   business repository.
-3. After evidence-backed work, `capture` routes a durable item to the governed
-   project, domain, or pattern document and updates its indexes and status.
-4. `check` performs the applicable local, Light, or Regular health check.
-   When it requests a Deep check, run `audit`; its findings remain candidates
-   until a person verifies them.
-
-The runner is also available for integrations and diagnosis. Set `SKILL_DIR` to
-this installed Skill directory and run these PowerShell examples from a Git
-repository:
-
-```powershell
-python "$SKILL_DIR/scripts/tracebook_runner.py" resolve --cwd "$PWD"
-python "$SKILL_DIR/scripts/tracebook_runner.py" capture --cwd "$PWD" --request .\capture-request.json
-python "$SKILL_DIR/scripts/tracebook_runner.py" check --cwd "$PWD" --changed <knowledge-page>
-python "$SKILL_DIR/scripts/tracebook_runner.py" audit --cwd "$PWD"
-```
-
-All commands emit structured JSON. `capture` requests must follow the governed
-contract in [SKILL.md](plugins/tracebook/skills/tracebook/SKILL.md): durable intent, knowledge content, an allowed
-scope and kind, and evidence for `Current` facts. Pass `--root` only to override
-`TRACEBOOK_ROOT` for that command.
-
-
-## Development
-
-Run the local test suite from the repository root:
+From a repository clone, run the focused integration test and the full suite:
 
 ```text
+python -m unittest tests.test_runner_integration -v
 python -m unittest discover -s tests -v
 ```
 
-Validate the Skill package before publishing:
+Validate the Skill package, compile Python sources, and check whitespace:
 
 ```text
 python plugins/tracebook/skills/tracebook/scripts/validate_skill_package.py
-```
-
-Before creating a release tag, also compile the scripts and run a whitespace check:
-
-```text
 python -m compileall -q plugins/tracebook/skills/tracebook/scripts tests
 git diff --check
 ```
+
+Before documenting or publishing a release, compare marketplace commands with
+the current Codex and Claude Code CLI help, validate both language guides, and
+publish the matching Git tag. Do not use the tagged Codex installation command
+until `v1.0.0` exists.
+
+## Current Limitations
+
+- No migration, discovery, or automatic import of existing knowledge roots.
+- No cloud sync, MCP server, vector database, daemon, hook, or background
+  service.
+- No automatic confirmation that a business statement or Deep-audit finding is
+  true; evidence and human review remain authoritative.
+- No business-repository installation or generated repository configuration.
+- No claimed Python multi-version or operating-system compatibility matrix;
+  the current full verification evidence is Python 3.13.12.
+- Generated output uses Markdown links. Wikilinks are compatibility input for
+  auditing and manual editing, not generated output.
+
+## Contributing
+
+Keep changes narrow, evidence-backed, and consistent across the Skill, runner,
+tests, and both README languages. Run the development and release verification
+commands above before opening a pull request. Changes that add runtime
+capabilities must update tests and must not weaken the external-root or
+human-review boundaries.
 
 ## License
 
