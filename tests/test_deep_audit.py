@@ -92,6 +92,95 @@ class DeepAuditTest(unittest.TestCase):
             self.assertIn("2026-07-13", aggregate_content)
             self.assertFalse((repo / "AGENTS.md").exists())
 
+    def test_deep_audit_scans_active_pages_in_every_knowledge_scope(self) -> None:
+        with TemporaryDirectory() as temp:
+            context, repo = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+            project_child = project / "business-rules" / "refunds.md"
+            domain = context.root / "02-domain" / "settlement.md"
+            pattern = context.root / "03-patterns" / "retry.md"
+            for page in (project_child, domain, pattern):
+                page.parent.mkdir(parents=True, exist_ok=True)
+                page.write_text(
+                    "# Knowledge\n\n## Rule\n\nThe RETRY limit is 3.\n",
+                    encoding="utf-8",
+                )
+
+            project_report = run_deep_audit(context.root, project, repo)
+            domain_report = run_deep_audit(context.root, domain.parent, repo)
+            pattern_report = run_deep_audit(context.root, pattern.parent, repo)
+
+            self.assertTrue(
+                any("business-rules/refunds.md:L5" in item for item in project_report.fact_candidates)
+            )
+            self.assertTrue(
+                any("02-domain/settlement.md:L5" in item for item in domain_report.fact_candidates)
+            )
+            self.assertTrue(
+                any("03-patterns/retry.md:L5" in item for item in pattern_report.fact_candidates)
+            )
+
+    def test_deep_audit_excludes_navigation_status_logs_and_archives(self) -> None:
+        with TemporaryDirectory() as temp:
+            context, repo = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+            pages = (
+                project / "index.md",
+                project / "project-status.md",
+                project / "health-status.md",
+                project / "logs" / "2026-07.md",
+                project / "archive" / "business-rules.md",
+            )
+            for page in pages:
+                page.parent.mkdir(parents=True, exist_ok=True)
+                page.write_text("# Metadata\nThe RETRY limit is 9.\n", encoding="utf-8")
+
+            report = run_deep_audit(context.root, project, repo)
+
+            self.assertEqual([], report.fact_candidates)
+
+    def test_deep_audit_applies_evidence_and_pending_state_per_entry(self) -> None:
+        with TemporaryDirectory() as temp:
+            context, repo = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+            page = project / "architecture.md"
+            page.write_text(
+                "\n".join(
+                    [
+                        "# Architecture",
+                        "",
+                        "## Verified topology",
+                        "",
+                        "The API runs with 3 replicas.",
+                        "",
+                        "Evidence:",
+                        "- `src/app.py:L1-L2`",
+                        "",
+                        "## Pending topology",
+                        "",
+                        "The API may need 4 replicas.",
+                        "",
+                        "Status: Pending",
+                        "",
+                        "## Unverified topology",
+                        "",
+                        "The API runs with 5 workers.",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            report = run_deep_audit(context.root, project, repo)
+
+            self.assertEqual(
+                [
+                    f"01-projects/{context.record.slug}/architecture.md:L18: "
+                    "factual claim requires evidence review"
+                ],
+                report.fact_candidates,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
