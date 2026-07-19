@@ -48,7 +48,7 @@ jobs:
         run: |
           base="$BASE_SHA"
           head="$HEAD_SHA"
-          if [[ "$base" =~ ^0+$ ]]; then
+          if [[ "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{object}" 2>/dev/null; then
             base="$(git hash-object -t tree /dev/null)"
           fi
           git diff --check "$base" "$head"

@@ -100,6 +100,7 @@ class PublicArtifactsTest(unittest.TestCase):
             "fetch-depth: 0",
             "github.event.pull_request.base.sha",
             "github.event.before",
+            'git cat-file -e "$base^{object}"',
             'git diff --check "$base" "$head"',
         ):
             self.assertIn(required, workflow)
