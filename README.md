@@ -43,9 +43,9 @@ installing files, hooks, or services into those repositories.
 
 - A Git repository for project resolution. A repository with no remote is
   supported through a stable absolute-path fallback identity.
-- Python syntax used by the source requires Python 3.10 or newer. The current
-  full verification environment is Python 3.13.12; this is not a tested
-  multi-version or multi-platform compatibility matrix.
+- Python syntax used by the source requires Python 3.10 or newer. The release
+  CI matrix is configured for Python 3.10 and 3.13 on Ubuntu and Windows; the
+  local full verification environment is Python 3.13.12 on Windows.
 - For marketplace installation, use Codex or Claude Code. The documented
   command shapes were checked with Codex CLI 0.144.1 and Claude Code 2.1.138;
   those versions are evidence, not declared minimum versions.
@@ -54,9 +54,9 @@ installing files, hooks, or services into those repositories.
 
 ## Install
 
-The `1.0.0` entry in [CHANGELOG.md](CHANGELOG.md) is still Unreleased. The
-tagged Codex command below applies after the `v1.0.0` tag is published. Until
-then, use the local development loading instructions.
+The `1.0.0` release is recorded in [CHANGELOG.md](CHANGELOG.md). The tagged
+Codex command below applies after the matching `v1.0.0` tag is published; use
+the local development loading instructions when working from an untagged clone.
 
 ### Codex
 
@@ -391,6 +391,10 @@ python -m compileall -q plugins/tracebook/skills/tracebook/scripts tests
 git diff --check
 ```
 
+The repository CI runs the full suite and these static checks with Python 3.10
+and 3.13 on Ubuntu and Windows. Linux exercises the symlink boundary cases that
+may be skipped on Windows hosts without symlink privileges.
+
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. Do not use the tagged Codex installation command
@@ -404,13 +408,14 @@ until `v1.0.0` exists.
 - No automatic confirmation that a business statement or Deep-audit finding is
   true; evidence and human review remain authoritative.
 - No business-repository installation or generated repository configuration.
-- No claimed Python multi-version or operating-system compatibility matrix;
-  the current full verification evidence is Python 3.13.12.
+- Release CI is configured for Python 3.10 and 3.13 on Ubuntu and Windows;
+  environments outside that matrix are not claimed.
 - Generated output uses Markdown links. Wikilinks are compatibility input for
   auditing and manual editing, not generated output.
-- Deep candidate extraction is currently optimized for project core-page
-  naming. Domain and pattern audits still maintain scoped health records, but
-  an empty candidate list does not prove that the knowledge is correct.
+- Deep candidate extraction scans every active durable Markdown page in the
+  selected project, domain, or pattern scope and evaluates evidence or Pending
+  state within each level-two knowledge entry. It remains heuristic: an empty
+  candidate list does not prove that the knowledge is correct.
 
 ## Contributing
 

@@ -99,6 +99,21 @@ class PublicArtifactsTest(unittest.TestCase):
             "git diff --check",
         ):
             self.assertIn(required, workflow)
+
+    def test_bilingual_guides_describe_the_release_and_complete_deep_scope(self) -> None:
+        english = (ROOT / "README.md").read_text(encoding="utf-8")
+        chinese = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+        normalized_chinese = " ".join(chinese.split())
+
+        self.assertNotIn("still Unreleased", english)
+        self.assertNotIn("optimized for project core-page", english)
+        self.assertIn("every active durable Markdown page", english)
+        self.assertIn("each level-two knowledge entry", english)
+
+        self.assertNotIn("仍标记为 Unreleased", chinese)
+        self.assertNotIn("针对 project 核心页面的命名方式优化", chinese)
+        self.assertIn("每个活跃的持久 Markdown 页面", normalized_chinese)
+        self.assertIn("每个二级标题知识条目", normalized_chinese)
     def test_license_is_apache_2_0(self) -> None:
         license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
 

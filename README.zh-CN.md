@@ -33,8 +33,9 @@ runner 则用于集成、诊断和高级工作流。
 ## 环境要求
 
 - 项目解析需要 Git 仓库。没有远端的仓库会使用稳定的绝对路径回退身份。
-- 源码使用的 Python 语法要求 Python 3.10 或更高版本。当前完整验证环境是 Python
-  3.13.12；这不代表已经验证了多版本或多平台兼容矩阵。
+- 源码使用的 Python 语法要求 Python 3.10 或更高版本。发布 CI 矩阵配置为在 Ubuntu
+  和 Windows 上验证 Python 3.10 与 3.13；本地完整验证环境是 Windows 上的 Python
+  3.13.12。
 - 通过 marketplace 安装时使用 Codex 或 Claude Code。文档中的命令形态已用 Codex
   CLI 0.144.1 和 Claude Code 2.1.138 核验；这些版本是验证证据，并非声明的最低版本。
 - 对其他 Open Agent Skills host，按其文档规定的方式安装完整 Skill 目录；同样需要满足
@@ -42,8 +43,8 @@ runner 则用于集成、诊断和高级工作流。
 
 ## 安装
 
-[CHANGELOG.md](CHANGELOG.md) 中的 `1.0.0` 仍标记为 Unreleased。下面带 tag 的
-Codex 命令应在 `v1.0.0` tag 发布后使用。在此之前，请使用本地开发加载方式。
+[CHANGELOG.md](CHANGELOG.md) 已记录 `1.0.0` 版本。下面带 tag 的 Codex 命令应在
+匹配的 `v1.0.0` tag 发布后使用；从未打 tag 的 clone 开发时，请使用本地加载方式。
 
 ### Codex
 
@@ -348,6 +349,9 @@ python -m compileall -q plugins/tracebook/skills/tracebook/scripts tests
 git diff --check
 ```
 
+仓库 CI 会在 Ubuntu 和 Windows 上使用 Python 3.10 与 3.13 运行完整测试和上述静态
+检查。Linux 会执行在缺少符号链接权限的 Windows 主机上可能跳过的符号链接边界用例。
+
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。在 `v1.0.0` 存在之前，不要使用带 tag 的 Codex
 安装命令。
@@ -358,10 +362,12 @@ git diff --check
 - 不提供 cloud sync、MCP server、vector database、daemon、hook 或后台服务。
 - 不会自动确认业务陈述或 Deep 审计发现为真；证据和人工复核仍具有权威性。
 - 不在业务仓库内安装，也不生成仓库配置。
-- 不声明 Python 多版本或操作系统兼容矩阵；当前完整验证证据是 Python 3.13.12。
+- 发布 CI 配置为在 Ubuntu 和 Windows 上验证 Python 3.10 与 3.13；不声明该矩阵之外
+  的环境兼容性。
 - 生成输出使用 Markdown 链接。Wikilink 是审计和手工编辑的兼容输入，不是生成输出。
-- Deep 候选提取目前针对 project 核心页面的命名方式优化。Domain 和 pattern audit
-  仍会维护各自的 scoped health 记录，但候选列表为空并不能证明知识正确。
+- Deep 候选提取会扫描所选 project、domain 或 pattern 范围内的每个活跃的持久
+  Markdown 页面，并在每个二级标题知识条目内分别判断 evidence 或 Pending 状态。
+  它仍是启发式检查：候选列表为空并不能证明知识正确。
 
 ## 参与贡献
 
