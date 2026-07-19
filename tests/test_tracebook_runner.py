@@ -18,7 +18,7 @@ class TracebookRunnerTest(unittest.TestCase):
             self.assertEqual(Path("~/.tracebook").expanduser(), default_root())
     def test_initialize_repairs_missing_files_without_overwriting_existing_content(self) -> None:
         with TemporaryDirectory() as temp:
-            root = Path(temp) / "knowledge"
+            root = (Path(temp) / "knowledge").resolve()
             root.mkdir()
             agents = root / "AGENTS.md"
             agents.write_text("# Custom Root\n", encoding="utf-8")
@@ -30,8 +30,8 @@ class TracebookRunnerTest(unittest.TestCase):
             self.assertTrue((root / "01-projects" / "index.md").is_file())
 
     def test_initialize_delegates_to_knowledge_root_repair(self) -> None:
-        root = Path("D:/knowledge")
-        template = Path("D:/template")
+        root = Path.cwd() / "knowledge"
+        template = Path.cwd() / "template"
         repaired = (root / "AGENTS.md",)
 
         with patch(
@@ -46,7 +46,7 @@ class TracebookRunnerTest(unittest.TestCase):
 
     def test_resolve_returns_ordered_context_for_current_project(self) -> None:
         with TemporaryDirectory() as temp:
-            base = Path(temp)
+            base = Path(temp).resolve()
             root = base / "knowledge"
             repo = base / "business"
             (repo / ".git").mkdir(parents=True)

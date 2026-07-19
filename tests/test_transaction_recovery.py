@@ -181,7 +181,7 @@ class TransactionRecoveryTest(unittest.TestCase):
 
     def test_commit_applies_sorted_updates_and_removes_transaction(self) -> None:
         with TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             updates = self._write_targets(root, ("z-last.md", "a-first.md"))
 
             committed = transaction.commit_updates(
@@ -234,7 +234,7 @@ class TransactionRecoveryTest(unittest.TestCase):
     ) -> None:
         for fail_after in (0, 1, 2):
             with self.subTest(fail_after=fail_after), TemporaryDirectory() as temp:
-                root = Path(temp)
+                root = Path(temp).resolve()
                 updates, transaction_dir = self._prepare_crashed_transaction(
                     root,
                     fail_after=fail_after,

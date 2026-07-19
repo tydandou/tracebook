@@ -24,7 +24,7 @@ class RunnerIntegrationTest(unittest.TestCase):
 
     def test_installed_runner_resolves_project_from_an_arbitrary_working_directory(self) -> None:
         with TemporaryDirectory() as temp:
-            base = Path(temp)
+            base = Path(temp).resolve()
             root = base / "knowledge"
             repo = base / "business"
             (repo / ".git").mkdir(parents=True)

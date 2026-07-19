@@ -8,7 +8,7 @@ from plugins.tracebook.skills.tracebook.scripts import knowledge_root
 class KnowledgeRootTest(unittest.TestCase):
     def test_initialization_copies_full_governance_layout_once(self) -> None:
         with TemporaryDirectory() as temp:
-            root = Path(temp) / "tracebook"
+            root = (Path(temp) / "tracebook").resolve()
 
             created = knowledge_root.ensure_knowledge_root(root)
 
@@ -25,7 +25,7 @@ class KnowledgeRootTest(unittest.TestCase):
 
     def test_repair_restores_missing_templates_without_overwriting_content(self) -> None:
         with TemporaryDirectory() as temp:
-            root = Path(temp) / "tracebook"
+            root = (Path(temp) / "tracebook").resolve()
             root.mkdir()
             agents = root / "AGENTS.md"
             agents.write_bytes(b"# Custom Root\r\n")

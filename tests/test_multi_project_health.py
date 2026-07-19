@@ -48,7 +48,7 @@ class MultiProjectHealthTest(unittest.TestCase):
         return CheckReport(**values)
 
     def _legacy_root(self, base: Path) -> tuple[Path, bytes, bytes]:
-        root = base / "knowledge"
+        root = (base / "knowledge").resolve()
         health = root / "00-global" / "health"
         projects = root / "01-projects"
         health.mkdir(parents=True)
