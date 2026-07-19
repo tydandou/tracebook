@@ -92,15 +92,22 @@ a lowercase hyphenated `topic`; the runner writes the next entry to its child
 document. Apply frontmatter and lifecycle labels when required.
 ## Verify Knowledge Writes
 
-After every knowledge write, perform the local self-check in the external root.
-When a Light or Regular trigger applies, call
-`$SKILL_DIR/scripts/tracebook_runner.py check` with the external root,
-repository root, changed knowledge paths, each capture `new_paths` value as a
-`--new-path`, current date, and business repository root for source-map
-validation. Report its structured JSON health output.
+After every successful capture, require `changed_paths`, `new_paths`, and
+`health_scope` in its structured JSON. Stop and report an incomplete runner
+response if `health_scope` is absent or is not `project`, `domain`, or
+`pattern`; do not fall back to the default project scope.
+
+Run `$SKILL_DIR/scripts/tracebook_runner.py check` with the external root as
+`--root` and repository root as `--cwd`. Pass every capture `changed_paths`
+item as `--changed`, every `new_paths` item as `--new-path`, and the capture
+`health_scope` as `--scope`. Pass the current date as `--today` and the
+business repository root as `--source-root` for source-map validation. Consume
+and report the structured JSON result.
+
 When `check_type: Deep` is returned, do not treat it as a completed Deep check.
-Run `$SKILL_DIR/scripts/tracebook_runner.py audit` with the same root and
-repository context. Its fact, source, root-cause, and status candidates require
+Run `$SKILL_DIR/scripts/tracebook_runner.py audit` with the same `--root`,
+`--cwd`, `--today`, and `--source-root` values, plus the same scope supplied to
+check as `--scope`. Its fact, source, root-cause, and status candidates require
 human review before they become durable conclusions. Do not let either command
 modify business code.
 
