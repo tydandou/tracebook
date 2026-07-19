@@ -20,8 +20,8 @@ health history. Agents can read only the relevant context, while people retain
 an inspectable record of what was captured and why.
 
 The knowledge root stays separate from business code. That separation lets
-multiple repositories use one local knowledge system without installing files,
-hooks, or services into those repositories.
+multiple business repositories use one local knowledge system without
+installing files, hooks, or services into those repositories.
 
 ## Features
 
@@ -119,7 +119,7 @@ PowerShell:
 $env:TRACEBOOK_ROOT = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'team-knowledge'
 ```
 
-## Five-Minute Quick Start
+## Quick Start
 
 1. Install Tracebook through a marketplace or load the local clone.
 2. Open a new agent session inside the Git repository you are working on.
@@ -161,15 +161,23 @@ status, project index, and project status, followed only by relevant documents.
 After the task, it applies the durable-write gate described in
 [`SKILL.md`](plugins/tracebook/skills/tracebook/SKILL.md).
 
-## Deterministic Runner Workflow
+## Daily Workflow
 
-Use the runner when building an integration, diagnosing a failure, or needing
-reproducible commands. Natural-language Plugin use remains the primary
-interface. The examples below assume the shell is at the business repository
-root, `SKILL_DIR` points to the installed Tracebook Skill, and
-`TRACEBOOK_ROOT` is set as shown above.
+This is the deterministic runner workflow for integrations, diagnosis, and
+other cases that need reproducible commands. Natural-language Plugin use
+remains the primary interface. The examples below assume the shell is at the
+business repository root, `SKILL_DIR` points to the installed Tracebook Skill,
+and `TRACEBOOK_ROOT` is set as shown above.
 
 ### Resolve
+
+With the default knowledge root, the concise command is:
+
+```text
+python "$SKILL_DIR/scripts/tracebook_runner.py" resolve --cwd .
+```
+
+To pass the configured root explicitly:
 
 ```sh
 python "$SKILL_DIR/scripts/tracebook_runner.py" resolve \
@@ -296,9 +304,15 @@ Git identity. Multiple clones of that remote share the same directory under
 `01-projects/<slug>`. Different repositories receive different project
 records. A local-only repository uses a stable absolute-path fallback identity.
 
-Generated links use standard Markdown label-and-relative-path syntax. Health checks can
-audit both Markdown links and Wikilinks for compatibility with manual Obsidian
-editing, but Tracebook does not generate Wikilinks. See the
+## Link Policy
+
+Markdown links are the canonical output format. Tracebook templates and runner
+writes generate standard Markdown links with relative paths so the knowledge
+remains portable across Markdown tools.
+
+Wikilinks are accepted as compatibility input for manually edited Obsidian
+knowledge. Health checks audit both Markdown links and Wikilinks, but Tracebook
+does not generate Wikilinks. See the
 [`directory rules`](plugins/tracebook/skills/tracebook/references/directory-rules.md)
 for the governed destinations.
 
@@ -317,11 +331,15 @@ for the governed destinations.
   knowledge root automatically. Pointing `TRACEBOOK_ROOT` at a location is an
   explicit configuration choice, not an import operation.
 
+Existing external knowledge is **not imported automatically**. Tracebook does
+not search for another knowledge root or merge its contents into the configured
+root.
+
 ## Health Checks and Human Review
 
 | Level | Typical behavior |
 | --- | --- |
-| Local | Runs when no higher trigger applies and records basic health state. |
+| Local | Reads and reports on the selected scope when no higher trigger applies; it does not write scope status or logs and does not rebuild the global aggregate. |
 | Light | Follows a knowledge write or changed knowledge files; checks links, indexes, sources, code paths, and status. |
 | Regular | Triggered by elapsed time or accumulated changes, pages, pending confirmations, or missing sources; adds orphan, drift, duplicate, and log review. |
 | Deep | Requested after the Deep threshold, a large core knowledge page, or an explicit audit request; samples durable conclusions against evidence. |
@@ -390,6 +408,9 @@ until `v1.0.0` exists.
   the current full verification evidence is Python 3.13.12.
 - Generated output uses Markdown links. Wikilinks are compatibility input for
   auditing and manual editing, not generated output.
+- Deep candidate extraction is currently optimized for project core-page
+  naming. Domain and pattern audits still maintain scoped health records, but
+  an empty candidate list does not prove that the knowledge is correct.
 
 ## Contributing
 
