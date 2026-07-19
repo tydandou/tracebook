@@ -1,9 +1,15 @@
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
 from plugins.tracebook.skills.tracebook.scripts.check_knowledge import run_check
+from plugins.tracebook.skills.tracebook.scripts.health_state import (
+    health_path,
+    load_health_state,
+    render_health_state,
+)
 from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import check, resolve
 
 
@@ -70,14 +76,27 @@ class RegularHealthTest(unittest.TestCase):
             repo = base / "business"
             (repo / ".git").mkdir(parents=True)
             context = resolve(base / "knowledge", repo)
-            self._health_status(context.root)
+            scoped_status = health_path(
+                context.root, "project", context.record.slug
+            )
+            scoped_status.write_text(
+                render_health_state(
+                    replace(
+                        load_health_state(scoped_status),
+                        changes_since_regular=10,
+                    )
+                ),
+                encoding="utf-8",
+            )
             page = context.root / context.record.relative_path / "architecture.md"
             page.write_text("# Architecture\nUnsourced topology.\n", encoding="utf-8")
 
             first = check(context, [page], date(2026, 7, 13), source_root=repo)
             second = check(context, [page], date(2026, 7, 13), source_root=repo)
 
-            status = (context.root / "00-global" / "health" / "health-status.md").read_text(encoding="utf-8")
+            status = health_path(
+                context.root, "project", context.record.slug
+            ).read_text(encoding="utf-8")
             self.assertEqual(first.report.check_type, "Regular")
             self.assertEqual(second.report.check_type, "Light")
             self.assertIn("Last Regular Check: 2026-07-13", status)
@@ -85,7 +104,10 @@ class RegularHealthTest(unittest.TestCase):
             self.assertIn("New Pages Since Last Regular Check: 0", status)
             self.assertIn("Missing Sources: 1", status)
             self.assertIn("High", status)
-            self.assertEqual(status.count("01-projects/"), 1)
+            missing_finding = (
+                f"01-projects/{context.record.slug}/architecture.md"
+            )
+            self.assertEqual(status.count(missing_finding), 1)
 
 
 if __name__ == "__main__":

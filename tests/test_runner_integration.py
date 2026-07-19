@@ -47,6 +47,22 @@ class RunnerIntegrationTest(unittest.TestCase):
             repo = base / "business"
             (repo / ".git").mkdir(parents=True)
 
+            resolved = subprocess.run(
+                [
+                    sys.executable,
+                    str(RUNNER),
+                    "resolve",
+                    "--root",
+                    str(root),
+                    "--cwd",
+                    str(repo),
+                ],
+                cwd=base,
+                capture_output=True,
+                check=True,
+                text=True,
+            )
+            resolved_payload = json.loads(resolved.stdout)
             result = subprocess.run(
                 [
                     sys.executable,
@@ -69,8 +85,21 @@ class RunnerIntegrationTest(unittest.TestCase):
 
             payload = json.loads(result.stdout)
             self.assertIn("Deep Knowledge Audit", payload["report"])
-            health = root / "00-global" / "health" / "health-status.md"
+            health = (
+                root
+                / "01-projects"
+                / resolved_payload["project"]["slug"]
+                / "health-status.md"
+            )
             self.assertIn("Last Deep Check: 2026-07-13", health.read_text(encoding="utf-8"))
+            aggregate = (
+                root / "00-global" / "health" / "health-status.md"
+            ).read_text(encoding="utf-8")
+            self.assertIn(
+                f"| project | {resolved_payload['project']['identity']} |",
+                aggregate,
+            )
+            self.assertIn("2026-07-13", aggregate)
     def test_skill_uses_its_own_directory_for_runner_invocation(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 

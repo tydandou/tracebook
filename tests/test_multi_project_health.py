@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from plugins.tracebook.skills.tracebook.scripts import health_state
+from plugins.tracebook.skills.tracebook.scripts.check_knowledge import CheckReport
 from plugins.tracebook.skills.tracebook.scripts.errors import TracebookError
 from plugins.tracebook.skills.tracebook.scripts.health_state import (
     HealthState,
@@ -16,13 +17,36 @@ from plugins.tracebook.skills.tracebook.scripts.health_state import (
     health_log_path,
     health_path,
     load_health_state,
+    persist_check,
     rebuild_global_health,
     render_health_state,
     rollback_health_migration,
 )
+from plugins.tracebook.skills.tracebook.scripts.project_registry import ProjectRecord
 
 
 class MultiProjectHealthTest(unittest.TestCase):
+    @staticmethod
+    def _record(identity: str, slug: str) -> ProjectRecord:
+        return ProjectRecord(identity, slug, f"01-projects/{slug}")
+
+    @staticmethod
+    def _report(**overrides: object) -> CheckReport:
+        values: dict[str, object] = {
+            "check_type": "Light",
+            "trigger_reasons": ["Knowledge files changed"],
+            "broken_links": [],
+            "ambiguous_wikilinks": [],
+            "orphan_pages": [],
+            "missing_sources": [],
+            "outdated_paths": [],
+            "pending_confirmations": [],
+            "duplicate_pages": [],
+            "log_growth": [],
+        }
+        values.update(overrides)
+        return CheckReport(**values)
+
     def _legacy_root(self, base: Path) -> tuple[Path, bytes, bytes]:
         root = base / "knowledge"
         health = root / "00-global" / "health"
@@ -238,6 +262,81 @@ class MultiProjectHealthTest(unittest.TestCase):
             self.assertLess(aggregate.index("domain"), aggregate.index("pattern"))
             self.assertLess(aggregate.index("github.com/acme/alpha"), aggregate.index("github.com/acme/beta"))
             self.assertIn("alpha needs a source", aggregate)
+
+    def test_project_high_state_survives_a_later_low_project_check(self) -> None:
+        with TemporaryDirectory() as temp:
+            root, _, _ = self._legacy_root(Path(temp))
+            ensure_health_layout(root)
+            alpha = self._record("github.com/acme/alpha", "alpha")
+            beta = self._record("github.com/acme/beta", "beta")
+            today = date(2026, 7, 18)
+
+            persist_check(
+                root,
+                alpha,
+                "project",
+                self._report(
+                    broken_links=[
+                        "01-projects/alpha/architecture.md -> missing.md"
+                    ]
+                ),
+                [root / "01-projects" / "alpha" / "architecture.md"],
+                [root / "01-projects" / "alpha" / "architecture.md"],
+                today,
+            )
+            alpha_before = load_health_state(health_path(root, "project", "alpha"))
+
+            persist_check(
+                root,
+                beta,
+                "project",
+                self._report(),
+                [root / "01-projects" / "beta" / "architecture.md"],
+                [],
+                today,
+            )
+
+            self.assertEqual(
+                alpha_before,
+                load_health_state(health_path(root, "project", "alpha")),
+            )
+            self.assertEqual("High", alpha_before.risk_level)
+            self.assertEqual(1, alpha_before.changes_since_regular)
+            self.assertEqual(1, alpha_before.new_pages_since_regular)
+            self.assertEqual(
+                "Low",
+                load_health_state(
+                    health_path(root, "project", "beta")
+                ).risk_level,
+            )
+
+    def test_identical_reports_keep_project_and_namespace_owner_logs(self) -> None:
+        with TemporaryDirectory() as temp:
+            root, _, _ = self._legacy_root(Path(temp))
+            ensure_health_layout(root)
+            alpha = self._record("github.com/acme/alpha", "alpha")
+            beta = self._record("github.com/acme/beta", "beta")
+            today = date(2026, 7, 18)
+            report = self._report(pending_confirmations=["same finding"])
+
+            for record in (alpha, beta):
+                persist_check(root, record, "project", report, [], [], today)
+                persist_check(root, record, "domain", report, [], [], today)
+
+            for record in (alpha, beta):
+                project_log = health_log_path(
+                    root, "project", record.slug, today
+                ).read_text(encoding="utf-8")
+                self.assertIn(f"Owner Project Identity: {record.identity}", project_log)
+                self.assertIn(f"Scope Identity: {record.identity}", project_log)
+                self.assertIn("same finding", project_log)
+
+            namespace_log = health_log_path(
+                root, "domain", "domain", today
+            ).read_text(encoding="utf-8")
+            self.assertIn("Owner Project Identity: github.com/acme/alpha", namespace_log)
+            self.assertIn("Owner Project Identity: github.com/acme/beta", namespace_log)
+            self.assertEqual(2, namespace_log.count(report.to_markdown()))
 
     def test_nonlegacy_layout_leaves_aggregate_writes_to_the_aggregate_lock(
         self,

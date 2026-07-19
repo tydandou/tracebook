@@ -5,6 +5,10 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from plugins.tracebook.skills.tracebook.scripts.check_knowledge import run_deep_audit
+from plugins.tracebook.skills.tracebook.scripts.health_state import (
+    health_log_path,
+    health_path,
+)
 from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import audit, check, resolve
 
 
@@ -66,18 +70,26 @@ class DeepAuditTest(unittest.TestCase):
             context, repo = self._context(Path(temp))
             page = context.root / context.record.relative_path / "business-rules.md"
             page.write_text("# Rules\n" + "rule\n" * 300, encoding="utf-8")
-            health = context.root / "00-global" / "health" / "health-status.md"
+            health = health_path(context.root, "project", context.record.slug)
+            log = health_log_path(
+                context.root, "project", context.record.slug, date(2026, 7, 13)
+            )
+            aggregate = context.root / "00-global" / "health" / "health-status.md"
             before = health.read_text(encoding="utf-8")
 
             requirement = check(context, [page], date(2026, 7, 13), source_root=repo)
+            self.assertEqual(before, health.read_text(encoding="utf-8"))
             result = audit(context, date(2026, 7, 13), source_root=repo)
 
             after = health.read_text(encoding="utf-8")
             self.assertEqual(requirement.report.check_type, "Deep")
             self.assertEqual(requirement.changed_paths, ())
-            self.assertEqual(result.changed_paths[0], health)
+            self.assertEqual(result.changed_paths, (health, log, aggregate))
             self.assertIn("Last Deep Check: 2026-07-13", after)
             self.assertNotEqual(before, after)
+            aggregate_content = aggregate.read_text(encoding="utf-8")
+            self.assertIn(context.record.identity, aggregate_content)
+            self.assertIn("2026-07-13", aggregate_content)
             self.assertFalse((repo / "AGENTS.md").exists())
 
 

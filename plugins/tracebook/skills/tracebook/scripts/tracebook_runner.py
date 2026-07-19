@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 import json
 import os
 from pathlib import Path
-import re
 import sys
 
 if __package__ in (None, ""):
@@ -20,8 +19,25 @@ if __package__ in (None, ""):
         capture_lock_name,
         validate_capture,
     )
-    from scripts.check_knowledge import CheckReport, DeepAuditReport, run_check, run_deep_audit
-    from scripts.health_state import ensure_health_layout, rebuild_global_health
+    from scripts.check_knowledge import (
+        CheckReport,
+        DeepAuditReport,
+        _duplicate_pages,
+        _load_page_contents,
+        _log_growth,
+        _trigger,
+        run_check,
+        run_deep_audit,
+    )
+    from scripts.health_state import (
+        _finish_health_persistence,
+        _load_scope_state,
+        _persist_audit_under_lock,
+        _persist_check_under_lock,
+        _scope_lock_name,
+        ensure_health_layout,
+        rebuild_global_health,
+    )
     from scripts.knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
     from scripts.locking import file_lock
     from scripts.project_registry import ProjectRecord, ensure_project, repository_root
@@ -34,8 +50,25 @@ else:
         capture_lock_name,
         validate_capture,
     )
-    from .check_knowledge import CheckReport, DeepAuditReport, run_check, run_deep_audit
-    from .health_state import ensure_health_layout, rebuild_global_health
+    from .check_knowledge import (
+        CheckReport,
+        DeepAuditReport,
+        _duplicate_pages,
+        _load_page_contents,
+        _log_growth,
+        _trigger,
+        run_check,
+        run_deep_audit,
+    )
+    from .health_state import (
+        _finish_health_persistence,
+        _load_scope_state,
+        _persist_audit_under_lock,
+        _persist_check_under_lock,
+        _scope_lock_name,
+        ensure_health_layout,
+        rebuild_global_health,
+    )
     from .knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
     from .locking import file_lock
     from .project_registry import ProjectRecord, ensure_project, repository_root
@@ -117,45 +150,67 @@ class DeepAuditResult:
     new_paths: tuple[Path, ...] = ()
 
 
-def _append_once(path: Path, text: str) -> bool:
-    current = path.read_text(encoding="utf-8") if path.exists() else ""
-    if text in current:
-        return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(current + text, encoding="utf-8")
-    return True
+def _scope_scan_root(context: ResolvedContext, scope: str) -> Path:
+    if scope == "project":
+        return context.root / context.record.relative_path
+    if scope == "domain":
+        return context.root / "02-domain"
+    if scope == "pattern":
+        return context.root / "03-patterns"
+    raise ValueError(f"Unsupported health scope: {scope}")
 
 
-def _set_health_value(content: str, key: str, value: str) -> str:
-    pattern = rf"(?m)^- {re.escape(key)}:.*$"
-    replacement = f"- {key}: {value}"
-    if re.search(pattern, content):
-        return re.sub(pattern, replacement, content)
-    marker = "## Current Risk Level"
-    return content.replace(marker, replacement + "\n\n" + marker)
+def _scope_trigger_values(
+    context: ResolvedContext,
+    scope: str,
+    today: date,
+) -> dict[str, str]:
+    state = _load_scope_state(context.root, context.record, scope, today)
+    return {
+        "Last Regular Check": (
+            state.last_regular.isoformat() if state.last_regular else "Not run"
+        ),
+        "Last Deep Check": state.last_deep.isoformat() if state.last_deep else "Not run",
+        "Changes Since Last Regular Check": str(state.changes_since_regular),
+        "New Pages Since Last Regular Check": str(state.new_pages_since_regular),
+        "Pending Confirmations": str(state.pending_confirmations),
+        "Missing Sources": str(state.missing_sources),
+    }
 
 
-def _health_number(content: str, key: str) -> int:
-    match = re.search(rf"(?m)^- {re.escape(key)}:\s*(\d+)\s*$", content)
-    return int(match.group(1)) if match else 0
-
-
-def _set_risk_level(content: str, risk: str) -> str:
-    pattern = r"(?ms)(## Current Risk Level\s*\n\s*).*?(?=\n## |\Z)"
-    return re.sub(pattern, rf"\1{risk}", content, count=1)
-
-
-def _upsert_generated_issues(content: str, issues: list[str]) -> str:
-    start = "<!-- tracebook:generated-issues:start -->"
-    end = "<!-- tracebook:generated-issues:end -->"
-    lines = [start, *(f"- [High] {issue}" for issue in sorted(set(issues))), end]
-    block = "\n".join(lines)
-    pattern = rf"(?s){re.escape(start)}.*?{re.escape(end)}"
-    if re.search(pattern, content):
-        return re.sub(pattern, block, content, count=1)
-    if "None recorded." in content:
-        return content.replace("None recorded.", block)
-    return content.replace("## Open Issues\n", "## Open Issues\n\n" + block + "\n", 1)
+def _run_scoped_check(
+    context: ResolvedContext,
+    scope: str,
+    changed_paths: list[Path],
+    today: date,
+    source_root: Path | None,
+) -> CheckReport:
+    scan_root = _scope_scan_root(context, scope)
+    check_type, trigger_reasons = _trigger(
+        _scope_trigger_values(context, scope, today),
+        changed_paths,
+        today,
+    )
+    report = run_check(
+        context.root,
+        scan_root,
+        changed_paths,
+        today,
+        source_root,
+    )
+    duplicate_pages: list[str] = []
+    log_growth: list[str] = []
+    if check_type == "Regular":
+        pages = _load_page_contents(scan_root.resolve())
+        duplicate_pages = _duplicate_pages(context.root.resolve(), pages)
+        log_growth = _log_growth(context.root.resolve(), pages)
+    return replace(
+        report,
+        check_type=check_type,
+        trigger_reasons=trigger_reasons,
+        duplicate_pages=duplicate_pages,
+        log_growth=log_growth,
+    )
 
 def check(
     context: ResolvedContext,
@@ -163,55 +218,65 @@ def check(
     today: date,
     source_root: Path | None = None,
     new_paths: list[Path] | None = None,
+    scope: str = "project",
 ) -> CheckResult:
     """Run and persist actual health checks without touching business code."""
-    project = context.root / context.record.relative_path
-    report = run_check(context.root, project, changed_paths, today, source_root)
-    if report.check_type in {"Local", "Deep"}:
-        return CheckResult(report=report, changed_paths=())
-
-    health = context.root / "00-global" / "health" / "health-status.md"
-    content = health.read_text(encoding="utf-8")
-    content = _set_health_value(content, f"Last {report.check_type} Check", today.isoformat())
-    changes = 0 if report.check_type in {"Regular", "Deep"} else _health_number(content, "Changes Since Last Regular Check") + len(set(changed_paths))
-    new_page_count = 0 if report.check_type in {"Regular", "Deep"} else _health_number(content, "New Pages Since Last Regular Check") + len(set(new_paths or []))
-    content = _set_health_value(content, "Changes Since Last Regular Check", str(changes))
-    content = _set_health_value(content, "New Pages Since Last Regular Check", str(new_page_count))
-    content = _set_health_value(content, "Pending Confirmations", str(len(report.pending_confirmations)))
-    content = _set_health_value(content, "Missing Sources", str(len(report.missing_sources)))
-    content = _set_health_value(content, "Broken Links", str(len(report.broken_links)))
-    content = _set_health_value(content, "Orphan Pages", str(len(report.orphan_pages)))
-
-    risks = report.broken_links + report.missing_sources + report.outdated_paths
-    content = _upsert_generated_issues(content, risks)
-    risk_level = "High" if risks else "Medium" if (report.pending_confirmations or report.duplicate_pages or report.log_growth or report.ambiguous_wikilinks) else "Low"
-    content = _set_risk_level(content, risk_level)
-    health.write_text(content, encoding="utf-8")
-
-    log = context.root / "00-global" / "health" / "logs" / f"{today:%Y-%m}.md"
-    _append_once(log, report.to_markdown() + "\n")
-    return CheckResult(report=report, changed_paths=(health, log))
+    selected_new_paths = new_paths or []
+    with file_lock(
+        context.root,
+        _scope_lock_name(context.record, scope),
+        operation="check",
+    ):
+        report = _run_scoped_check(
+            context,
+            scope,
+            changed_paths,
+            today,
+            source_root,
+        )
+        committed = _persist_check_under_lock(
+            context.root,
+            context.record,
+            scope,
+            report,
+            changed_paths,
+            selected_new_paths,
+            today,
+        )
+    persisted = _finish_health_persistence(context.root, committed)
+    return CheckResult(
+        report=report,
+        changed_paths=persisted,
+        new_paths=tuple(selected_new_paths),
+    )
 
 
 def audit(
-    context: ResolvedContext, today: date, source_root: Path | None = None
+    context: ResolvedContext,
+    today: date,
+    source_root: Path | None = None,
+    scope: str = "project",
 ) -> DeepAuditResult:
     """Persist an explicit Deep Audit without changing business repositories."""
-    project = context.root / context.record.relative_path
-    report = run_deep_audit(context.root, project, source_root)
-    health = context.root / "00-global" / "health" / "health-status.md"
-    content = health.read_text(encoding="utf-8")
-    content = _set_health_value(content, "Last Deep Check", today.isoformat())
-    content = _set_health_value(content, "Missing Sources", str(len(report.missing_source_paths)))
-    risks = report.missing_source_paths
-    content = _upsert_generated_issues(content, risks)
-    risk_level = "High" if risks else "Medium" if (report.fact_candidates or report.root_cause_candidates or report.status_log_drift) else "Low"
-    content = _set_risk_level(content, risk_level)
-    health.write_text(content, encoding="utf-8")
-
-    log = context.root / "00-global" / "health" / "logs" / f"{today:%Y-%m}.md"
-    _append_once(log, report.to_markdown() + "\n")
-    return DeepAuditResult(report=report, changed_paths=(health, log))
+    with file_lock(
+        context.root,
+        _scope_lock_name(context.record, scope),
+        operation="audit",
+    ):
+        report = run_deep_audit(
+            context.root,
+            _scope_scan_root(context, scope),
+            source_root,
+        )
+        committed = _persist_audit_under_lock(
+            context.root,
+            context.record,
+            scope,
+            report,
+            today,
+        )
+    persisted = _finish_health_persistence(context.root, committed)
+    return DeepAuditResult(report=report, changed_paths=persisted)
 def _parse_date(value: str | None) -> date:
     return date.fromisoformat(value) if value else date.today()
 
@@ -254,10 +319,16 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument("--new-path", action="append", default=[])
     check_parser.add_argument("--source-root")
     check_parser.add_argument("--today")
+    check_parser.add_argument(
+        "--scope", choices=("project", "domain", "pattern"), default="project"
+    )
 
     audit_parser = commands.choices["audit"]
     audit_parser.add_argument("--source-root")
     audit_parser.add_argument("--today")
+    audit_parser.add_argument(
+        "--scope", choices=("project", "domain", "pattern"), default="project"
+    )
 
 
     args = parser.parse_args(argv)
@@ -279,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
             context,
             _parse_date(args.today),
             Path(args.source_root) if args.source_root else None,
+            args.scope,
         )
         _write_payload(
             {
@@ -307,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
         _parse_date(args.today),
         Path(args.source_root) if args.source_root else None,
         [Path(path) for path in args.new_path],
+        args.scope,
     )
     _write_payload(
         {

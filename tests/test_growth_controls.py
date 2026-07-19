@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+from plugins.tracebook.skills.tracebook.scripts.health_state import health_path
 from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import CaptureRequest, capture, check, resolve
 
 
@@ -42,9 +43,15 @@ class GrowthControlsTest(unittest.TestCase):
                 new_paths=list(captured.new_paths),
             )
 
-            health = (context.root / "00-global" / "health" / "health-status.md").read_text(encoding="utf-8")
+            health = health_path(
+                context.root, "project", context.record.slug
+            ).read_text(encoding="utf-8")
             document = context.root / context.record.relative_path / "business-rules.md"
             self.assertEqual(captured.new_paths, (document,))
+            self.assertIn(
+                f"Changes Since Last Regular Check: {len(set(captured.changed_paths))}",
+                health,
+            )
             self.assertIn("New Pages Since Last Regular Check: 1", health)
             self.assertEqual(result.report.check_type, "Light")
 

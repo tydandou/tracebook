@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from datetime import date
 import json
 from pathlib import Path, PurePosixPath
@@ -8,6 +9,7 @@ import re
 import stat
 
 from .errors import TracebookError
+from .check_knowledge import CheckReport, DeepAuditReport
 from .locking import file_lock
 from .project_registry import ProjectRecord, _load_registry, registry_path
 from .storage import confined_path, sha256_bytes, sha256_file
@@ -58,6 +60,30 @@ class HealthState:
     orphan_pages: int = 0
     risk_level: str = "Unknown"
     issues: tuple[str, ...] = ()
+
+
+class HealthAggregateRebuildError(TracebookError):
+    """Report a failed aggregate rebuild after scope health was committed."""
+
+    def __init__(
+        self,
+        committed_paths: tuple[Path, ...],
+        aggregate_error: Exception,
+    ) -> None:
+        self.committed_paths = committed_paths
+        self.aggregate_error = aggregate_error
+        paths = ", ".join(str(path) for path in committed_paths)
+        super().__init__(
+            "HEALTH_AGGREGATE_REBUILD_FAILED",
+            f"Scope health committed at {paths}; aggregate rebuild failed: "
+            f"{aggregate_error}",
+            "health",
+            retryable=(
+                aggregate_error.retryable
+                if isinstance(aggregate_error, TracebookError)
+                else False
+            ),
+        )
 
 
 def _review_required(message: str, operation: str) -> TracebookError:
@@ -523,6 +549,322 @@ def rebuild_global_health(root: Path) -> Path:
             {target: content},
         )
         return target
+
+
+def _scope_lock_name(record: ProjectRecord, scope: str) -> str:
+    if scope == "project":
+        _project_slug(record.slug)
+        return f"project-{record.slug}"
+    if scope in {"domain", "pattern"}:
+        return scope
+    raise ValueError(f"Unsupported health scope: {scope}")
+
+
+def _scope_identity(record: ProjectRecord, scope: str) -> str:
+    if scope == "project":
+        return record.identity
+    if scope in {"domain", "pattern"}:
+        return scope
+    raise ValueError(f"Unsupported health scope: {scope}")
+
+
+def _scope_paths(
+    root: Path,
+    record: ProjectRecord,
+    scope: str,
+    today: date,
+) -> tuple[Path, Path]:
+    identity = record.slug if scope == "project" else _scope_identity(record, scope)
+    return (
+        health_path(root, scope, identity),
+        health_log_path(root, scope, identity, today),
+    )
+
+
+def _stable_issues(
+    high_findings: Sequence[str],
+    medium_findings: Sequence[str],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    seen: set[str] = set()
+    for severity, findings in (
+        ("High", high_findings),
+        ("Medium", medium_findings),
+    ):
+        for finding in sorted(set(findings)):
+            if finding in seen:
+                continue
+            seen.add(finding)
+            issues.append(f"[{severity}] {finding}")
+    return tuple(issues)
+
+
+def _check_state(
+    state: HealthState,
+    report: CheckReport,
+    changed_paths: Sequence[Path],
+    new_paths: Sequence[Path],
+    today: date,
+) -> HealthState:
+    if report.check_type == "Light":
+        state = replace(
+            state,
+            last_light=today,
+            changes_since_regular=(
+                state.changes_since_regular + len(set(changed_paths))
+            ),
+            new_pages_since_regular=(
+                state.new_pages_since_regular + len(set(new_paths))
+            ),
+        )
+    elif report.check_type == "Regular":
+        state = replace(
+            state,
+            last_regular=today,
+            changes_since_regular=0,
+            new_pages_since_regular=0,
+        )
+    else:
+        return state
+
+    high_findings = (
+        *report.broken_links,
+        *report.missing_sources,
+        *report.outdated_paths,
+    )
+    medium_findings = (
+        *report.pending_confirmations,
+        *report.duplicate_pages,
+        *report.log_growth,
+        *report.ambiguous_wikilinks,
+    )
+    risk_level = "High" if high_findings else "Medium" if medium_findings else "Low"
+    return replace(
+        state,
+        pending_confirmations=len(report.pending_confirmations),
+        missing_sources=len(report.missing_sources),
+        broken_links=len(report.broken_links),
+        orphan_pages=len(report.orphan_pages),
+        risk_level=risk_level,
+        issues=_stable_issues(high_findings, medium_findings),
+    )
+
+
+def _audit_state(
+    state: HealthState,
+    report: DeepAuditReport,
+    today: date,
+) -> HealthState:
+    high_findings = tuple(report.missing_source_paths)
+    medium_findings = (
+        *report.fact_candidates,
+        *report.root_cause_candidates,
+        *report.status_log_drift,
+    )
+    risk_level = "High" if high_findings else "Medium" if medium_findings else "Low"
+    return replace(
+        state,
+        last_deep=today,
+        missing_sources=len(report.missing_source_paths),
+        risk_level=risk_level,
+        issues=_stable_issues(high_findings, medium_findings),
+    )
+
+
+def _health_log_entry(
+    record: ProjectRecord,
+    scope: str,
+    today: date,
+    kind: str,
+    report_markdown: str,
+) -> str:
+    scope_identity = _scope_identity(record, scope)
+    return "\n".join(
+        [
+            f"## {today.isoformat()} {kind}",
+            "",
+            f"- Date: {today.isoformat()}",
+            f"- Scope: {scope}",
+            f"- Scope Identity: {scope_identity}",
+            f"- Owner Project Identity: {record.identity}",
+            f"- Owner Project Slug: {record.slug}",
+            f"- Owner Project Path: {record.relative_path}",
+            "",
+            report_markdown.rstrip("\n"),
+            "",
+        ]
+    )
+
+
+def _updated_log(existing: str, entry: str) -> str:
+    if entry in existing:
+        return existing
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    return existing + entry
+
+
+def _commit_scope_health(
+    root: Path,
+    record: ProjectRecord,
+    scope: str,
+    today: date,
+    state: HealthState,
+    kind: str,
+    report_markdown: str,
+) -> tuple[Path, ...]:
+    status_path, log_path = _scope_paths(root, record, scope, today)
+    status_existing = (
+        status_path.read_text(encoding="utf-8") if status_path.is_file() else None
+    )
+    status_content = render_health_state(state, status_existing)
+    log_existing = log_path.read_text(encoding="utf-8") if log_path.is_file() else ""
+    log_content = _updated_log(
+        log_existing,
+        _health_log_entry(record, scope, today, kind, report_markdown),
+    )
+    updates: dict[Path, str] = {}
+    if status_existing != status_content:
+        updates[status_path] = status_content
+    if log_existing != log_content:
+        updates[log_path] = log_content
+    _ensure_parent_directories(tuple(updates))
+    commit_updates(
+        root,
+        _scope_lock_name(record, scope),
+        kind.casefold().replace(" ", "-"),
+        updates,
+    )
+    return tuple(path for path in (status_path, log_path) if path in updates)
+
+
+def _load_scope_state(
+    root: Path,
+    record: ProjectRecord,
+    scope: str,
+    today: date,
+) -> HealthState:
+    status_path, _ = _scope_paths(root, record, scope, today)
+    if status_path.is_file():
+        return load_health_state(status_path)
+    return HealthState(scope=scope, identity=_scope_identity(record, scope))
+
+
+def _persist_check_under_lock(
+    root: Path,
+    record: ProjectRecord,
+    scope: str,
+    report: CheckReport,
+    changed_paths: Sequence[Path],
+    new_paths: Sequence[Path],
+    today: date,
+) -> tuple[Path, ...]:
+    if report.check_type in {"Local", "Deep"}:
+        return ()
+    state = _check_state(
+        _load_scope_state(root, record, scope, today),
+        report,
+        changed_paths,
+        new_paths,
+        today,
+    )
+    return _commit_scope_health(
+        root,
+        record,
+        scope,
+        today,
+        state,
+        f"{report.check_type} Check",
+        report.to_markdown(),
+    )
+
+
+def _persist_audit_under_lock(
+    root: Path,
+    record: ProjectRecord,
+    scope: str,
+    report: DeepAuditReport,
+    today: date,
+) -> tuple[Path, ...]:
+    state = _audit_state(
+        _load_scope_state(root, record, scope, today),
+        report,
+        today,
+    )
+    return _commit_scope_health(
+        root,
+        record,
+        scope,
+        today,
+        state,
+        "Deep Audit",
+        report.to_markdown(),
+    )
+
+
+def _finish_health_persistence(
+    root: Path,
+    committed_paths: tuple[Path, ...],
+) -> tuple[Path, ...]:
+    if not committed_paths:
+        return ()
+    try:
+        aggregate_path = rebuild_global_health(root)
+    except Exception as error:
+        raise HealthAggregateRebuildError(committed_paths, error) from error
+    return (*committed_paths, aggregate_path)
+
+
+def persist_check(
+    root: Path,
+    record: ProjectRecord,
+    scope: str,
+    report: CheckReport,
+    changed_paths: Sequence[Path],
+    new_paths: Sequence[Path],
+    today: date,
+) -> tuple[Path, ...]:
+    """Commit one check to its authoritative scope, then rebuild the aggregate."""
+    resolved_root = root.resolve()
+    with file_lock(
+        resolved_root,
+        _scope_lock_name(record, scope),
+        operation="check",
+    ):
+        committed = _persist_check_under_lock(
+            resolved_root,
+            record,
+            scope,
+            report,
+            changed_paths,
+            new_paths,
+            today,
+        )
+    return _finish_health_persistence(resolved_root, committed)
+
+
+def persist_audit(
+    root: Path,
+    record: ProjectRecord,
+    scope: str,
+    report: DeepAuditReport,
+    today: date,
+) -> tuple[Path, ...]:
+    """Commit one audit to its authoritative scope, then rebuild the aggregate."""
+    resolved_root = root.resolve()
+    with file_lock(
+        resolved_root,
+        _scope_lock_name(record, scope),
+        operation="audit",
+    ):
+        committed = _persist_audit_under_lock(
+            resolved_root,
+            record,
+            scope,
+            report,
+            today,
+        )
+    return _finish_health_persistence(resolved_root, committed)
 
 
 def _validated_manifest(root: Path, path: Path) -> tuple[Path, Path, tuple[tuple[Path, str], ...]]:
