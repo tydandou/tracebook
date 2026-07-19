@@ -35,7 +35,17 @@ class PublicArtifactsTest(unittest.TestCase):
         )
 
         self.assertEqual("tracebook", manifest["name"])
+        self.assertEqual("1.0.0", manifest["version"])
         self.assertEqual("./skills/", manifest["skills"])
+        self.assertEqual(
+            "https://github.com/tydandou/tracebook", manifest["homepage"]
+        )
+        self.assertEqual(
+            "https://github.com/tydandou/tracebook", manifest["repository"]
+        )
+        self.assertEqual(
+            "https://github.com/tydandou", manifest["author"]["url"]
+        )
         self.assertEqual("tracebook", marketplace["name"])
         self.assertEqual("./plugins/tracebook", marketplace["plugins"][0]["source"]["path"])
     def test_claude_plugin_manifest_and_marketplace_expose_tracebook(self) -> None:
@@ -70,8 +80,25 @@ class PublicArtifactsTest(unittest.TestCase):
         self.assertIn("capture", readme)
         self.assertIn("check", readme)
         self.assertIn("audit", readme)
-        self.assertIn("## [1.0.0] - Unreleased", changelog)
+        self.assertIn("## [1.0.0] - 2026-07-19", changelog)
         self.assertIn("Not Included", changelog)
+
+    def test_ci_verifies_supported_python_versions_on_linux_and_windows(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+
+        for required in (
+            "ubuntu-latest",
+            "windows-latest",
+            "'3.10'",
+            "'3.13'",
+            "python -B -m unittest discover -s tests -v",
+            "validate_skill_package.py",
+            "python -m compileall -q",
+            "git diff --check",
+        ):
+            self.assertIn(required, workflow)
     def test_license_is_apache_2_0(self) -> None:
         license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
 
