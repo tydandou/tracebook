@@ -758,9 +758,9 @@ def _persist_check_under_lock(
     changed_paths: Sequence[Path],
     new_paths: Sequence[Path],
     today: date,
-) -> tuple[Path, ...]:
+) -> tuple[Path, ...] | None:
     if report.check_type in {"Local", "Deep"}:
-        return ()
+        return None
     state = _check_state(
         _load_scope_state(root, record, scope, today),
         report,
@@ -804,14 +804,19 @@ def _persist_audit_under_lock(
 
 def _finish_health_persistence(
     root: Path,
-    committed_paths: tuple[Path, ...],
+    committed_paths: tuple[Path, ...] | None,
 ) -> tuple[Path, ...]:
-    if not committed_paths:
+    if committed_paths is None:
         return ()
+    aggregate_before = sha256_file(
+        _relative_path(root.resolve(), _LEGACY_SOURCE, operation="health")
+    )
     try:
         aggregate_path = rebuild_global_health(root)
     except Exception as error:
         raise HealthAggregateRebuildError(committed_paths, error) from error
+    if sha256_file(aggregate_path) == aggregate_before:
+        return committed_paths
     return (*committed_paths, aggregate_path)
 
 

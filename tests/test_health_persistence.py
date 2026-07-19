@@ -110,7 +110,13 @@ class HealthPersistenceTest(unittest.TestCase):
             page = context.root / context.record.relative_path / "architecture.md"
             page.write_text("# Architecture\nThe service has three replicas.\n", encoding="utf-8")
 
-            result = check(context, [page], date(2026, 7, 13), source_root=repo)
+            result = check(
+                context,
+                [page],
+                date(2026, 7, 13),
+                source_root=repo,
+                new_paths=[page],
+            )
 
             status_path = health_path(
                 context.root, "project", context.record.slug
@@ -124,6 +130,8 @@ class HealthPersistenceTest(unittest.TestCase):
             self.assertIn("Missing Sources: 1", status)
             self.assertIn("Open Issues", status)
             self.assertIn("architecture.md", status)
+            self.assertIn("New Pages Since Last Regular Check: 1", status)
+            self.assertEqual((), result.new_paths)
             self.assertTrue(log.is_file())
 
     def test_ambiguous_wikilink_persists_medium_risk(self) -> None:
@@ -161,10 +169,12 @@ class HealthPersistenceTest(unittest.TestCase):
             health = context.root / "00-global" / "health" / "health-status.md"
             before = health.read_text(encoding="utf-8")
 
-            result = check(context, [], date(2026, 7, 13), source_root=repo)
+            with patch.object(health_state, "rebuild_global_health") as rebuild:
+                result = check(context, [], date(2026, 7, 13), source_root=repo)
 
             self.assertEqual(result.report.check_type, "Local")
             self.assertEqual(health.read_text(encoding="utf-8"), before)
+            rebuild.assert_not_called()
 
     def test_scope_dates_and_counters_are_independent(self) -> None:
         with TemporaryDirectory() as temp:
@@ -268,7 +278,7 @@ class HealthPersistenceTest(unittest.TestCase):
                 context.root, "project", context.record.slug, date(2026, 7, 18)
             )
             self.assertEqual([(f"project-{context.record.slug}", (status, log))], commits)
-            self.assertEqual((status, log, aggregate), changed)
+            self.assertEqual((status, log), changed)
 
     def test_aggregate_failure_exposes_committed_scope_paths_and_original_error(self) -> None:
         with TemporaryDirectory() as temp:
@@ -277,6 +287,8 @@ class HealthPersistenceTest(unittest.TestCase):
             (repo / ".git").mkdir(parents=True)
             context = resolve(base / "knowledge", repo)
             failure = RuntimeError("aggregate write failed")
+            aggregate = context.root / "00-global" / "health" / "health-status.md"
+            aggregate_before = aggregate.read_bytes()
 
             with patch.object(
                 health_state, "rebuild_global_health", side_effect=failure
@@ -300,6 +312,27 @@ class HealthPersistenceTest(unittest.TestCase):
             self.assertIs(failure, raised.exception.__cause__)
             self.assertEqual("High", load_health_state(status).risk_level)
             self.assertIn("complete missing-source finding", log.read_text(encoding="utf-8"))
+
+            status_before = status.read_bytes()
+            log_before = log.read_bytes()
+            retried = persist_check(
+                context.root,
+                context.record,
+                "project",
+                self._report(missing_sources=["complete missing-source finding"]),
+                [],
+                [],
+                date(2026, 7, 18),
+            )
+
+            self.assertEqual((aggregate,), retried)
+            self.assertEqual(status_before, status.read_bytes())
+            self.assertEqual(log_before, log.read_bytes())
+            self.assertNotEqual(aggregate_before, aggregate.read_bytes())
+            self.assertIn(
+                "complete missing-source finding",
+                aggregate.read_text(encoding="utf-8"),
+            )
 
     def test_medium_findings_are_stably_deduplicated_without_truncation(self) -> None:
         with TemporaryDirectory() as temp:

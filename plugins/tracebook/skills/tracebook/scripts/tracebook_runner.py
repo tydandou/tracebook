@@ -247,7 +247,6 @@ def check(
     return CheckResult(
         report=report,
         changed_paths=persisted,
-        new_paths=tuple(selected_new_paths),
     )
 
 
