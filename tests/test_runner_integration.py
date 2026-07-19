@@ -156,6 +156,10 @@ class RunnerIntegrationTest(unittest.TestCase):
                     )
                     health_scope = str(captured["health_scope"])
                     self.assertEqual(scope, health_scope)
+                    changed_paths = [str(path) for path in captured["changed_paths"]]
+                    new_paths = [str(path) for path in captured["new_paths"]]
+                    self.assertGreaterEqual(len(changed_paths), 2)
+                    self.assertGreaterEqual(len(new_paths), 1)
 
                     check_arguments = [
                         "check",
@@ -165,12 +169,23 @@ class RunnerIntegrationTest(unittest.TestCase):
                         "--today", "2026-07-19",
                         "--scope", health_scope,
                     ]
-                    for path in captured["changed_paths"]:
-                        check_arguments.extend(("--changed", str(path)))
-                    for path in captured["new_paths"]:
-                        check_arguments.extend(("--new-path", str(path)))
+                    for path in changed_paths:
+                        check_arguments.extend(("--changed", path))
+                    for path in new_paths:
+                        check_arguments.extend(("--new-path", path))
                     checked = self._run_runner(base, *check_arguments)
                     self.assertEqual("Light", checked["check_type"])
+
+                    status = root / "00-global" / "health" / "scopes" / f"{scope}-status.md"
+                    checked_status = status.read_text(encoding="utf-8")
+                    self.assertIn(
+                        f"Changes Since Last Regular Check: {len(set(changed_paths))}",
+                        checked_status,
+                    )
+                    self.assertIn(
+                        f"New Pages Since Last Regular Check: {len(set(new_paths))}",
+                        checked_status,
+                    )
 
                     audited = self._run_runner(
                         base,
@@ -183,7 +198,6 @@ class RunnerIntegrationTest(unittest.TestCase):
                     )
                     self.assertIn("Deep Knowledge Audit", audited["report"])
 
-                    status = root / "00-global" / "health" / "scopes" / f"{scope}-status.md"
                     log = root / "00-global" / "health" / "logs" / scope / "2026-07.md"
                     aggregate = root / "00-global" / "health" / "health-status.md"
                     self.assertIn("Last Deep Check: 2026-07-19", status.read_text(encoding="utf-8"))
@@ -195,11 +209,47 @@ class RunnerIntegrationTest(unittest.TestCase):
 
         self.assertIn("$SKILL_DIR/scripts/tracebook_runner.py", skill)
         self.assertIn("resolve --root", skill)
-        self.assertIn("health_scope", skill)
-        self.assertIn("--scope", skill)
-        self.assertRegex(
-            skill,
-            r"(?s)health_scope.*?check.*?--scope.*?audit.*?same scope",
+        verify_heading = "## Verify Knowledge Writes"
+        final_heading = "## Final Task Report"
+        self.assertIn(verify_heading, skill)
+        self.assertIn(final_heading, skill)
+        verify_workflow = skill.split(verify_heading, 1)[1].split(final_heading, 1)[0]
+        verify_workflow = " ".join(verify_workflow.split())
+
+        self.assertIn(
+            "After every successful capture, require `changed_paths`, `new_paths`, "
+            "and `health_scope` in its structured JSON.",
+            verify_workflow,
+        )
+        self.assertIn(
+            "Stop and report an incomplete runner response",
+            verify_workflow,
+        )
+        self.assertIn(
+            "`health_scope` is absent or is not `project`, `domain`, or `pattern`;",
+            verify_workflow,
+        )
+        self.assertIn(
+            "do not fall back to the default project scope.",
+            verify_workflow,
+        )
+        self.assertIn(
+            "Pass every capture `changed_paths` item as `--changed`",
+            verify_workflow,
+        )
+        self.assertIn(
+            "every `new_paths` item as `--new-path`",
+            verify_workflow,
+        )
+        self.assertIn(
+            "the capture `health_scope` as `--scope`.",
+            verify_workflow,
+        )
+        self.assertIn(
+            "Run `$SKILL_DIR/scripts/tracebook_runner.py audit` with the same "
+            "`--root`, `--cwd`, `--today`, and `--source-root` values, plus the "
+            "same scope supplied to check as `--scope`.",
+            verify_workflow,
         )
 
 
