@@ -808,14 +808,15 @@ def _finish_health_persistence(
 ) -> tuple[Path, ...]:
     if committed_paths is None:
         return ()
-    aggregate_before = sha256_file(
-        _relative_path(root.resolve(), _LEGACY_SOURCE, operation="health")
-    )
     try:
+        aggregate_before = sha256_file(
+            _relative_path(root.resolve(), _LEGACY_SOURCE, operation="health")
+        )
         aggregate_path = rebuild_global_health(root)
+        aggregate_after = sha256_file(aggregate_path)
     except Exception as error:
         raise HealthAggregateRebuildError(committed_paths, error) from error
-    if sha256_file(aggregate_path) == aggregate_before:
+    if aggregate_after == aggregate_before:
         return committed_paths
     return (*committed_paths, aggregate_path)
 

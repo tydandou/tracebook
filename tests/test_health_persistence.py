@@ -334,6 +334,74 @@ class HealthPersistenceTest(unittest.TestCase):
                 aggregate.read_text(encoding="utf-8"),
             )
 
+    def test_aggregate_pre_hash_failure_preserves_committed_scope_context(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            context = resolve(base / "knowledge", repo)
+            failure = PermissionError("aggregate pre-hash denied")
+
+            with patch.object(
+                health_state, "sha256_file", side_effect=failure
+            ), self.assertRaises(Exception) as raised:
+                persist_check(
+                    context.root,
+                    context.record,
+                    "project",
+                    self._report(),
+                    [],
+                    [],
+                    date(2026, 7, 18),
+                )
+
+            status = health_path(context.root, "project", context.record.slug)
+            log = health_log_path(
+                context.root, "project", context.record.slug, date(2026, 7, 18)
+            )
+            self.assertIsInstance(raised.exception, HealthAggregateRebuildError)
+            self.assertEqual((status, log), raised.exception.committed_paths)
+            self.assertIs(failure, raised.exception.aggregate_error)
+            self.assertIs(failure, raised.exception.__cause__)
+            self.assertTrue(status.is_file())
+            self.assertTrue(log.is_file())
+
+    def test_aggregate_post_hash_failure_preserves_committed_scope_context(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            context = resolve(base / "knowledge", repo)
+            aggregate = context.root / "00-global" / "health" / "health-status.md"
+            aggregate_before = health_state.sha256_file(aggregate)
+            failure = OSError("aggregate post-hash failed")
+
+            with patch.object(
+                health_state,
+                "sha256_file",
+                side_effect=(aggregate_before, failure),
+            ), self.assertRaises(Exception) as raised:
+                persist_check(
+                    context.root,
+                    context.record,
+                    "project",
+                    self._report(),
+                    [],
+                    [],
+                    date(2026, 7, 18),
+                )
+
+            status = health_path(context.root, "project", context.record.slug)
+            log = health_log_path(
+                context.root, "project", context.record.slug, date(2026, 7, 18)
+            )
+            self.assertIsInstance(raised.exception, HealthAggregateRebuildError)
+            self.assertEqual((status, log), raised.exception.committed_paths)
+            self.assertIs(failure, raised.exception.aggregate_error)
+            self.assertIs(failure, raised.exception.__cause__)
+            self.assertTrue(status.is_file())
+            self.assertTrue(log.is_file())
+
     def test_medium_findings_are_stably_deduplicated_without_truncation(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)
