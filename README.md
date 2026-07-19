@@ -54,14 +54,13 @@ installing files, hooks, or services into those repositories.
 
 ## Install
 
-This repository is the `1.0.0` release candidate. Its
-[CHANGELOG.md](CHANGELOG.md) intentionally remains Unreleased until the
-matching `v1.0.0` tag is published. Use the local development loading
-instructions when working from an untagged clone.
+The `1.0.0` release is published under the `v1.0.0` tag. Use the tagged
+installation commands for the stable release, or the local development loading
+instructions when working from a clone.
 
 ### Codex
 
-After the tag is published:
+Install the tagged release:
 
 ```text
 codex plugin marketplace add tydandou/tracebook --ref v1.0.0
@@ -398,8 +397,8 @@ may be skipped on Windows hosts without symlink privileges.
 
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
-publish the matching Git tag. Do not use the tagged Codex installation command
-until `v1.0.0` exists.
+publish the matching Git tag. The tagged Codex installation command above
+resolves the published `v1.0.0` release.
 
 ## Current Limitations
 

@@ -43,9 +43,8 @@ runner 则用于集成、诊断和高级工作流。
 
 ## 安装
 
-当前仓库是 `1.0.0` 发布候选。在匹配的 `v1.0.0` tag 发布前，
-[CHANGELOG.md](CHANGELOG.md) 会保持 Unreleased。下面带 tag 的 Codex 命令应在
-tag 发布后使用；从未打 tag 的 clone 开发时，请使用本地加载方式。
+`1.0.0` 已正式发布，对应 `v1.0.0` tag。稳定版本请使用下面带 tag 的安装命令；
+从 clone 开发时，请使用本地加载方式。
 
 ### Codex
 
@@ -354,8 +353,8 @@ git diff --check
 检查。Linux 会执行在缺少符号链接权限的 Windows 主机上可能跳过的符号链接边界用例。
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
-验证中英文指南并发布匹配的 Git tag。在 `v1.0.0` 存在之前，不要使用带 tag 的 Codex
-安装命令。
+验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
+`v1.0.0` 版本。
 
 ## 当前限制
 
