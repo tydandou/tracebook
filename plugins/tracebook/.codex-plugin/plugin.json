@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "description": "Durable and traceable external project knowledge for Codex.",
   "author": {
-    "name": "Tracebook Contributors"
+    "name": "Tracebook Contributors",
+    "url": "https://github.com/tydandou"
   },
+  "homepage": "https://github.com/tydandou/tracebook",
+  "repository": "https://github.com/tydandou/tracebook",
   "license": "Apache-2.0",
   "keywords": ["knowledge", "engineering", "documentation", "obsidian"],
   "skills": "./skills/",

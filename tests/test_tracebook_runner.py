@@ -1,9 +1,11 @@
 import os
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from plugins.tracebook.skills.tracebook.scripts import tracebook_runner
 from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import default_root, initialize, resolve
 
 
@@ -27,6 +29,21 @@ class TracebookRunnerTest(unittest.TestCase):
             self.assertIn(root / "00-global" / "health" / "health-status.md", result.created_paths)
             self.assertTrue((root / "01-projects" / "index.md").is_file())
 
+    def test_initialize_delegates_to_knowledge_root_repair(self) -> None:
+        root = Path("D:/knowledge")
+        template = Path("D:/template")
+        repaired = (root / "AGENTS.md",)
+
+        with patch(
+            "plugins.tracebook.skills.tracebook.scripts.tracebook_runner.repair_knowledge_root",
+            return_value=repaired,
+        ) as repair:
+            result = initialize(root, template)
+
+        repair.assert_called_once_with(root, template)
+        self.assertEqual(root, result.root)
+        self.assertEqual(repaired, result.created_paths)
+
     def test_resolve_returns_ordered_context_for_current_project(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)
@@ -43,9 +60,53 @@ class TracebookRunnerTest(unittest.TestCase):
                     root / "00-global" / "health" / "health-status.md",
                     root / context.record.relative_path / "index.md",
                     root / context.record.relative_path / "project-status.md",
+                    root / context.record.relative_path / "health-status.md",
                 ),
             )
             self.assertFalse((repo / "AGENTS.md").exists())
+            self.assertFalse(
+                (root / ".tracebook-state" / "migrations" / "health-v1.json").exists()
+            )
+
+    def test_resolve_ensures_project_health_while_holding_the_project_lock(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            active_locks: list[str] = []
+            actual_ensure = tracebook_runner.ensure_health_layout
+
+            @contextmanager
+            def recording_lock(
+                lock_root: Path,
+                name: str,
+                *,
+                operation: str,
+                **_: object,
+            ):
+                self.assertEqual(root.resolve(), lock_root.resolve())
+                active_locks.append(name)
+                try:
+                    yield
+                finally:
+                    active_locks.remove(name)
+
+            def checking_ensure(health_root: Path, project=None):
+                if project is not None:
+                    self.assertIn(f"project-{project.slug}", active_locks)
+                return actual_ensure(health_root, project)
+
+            with patch.object(tracebook_runner, "file_lock", recording_lock), patch.object(
+                tracebook_runner,
+                "ensure_health_layout",
+                side_effect=checking_ensure,
+            ):
+                context = resolve(root, repo)
+
+            self.assertTrue(
+                (root / context.record.relative_path / "health-status.md").is_file()
+            )
 
 
 if __name__ == "__main__":

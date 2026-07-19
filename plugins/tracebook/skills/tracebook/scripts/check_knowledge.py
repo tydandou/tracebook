@@ -305,6 +305,12 @@ FACT_MARKER = re.compile(r"\b\d+(?:\.\d+)?\b|\b[A-Z][A-Z0-9_]{2,}\b")
 
 EVIDENCE_HEADING = re.compile(r"^\s*(?:evidence|sources?):\s*$", re.IGNORECASE)
 EVIDENCE_ITEM = re.compile(r"^[-*+]\s+\S")
+ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+|$)")
+LEVEL_TWO_HEADING = re.compile(r"^ {0,3}##(?:[ \t]+|$)")
+PENDING_STATUS = re.compile(
+    r"^[ \t]*(?:status:[ \t]*)?pending[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 def _has_evidence(content: str) -> bool:
@@ -322,26 +328,53 @@ def _has_evidence(content: str) -> bool:
                 return True
     return False
 
-def _deep_pages(project_dir: Path) -> list[Path]:
-    names = {"business-rules.md", "api.md", "database.md", "architecture.md"}
+DEEP_EXCLUDED_PAGES = {"index.md", "project-status.md", "health-status.md"}
+DEEP_EXCLUDED_DIRECTORIES = {"archive", "logs"}
+
+
+def _deep_pages(scope_dir: Path) -> list[Path]:
     pages: list[Path] = []
-    for page in _markdown_files(project_dir):
-        if page.name in names or "synthesis" in page.relative_to(project_dir).parts:
-            pages.append(page)
+    for page in _markdown_files(scope_dir):
+        relative = page.relative_to(scope_dir)
+        if page.name in DEEP_EXCLUDED_PAGES:
+            continue
+        if DEEP_EXCLUDED_DIRECTORIES.intersection(relative.parts):
+            continue
+        pages.append(page)
     return pages
+
+
+def _entry_sections(content: str) -> list[list[tuple[int, str]]]:
+    sections: list[list[tuple[int, str]]] = []
+    current: list[tuple[int, str]] = []
+    in_frontmatter = content.startswith("---\n")
+    for number, line in enumerate(content.splitlines(), 1):
+        if in_frontmatter:
+            if number > 1 and line.strip() == "---":
+                in_frontmatter = False
+            continue
+        if LEVEL_TWO_HEADING.match(line) and current:
+            sections.append(current)
+            current = []
+        current.append((number, line))
+    if current:
+        sections.append(current)
+    return sections
 
 
 def _fact_candidates(root: Path, pages: list[Path]) -> list[str]:
     candidates: list[str] = []
     for page in pages:
         content = page.read_text(encoding="utf-8")
-        if _has_evidence(content) or "pending" in content.lower():
-            continue
-        for number, line in enumerate(content.splitlines(), 1):
-            if line.startswith("#") or not line.strip() or line.lower().startswith(("status:", "source:", "evidence:")):
+        for section in _entry_sections(content):
+            section_content = "\n".join(line for _, line in section)
+            if _has_evidence(section_content) or PENDING_STATUS.search(section_content):
                 continue
-            if FACT_MARKER.search(line):
-                candidates.append(f"{_relative(root, page)}:L{number}: factual claim requires evidence review")
+            for number, line in section:
+                if ATX_HEADING.match(line) or not line.strip() or line.lower().startswith(("status:", "source:", "evidence:")):
+                    continue
+                if FACT_MARKER.search(line):
+                    candidates.append(f"{_relative(root, page)}:L{number}: factual claim requires evidence review")
     return candidates
 
 

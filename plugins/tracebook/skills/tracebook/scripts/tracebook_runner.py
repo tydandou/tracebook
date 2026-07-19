@@ -3,23 +3,76 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 import json
 import os
 from pathlib import Path
-import re
 import sys
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from scripts.check_knowledge import CheckReport, DeepAuditReport, run_check, run_deep_audit
-    from scripts.knowledge_root import DEFAULT_TEMPLATE
-    from scripts.project_registry import ProjectRecord, ensure_project
+    from scripts.capture import (
+        CaptureRequest,
+        CaptureResult,
+        capture_knowledge,
+        capture_lock_name,
+        validate_capture,
+    )
+    from scripts.check_knowledge import (
+        CheckReport,
+        DeepAuditReport,
+        _duplicate_pages,
+        _load_page_contents,
+        _log_growth,
+        _trigger,
+        run_check,
+        run_deep_audit,
+    )
+    from scripts.health_state import (
+        _finish_health_persistence,
+        _load_scope_state,
+        _persist_audit_under_lock,
+        _persist_check_under_lock,
+        _scope_lock_name,
+        ensure_health_layout,
+        rebuild_global_health,
+    )
+    from scripts.knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
+    from scripts.locking import file_lock
+    from scripts.project_registry import ProjectRecord, ensure_project, repository_root
+    from scripts.transaction import recover_transactions
 else:
-    from .check_knowledge import CheckReport, DeepAuditReport, run_check, run_deep_audit
-    from .knowledge_root import DEFAULT_TEMPLATE
-    from .project_registry import ProjectRecord, ensure_project
+    from .capture import (
+        CaptureRequest,
+        CaptureResult,
+        capture_knowledge,
+        capture_lock_name,
+        validate_capture,
+    )
+    from .check_knowledge import (
+        CheckReport,
+        DeepAuditReport,
+        _duplicate_pages,
+        _load_page_contents,
+        _log_growth,
+        _trigger,
+        run_check,
+        run_deep_audit,
+    )
+    from .health_state import (
+        _finish_health_persistence,
+        _load_scope_state,
+        _persist_audit_under_lock,
+        _persist_check_under_lock,
+        _scope_lock_name,
+        ensure_health_layout,
+        rebuild_global_health,
+    )
+    from .knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
+    from .locking import file_lock
+    from .project_registry import ProjectRecord, ensure_project, repository_root
+    from .transaction import recover_transactions
 
 
 def default_root() -> Path:
@@ -42,29 +95,28 @@ class ResolvedContext:
 
 def initialize(root: Path, template: Path = DEFAULT_TEMPLATE) -> InitializeResult:
     """Repair missing template files while preserving existing knowledge."""
-    root = root.expanduser()
-    created: list[Path] = []
-    for source in sorted(template.rglob("*")):
-        relative = source.relative_to(template)
-        destination = root / relative
-        if source.is_dir():
-            destination.mkdir(parents=True, exist_ok=True)
-            continue
-        if destination.exists():
-            continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        content = source.read_text(encoding="utf-8").replace(
-            "{{knowledge_root}}", str(root)
-        )
-        destination.write_text(content, encoding="utf-8")
-        created.append(destination)
-    return InitializeResult(root=root, created_paths=tuple(created))
+    created = repair_knowledge_root(root, template)
+    return InitializeResult(
+        root=root.expanduser().resolve(),
+        created_paths=created,
+    )
 
 
 def resolve(root: Path, cwd: Path) -> ResolvedContext:
     """Initialize a root, register a repository, and return default context."""
-    initialized = initialize(root)
-    record = ensure_project(initialized.root, cwd)
+    repository = repository_root(cwd)
+    resolved_root, repository = validate_external_root(root, repository)
+    recover_transactions(resolved_root)
+    initialized = initialize(resolved_root)
+    record = ensure_project(initialized.root, repository)
+    ensure_health_layout(initialized.root)
+    with file_lock(
+        initialized.root,
+        f"project-{record.slug}",
+        operation="resolve",
+    ):
+        ensure_health_layout(initialized.root, record)
+    rebuild_global_health(initialized.root)
     project = initialized.root / record.relative_path
     return ResolvedContext(
         root=initialized.root,
@@ -74,235 +126,14 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
             initialized.root / "00-global" / "health" / "health-status.md",
             project / "index.md",
             project / "project-status.md",
+            project / "health-status.md",
         ),
     )
-@dataclass(frozen=True)
-class CaptureRequest:
-    scope: str
-    kind: str
-    category: str
-    title: str
-    body: str
-    evidence: tuple[str, ...] = ()
-    status: str = "Current"
-    write_intent: str = "durable"
-    content_kind: str = "knowledge"
-    replacement: str | None = None
-    topic: str | None = None
-    user_prohibits_write: bool = False
-
-
-@dataclass(frozen=True)
-class CaptureResult:
-    changed_paths: tuple[Path, ...]
-    new_paths: tuple[Path, ...] = ()
-    skipped: bool = False
-
-
-PROJECT_DOCUMENTS = {
-    "architecture": "architecture.md",
-    "api": "api.md",
-    "business-rule": "business-rules.md",
-    "database": "database.md",
-    "module": "modules.md",
-    "source-map": "source-map.md",
-    "terminology": "terminology.md",
-}
-CATEGORY = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-
-
-def _safe_category(category: str) -> str:
-    if not CATEGORY.fullmatch(category):
-        raise ValueError("Unsupported category")
-    return category
-
-
-def _project_directory(context: ResolvedContext) -> Path:
-    return context.root / context.record.relative_path
-
-
-def _capture_destination(context: ResolvedContext, request: CaptureRequest) -> tuple[Path, Path]:
-    category = _safe_category(request.category)
-    if request.scope == "project":
-        directory = _project_directory(context)
-        if request.kind in PROJECT_DOCUMENTS:
-            if category != Path(PROJECT_DOCUMENTS[request.kind]).stem:
-                raise ValueError("Project document category must match its kind")
-            document = directory / PROJECT_DOCUMENTS[request.kind]
-            split_directories = {
-                "business-rule": "business-rules",
-                "api": "api",
-                "database": "database",
-                "source-map": "source-map",
-            }
-            if request.kind in split_directories and document.exists() and len(document.read_text(encoding="utf-8").splitlines()) > 300:
-                if not request.topic:
-                    raise ValueError("A topic is required after the document exceeds 300 lines")
-                document = directory / split_directories[request.kind] / f"{_safe_category(request.topic)}.md"
-        elif request.kind == "decision":
-            document = directory / "decisions" / f"{category}.md"
-        elif request.kind == "synthesis":
-            document = directory / "synthesis" / f"{category}.md"
-        else:
-            raise ValueError("Unsupported project knowledge kind")
-        index = directory / "index.md"
-    elif request.scope == "domain" and request.kind == "domain":
-        document = context.root / "02-domain" / f"{category}.md"
-        index = context.root / "02-domain" / "index.md"
-    elif request.scope == "pattern" and request.kind == "pattern":
-        document = context.root / "03-patterns" / f"{category}.md"
-        index = context.root / "03-patterns" / "index.md"
-    else:
-        raise ValueError("Unsupported scope and knowledge kind")
-
-    if request.status in {"Deprecated", "Historical"}:
-        if request.scope == "project":
-            project = _project_directory(context)
-            document = project / "archive" / document.relative_to(project)
-        else:
-            document = context.root / "99-archive" / request.scope / f"{category}.md"
-
-    try:
-        document.resolve().relative_to(context.root.resolve())
-    except ValueError as error:
-        raise ValueError("Knowledge path must remain inside the external root") from error
-    return document, index
-
-
-def _append_once(path: Path, text: str) -> bool:
-    current = path.read_text(encoding="utf-8") if path.exists() else ""
-    if text in current:
-        return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(current + text, encoding="utf-8")
-    return True
-
-
-def _requires_frontmatter(request: CaptureRequest) -> bool:
-    return request.scope in {"domain", "pattern"} or request.kind in {"decision", "synthesis"} or request.status in {"Deprecated", "Historical"}
-
-
-def _frontmatter_type(request: CaptureRequest) -> str:
-    if request.kind == "decision":
-        return "decision"
-    if request.kind == "synthesis":
-        return "synthesis"
-    if request.scope == "pattern":
-        return "pattern"
-    return "knowledge"
-
-
-def _frontmatter_status(status: str) -> str:
-    return {"Current": "current", "Pending": "unconfirmed", "Deprecated": "deprecated", "Superseded": "superseded", "Historical": "historical"}[status]
-
-
-def _with_frontmatter(current: str, request: CaptureRequest, today: date, owner_project: str) -> str:
-    if not _requires_frontmatter(request):
-        return current
-    status = _frontmatter_status(request.status)
-    if current.startswith("---\n"):
-        current = re.sub(r"(?m)^status: .*$", f"status: {status}", current, count=1)
-        return re.sub(r"(?m)^updated: .*$", f"updated: {today.isoformat()}", current, count=1)
-    header = "\n".join(
-        [
-            "---",
-            f"type: {_frontmatter_type(request)}",
-            f"status: {status}",
-            f"scope: {request.scope}",
-            f"owner_project: {owner_project}",
-            f"created: {today.isoformat()}",
-            f"updated: {today.isoformat()}",
-            "tags: []",
-            "---",
-            "",
-        ]
-    )
-    return header + current
-
-
-def _append_knowledge_entry(path: Path, text: str, request: CaptureRequest, today: date, owner_project: str) -> bool:
-    current = path.read_text(encoding="utf-8") if path.exists() else ""
-    current = _with_frontmatter(current, request, today, owner_project)
-    if text in current:
-        return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(current + text, encoding="utf-8")
-    return True
-
-
-def _append_project_log(path: Path, entry: str) -> bool:
-    current = path.read_text(encoding="utf-8") if path.exists() else ""
-    if entry in current:
-        return False
-    if "## Knowledge\n" not in current:
-        if current and not current.endswith("\n"):
-            current += "\n"
-        current += "## Knowledge\n\n"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(current + entry, encoding="utf-8")
-    return True
-
-
-def _validate_capture(request: CaptureRequest) -> None:
-    if request.write_intent != "durable":
-        raise ValueError("Unsupported write intent")
-    if request.content_kind != "knowledge":
-        raise ValueError("Unsupported content kind")
-    if request.status not in {"Current", "Pending", "Deprecated", "Superseded", "Historical"}:
-        raise ValueError(f"Unsupported capture status: {request.status}")
-    if request.status == "Current" and not request.evidence:
-        raise ValueError("Current knowledge requires evidence")
-    if request.status == "Superseded" and not request.replacement:
-        raise ValueError("Superseded knowledge requires a replacement")
-
-
 def capture(
     context: ResolvedContext, request: CaptureRequest, today: date
 ) -> CaptureResult:
     """Persist an explicitly classified durable knowledge entry."""
-    if request.user_prohibits_write:
-        return CaptureResult(changed_paths=(), new_paths=(), skipped=True)
-    _validate_capture(request)
-
-    document, index = _capture_destination(context, request)
-    evidence = list(request.evidence) or ["Pending evidence review"]
-    entry_lines = [
-        f"## {request.title}",
-        "",
-        request.body,
-        "",
-        f"Status: {request.status}",
-        "",
-        "Evidence:",
-        *(f"- `{item}`" for item in evidence),
-    ]
-    if request.replacement:
-        entry_lines.extend(["", f"Replacement: `{request.replacement}`"])
-    entry_lines.append("")
-    entry = "\n".join(entry_lines)
-    changed: list[Path] = []
-    new_paths: list[Path] = []
-    document_is_new = not document.exists()
-    if _append_knowledge_entry(document, entry, request, today, context.record.slug):
-        changed.append(document)
-        if document_is_new:
-            new_paths.append(document)
-
-    link = document.relative_to(index.parent).as_posix()
-    index_entry = f"- [{request.category}]({link})\n"
-    if _append_once(index, index_entry):
-        changed.append(index)
-
-    if request.scope == "project":
-        project = _project_directory(context)
-        status = project / "project-status.md"
-        if _append_once(status, f"- {today.isoformat()}: {request.title}\n"):
-            changed.append(status)
-        log = project / "logs" / f"{today:%Y-%m}.md"
-        if _append_project_log(log, f"- {today.isoformat()}: {request.title}\n"):
-            changed.append(log)
-
-    return CaptureResult(changed_paths=tuple(changed), new_paths=tuple(new_paths))
+    return capture_knowledge(context.root, context.record, request, today)
 
 
 @dataclass(frozen=True)
@@ -317,36 +148,69 @@ class DeepAuditResult:
     report: DeepAuditReport
     changed_paths: tuple[Path, ...]
     new_paths: tuple[Path, ...] = ()
-def _set_health_value(content: str, key: str, value: str) -> str:
-    pattern = rf"(?m)^- {re.escape(key)}:.*$"
-    replacement = f"- {key}: {value}"
-    if re.search(pattern, content):
-        return re.sub(pattern, replacement, content)
-    marker = "## Current Risk Level"
-    return content.replace(marker, replacement + "\n\n" + marker)
 
 
-def _health_number(content: str, key: str) -> int:
-    match = re.search(rf"(?m)^- {re.escape(key)}:\s*(\d+)\s*$", content)
-    return int(match.group(1)) if match else 0
+def _scope_scan_root(context: ResolvedContext, scope: str) -> Path:
+    if scope == "project":
+        return context.root / context.record.relative_path
+    if scope == "domain":
+        return context.root / "02-domain"
+    if scope == "pattern":
+        return context.root / "03-patterns"
+    raise ValueError(f"Unsupported health scope: {scope}")
 
 
-def _set_risk_level(content: str, risk: str) -> str:
-    pattern = r"(?ms)(## Current Risk Level\s*\n\s*).*?(?=\n## |\Z)"
-    return re.sub(pattern, rf"\1{risk}", content, count=1)
+def _scope_trigger_values(
+    context: ResolvedContext,
+    scope: str,
+    today: date,
+) -> dict[str, str]:
+    state = _load_scope_state(context.root, context.record, scope, today)
+    return {
+        "Last Regular Check": (
+            state.last_regular.isoformat() if state.last_regular else "Not run"
+        ),
+        "Last Deep Check": state.last_deep.isoformat() if state.last_deep else "Not run",
+        "Changes Since Last Regular Check": str(state.changes_since_regular),
+        "New Pages Since Last Regular Check": str(state.new_pages_since_regular),
+        "Pending Confirmations": str(state.pending_confirmations),
+        "Missing Sources": str(state.missing_sources),
+    }
 
 
-def _upsert_generated_issues(content: str, issues: list[str]) -> str:
-    start = "<!-- tracebook:generated-issues:start -->"
-    end = "<!-- tracebook:generated-issues:end -->"
-    lines = [start, *(f"- [High] {issue}" for issue in sorted(set(issues))), end]
-    block = "\n".join(lines)
-    pattern = rf"(?s){re.escape(start)}.*?{re.escape(end)}"
-    if re.search(pattern, content):
-        return re.sub(pattern, block, content, count=1)
-    if "None recorded." in content:
-        return content.replace("None recorded.", block)
-    return content.replace("## Open Issues\n", "## Open Issues\n\n" + block + "\n", 1)
+def _run_scoped_check(
+    context: ResolvedContext,
+    scope: str,
+    changed_paths: list[Path],
+    today: date,
+    source_root: Path | None,
+) -> CheckReport:
+    scan_root = _scope_scan_root(context, scope)
+    check_type, trigger_reasons = _trigger(
+        _scope_trigger_values(context, scope, today),
+        changed_paths,
+        today,
+    )
+    report = run_check(
+        context.root,
+        scan_root,
+        changed_paths,
+        today,
+        source_root,
+    )
+    duplicate_pages: list[str] = []
+    log_growth: list[str] = []
+    if check_type == "Regular":
+        pages = _load_page_contents(scan_root.resolve())
+        duplicate_pages = _duplicate_pages(context.root.resolve(), pages)
+        log_growth = _log_growth(context.root.resolve(), pages)
+    return replace(
+        report,
+        check_type=check_type,
+        trigger_reasons=trigger_reasons,
+        duplicate_pages=duplicate_pages,
+        log_growth=log_growth,
+    )
 
 def check(
     context: ResolvedContext,
@@ -354,55 +218,64 @@ def check(
     today: date,
     source_root: Path | None = None,
     new_paths: list[Path] | None = None,
+    scope: str = "project",
 ) -> CheckResult:
     """Run and persist actual health checks without touching business code."""
-    project = context.root / context.record.relative_path
-    report = run_check(context.root, project, changed_paths, today, source_root)
-    if report.check_type in {"Local", "Deep"}:
-        return CheckResult(report=report, changed_paths=())
-
-    health = context.root / "00-global" / "health" / "health-status.md"
-    content = health.read_text(encoding="utf-8")
-    content = _set_health_value(content, f"Last {report.check_type} Check", today.isoformat())
-    changes = 0 if report.check_type in {"Regular", "Deep"} else _health_number(content, "Changes Since Last Regular Check") + len(set(changed_paths))
-    new_page_count = 0 if report.check_type in {"Regular", "Deep"} else _health_number(content, "New Pages Since Last Regular Check") + len(set(new_paths or []))
-    content = _set_health_value(content, "Changes Since Last Regular Check", str(changes))
-    content = _set_health_value(content, "New Pages Since Last Regular Check", str(new_page_count))
-    content = _set_health_value(content, "Pending Confirmations", str(len(report.pending_confirmations)))
-    content = _set_health_value(content, "Missing Sources", str(len(report.missing_sources)))
-    content = _set_health_value(content, "Broken Links", str(len(report.broken_links)))
-    content = _set_health_value(content, "Orphan Pages", str(len(report.orphan_pages)))
-
-    risks = report.broken_links + report.missing_sources + report.outdated_paths
-    content = _upsert_generated_issues(content, risks)
-    risk_level = "High" if risks else "Medium" if (report.pending_confirmations or report.duplicate_pages or report.log_growth or report.ambiguous_wikilinks) else "Low"
-    content = _set_risk_level(content, risk_level)
-    health.write_text(content, encoding="utf-8")
-
-    log = context.root / "00-global" / "health" / "logs" / f"{today:%Y-%m}.md"
-    _append_once(log, report.to_markdown() + "\n")
-    return CheckResult(report=report, changed_paths=(health, log))
+    selected_new_paths = new_paths or []
+    with file_lock(
+        context.root,
+        _scope_lock_name(context.record, scope),
+        operation="check",
+    ):
+        report = _run_scoped_check(
+            context,
+            scope,
+            changed_paths,
+            today,
+            source_root,
+        )
+        committed = _persist_check_under_lock(
+            context.root,
+            context.record,
+            scope,
+            report,
+            changed_paths,
+            selected_new_paths,
+            today,
+        )
+    persisted = _finish_health_persistence(context.root, committed)
+    return CheckResult(
+        report=report,
+        changed_paths=persisted,
+    )
 
 
 def audit(
-    context: ResolvedContext, today: date, source_root: Path | None = None
+    context: ResolvedContext,
+    today: date,
+    source_root: Path | None = None,
+    scope: str = "project",
 ) -> DeepAuditResult:
     """Persist an explicit Deep Audit without changing business repositories."""
-    project = context.root / context.record.relative_path
-    report = run_deep_audit(context.root, project, source_root)
-    health = context.root / "00-global" / "health" / "health-status.md"
-    content = health.read_text(encoding="utf-8")
-    content = _set_health_value(content, "Last Deep Check", today.isoformat())
-    content = _set_health_value(content, "Missing Sources", str(len(report.missing_source_paths)))
-    risks = report.missing_source_paths
-    content = _upsert_generated_issues(content, risks)
-    risk_level = "High" if risks else "Medium" if (report.fact_candidates or report.root_cause_candidates or report.status_log_drift) else "Low"
-    content = _set_risk_level(content, risk_level)
-    health.write_text(content, encoding="utf-8")
-
-    log = context.root / "00-global" / "health" / "logs" / f"{today:%Y-%m}.md"
-    _append_once(log, report.to_markdown() + "\n")
-    return DeepAuditResult(report=report, changed_paths=(health, log))
+    with file_lock(
+        context.root,
+        _scope_lock_name(context.record, scope),
+        operation="audit",
+    ):
+        report = run_deep_audit(
+            context.root,
+            _scope_scan_root(context, scope),
+            source_root,
+        )
+        committed = _persist_audit_under_lock(
+            context.root,
+            context.record,
+            scope,
+            report,
+            today,
+        )
+    persisted = _finish_health_persistence(context.root, committed)
+    return DeepAuditResult(report=report, changed_paths=persisted)
 def _parse_date(value: str | None) -> date:
     return date.fromisoformat(value) if value else date.today()
 
@@ -445,10 +318,16 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument("--new-path", action="append", default=[])
     check_parser.add_argument("--source-root")
     check_parser.add_argument("--today")
+    check_parser.add_argument(
+        "--scope", choices=("project", "domain", "pattern"), default="project"
+    )
 
     audit_parser = commands.choices["audit"]
     audit_parser.add_argument("--source-root")
     audit_parser.add_argument("--today")
+    audit_parser.add_argument(
+        "--scope", choices=("project", "domain", "pattern"), default="project"
+    )
 
 
     args = parser.parse_args(argv)
@@ -470,6 +349,7 @@ def main(argv: list[str] | None = None) -> int:
             context,
             _parse_date(args.today),
             Path(args.source_root) if args.source_root else None,
+            args.scope,
         )
         _write_payload(
             {
@@ -486,6 +366,8 @@ def main(argv: list[str] | None = None) -> int:
                 "changed_paths": [str(path) for path in result.changed_paths],
                 "new_paths": [str(path) for path in result.new_paths],
                 "skipped": result.skipped,
+                "health_scope": result.health_scope,
+                "event_id": result.event_id,
             }
         )
         return 0
@@ -496,6 +378,7 @@ def main(argv: list[str] | None = None) -> int:
         _parse_date(args.today),
         Path(args.source_root) if args.source_root else None,
         [Path(path) for path in args.new_path],
+        args.scope,
     )
     _write_payload(
         {
