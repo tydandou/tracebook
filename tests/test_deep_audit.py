@@ -181,6 +181,59 @@ class DeepAuditTest(unittest.TestCase):
                 report.fact_candidates,
             )
 
+    def test_deep_audit_does_not_treat_pending_in_claim_text_as_status(self) -> None:
+        with TemporaryDirectory() as temp:
+            context, repo = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+            page = project / "architecture.md"
+            page.write_text(
+                "# Architecture\n\n## Queue\n\nThe PENDING queue limit is 3.\n",
+                encoding="utf-8",
+            )
+
+            report = run_deep_audit(context.root, project, repo)
+
+            self.assertEqual(
+                [
+                    f"01-projects/{context.record.slug}/architecture.md:L5: "
+                    "factual claim requires evidence review"
+                ],
+                report.fact_candidates,
+            )
+
+    def test_deep_audit_recognizes_markdown_indented_level_two_entries(self) -> None:
+        with TemporaryDirectory() as temp:
+            context, repo = self._context(Path(temp))
+            project = context.root / context.record.relative_path
+            page = project / "architecture.md"
+            page.write_text(
+                "\n".join(
+                    [
+                        "# Architecture",
+                        "",
+                        "   ## Unverified",
+                        "The API runs with 3 workers.",
+                        "",
+                        "   ## Verified",
+                        "The API runs with 4 replicas.",
+                        "Evidence:",
+                        "- `src/app.py:L1-L2`",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            report = run_deep_audit(context.root, project, repo)
+
+            self.assertEqual(
+                [
+                    f"01-projects/{context.record.slug}/architecture.md:L4: "
+                    "factual claim requires evidence review"
+                ],
+                report.fact_candidates,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

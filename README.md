@@ -54,9 +54,10 @@ installing files, hooks, or services into those repositories.
 
 ## Install
 
-The `1.0.0` release is recorded in [CHANGELOG.md](CHANGELOG.md). The tagged
-Codex command below applies after the matching `v1.0.0` tag is published; use
-the local development loading instructions when working from an untagged clone.
+This repository is the `1.0.0` release candidate. Its
+[CHANGELOG.md](CHANGELOG.md) intentionally remains Unreleased until the
+matching `v1.0.0` tag is published. Use the local development loading
+instructions when working from an untagged clone.
 
 ### Codex
 

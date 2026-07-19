@@ -43,8 +43,9 @@ runner 则用于集成、诊断和高级工作流。
 
 ## 安装
 
-[CHANGELOG.md](CHANGELOG.md) 已记录 `1.0.0` 版本。下面带 tag 的 Codex 命令应在
-匹配的 `v1.0.0` tag 发布后使用；从未打 tag 的 clone 开发时，请使用本地加载方式。
+当前仓库是 `1.0.0` 发布候选。在匹配的 `v1.0.0` tag 发布前，
+[CHANGELOG.md](CHANGELOG.md) 会保持 Unreleased。下面带 tag 的 Codex 命令应在
+tag 发布后使用；从未打 tag 的 clone 开发时，请使用本地加载方式。
 
 ### Codex
 

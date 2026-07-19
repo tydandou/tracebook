@@ -305,6 +305,12 @@ FACT_MARKER = re.compile(r"\b\d+(?:\.\d+)?\b|\b[A-Z][A-Z0-9_]{2,}\b")
 
 EVIDENCE_HEADING = re.compile(r"^\s*(?:evidence|sources?):\s*$", re.IGNORECASE)
 EVIDENCE_ITEM = re.compile(r"^[-*+]\s+\S")
+ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+|$)")
+LEVEL_TWO_HEADING = re.compile(r"^ {0,3}##(?:[ \t]+|$)")
+PENDING_STATUS = re.compile(
+    r"^[ \t]*(?:status:[ \t]*)?pending[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 def _has_evidence(content: str) -> bool:
@@ -347,7 +353,7 @@ def _entry_sections(content: str) -> list[list[tuple[int, str]]]:
             if number > 1 and line.strip() == "---":
                 in_frontmatter = False
             continue
-        if line.startswith("## ") and current:
+        if LEVEL_TWO_HEADING.match(line) and current:
             sections.append(current)
             current = []
         current.append((number, line))
@@ -362,10 +368,10 @@ def _fact_candidates(root: Path, pages: list[Path]) -> list[str]:
         content = page.read_text(encoding="utf-8")
         for section in _entry_sections(content):
             section_content = "\n".join(line for _, line in section)
-            if _has_evidence(section_content) or "pending" in section_content.lower():
+            if _has_evidence(section_content) or PENDING_STATUS.search(section_content):
                 continue
             for number, line in section:
-                if line.startswith("#") or not line.strip() or line.lower().startswith(("status:", "source:", "evidence:")):
+                if ATX_HEADING.match(line) or not line.strip() or line.lower().startswith(("status:", "source:", "evidence:")):
                     continue
                 if FACT_MARKER.search(line):
                     candidates.append(f"{_relative(root, page)}:L{number}: factual claim requires evidence review")

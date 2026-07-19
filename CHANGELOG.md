@@ -3,7 +3,7 @@
 This project follows semantic versioning. Releases are created only after the
 matching Git tag is published.
 
-## [1.0.0] - 2026-07-19
+## [1.0.0] - Unreleased
 
 ### Added
 

@@ -18,6 +18,8 @@ jobs:
         python-version: ['3.10', '3.13']
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -27,5 +29,26 @@ jobs:
         run: python plugins/tracebook/skills/tracebook/scripts/validate_skill_package.py
       - name: Compile Python sources
         run: python -m compileall -q plugins/tracebook/skills/tracebook/scripts tests
-      - name: Check whitespace
-        run: git diff --check
+      - name: Check pull request whitespace
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          base="$BASE_SHA"
+          head="$HEAD_SHA"
+          git diff --check "$base" "$head"
+      - name: Check pushed whitespace
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          base="$BASE_SHA"
+          head="$HEAD_SHA"
+          if [[ "$base" =~ ^0+$ ]]; then
+            base="$(git hash-object -t tree /dev/null)"
+          fi
+          git diff --check "$base" "$head"

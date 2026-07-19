@@ -80,7 +80,8 @@ class PublicArtifactsTest(unittest.TestCase):
         self.assertIn("capture", readme)
         self.assertIn("check", readme)
         self.assertIn("audit", readme)
-        self.assertIn("## [1.0.0] - 2026-07-19", changelog)
+        self.assertIn("## [1.0.0] - Unreleased", changelog)
+        self.assertNotIn("## [1.0.0] - 2026-07-19", changelog)
         self.assertIn("Not Included", changelog)
 
     def test_ci_verifies_supported_python_versions_on_linux_and_windows(self) -> None:
@@ -96,7 +97,10 @@ class PublicArtifactsTest(unittest.TestCase):
             "python -B -m unittest discover -s tests -v",
             "validate_skill_package.py",
             "python -m compileall -q",
-            "git diff --check",
+            "fetch-depth: 0",
+            "github.event.pull_request.base.sha",
+            "github.event.before",
+            'git diff --check "$base" "$head"',
         ):
             self.assertIn(required, workflow)
 
@@ -106,11 +110,13 @@ class PublicArtifactsTest(unittest.TestCase):
         normalized_chinese = " ".join(chinese.split())
 
         self.assertNotIn("still Unreleased", english)
+        self.assertIn("release candidate", english)
         self.assertNotIn("optimized for project core-page", english)
         self.assertIn("every active durable Markdown page", english)
         self.assertIn("each level-two knowledge entry", english)
 
         self.assertNotIn("仍标记为 Unreleased", chinese)
+        self.assertIn("发布候选", chinese)
         self.assertNotIn("针对 project 核心页面的命名方式优化", chinese)
         self.assertIn("每个活跃的持久 Markdown 页面", normalized_chinese)
         self.assertIn("每个二级标题知识条目", normalized_chinese)
