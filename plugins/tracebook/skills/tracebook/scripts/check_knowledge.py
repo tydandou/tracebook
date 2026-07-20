@@ -241,7 +241,7 @@ def _missing_sources(
             content = page.read_text(encoding="utf-8")
         body = [line for line in content.splitlines() if line.strip() and not line.startswith("#")]
         has_source = _has_evidence(content)
-        is_pending = "pending" in content.lower()
+        is_pending = PENDING_STATUS.search(content) is not None
         if body and not has_source and not is_pending:
             missing.append(_relative(root, page))
     return sorted(set(missing))
@@ -264,7 +264,7 @@ def _pending_confirmations(root: Path, pages: PageContents) -> list[str]:
     pending: list[str] = []
     for page, content in pages.items():
         for number, line in enumerate(content.splitlines(), 1):
-            if "pending" in line.lower():
+            if PENDING_STATUS.fullmatch(line):
                 pending.append(f"{_relative(root, page)}:L{number}")
     return pending
 

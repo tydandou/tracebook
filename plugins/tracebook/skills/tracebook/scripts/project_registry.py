@@ -12,7 +12,7 @@ import subprocess
 from urllib.parse import urlsplit
 
 from .errors import TracebookError
-from .knowledge_root import validate_external_root
+from .knowledge_root import language_for_root, validate_external_root
 from .locking import file_lock
 from .storage import atomic_write_text, confined_path
 
@@ -227,18 +227,27 @@ def _write_minimal_project_file(path: Path, content: str) -> None:
         )
 
 
-def _write_minimal_project_files(project_dir: Path, record: ProjectRecord) -> None:
+def _write_minimal_project_files(
+    project_dir: Path,
+    record: ProjectRecord,
+    language: str,
+) -> None:
     project_dir.mkdir(parents=True, exist_ok=True)
+    overview = "项目概览" if language == "zh" else "Project Overview"
+    knowledge_index = "知识索引" if language == "zh" else "Knowledge Index"
+    status_title = "项目状态" if language == "zh" else "Project Status"
+    current_status = "当前状态" if language == "zh" else "Current Status"
+    initialized = "由 Tracebook 初始化。" if language == "zh" else "Initialized by Tracebook."
     _write_minimal_project_file(
         project_dir / "index.md",
         "\n".join(
             [
                 f"# {record.slug}",
                 "",
-                "## Project Overview",
+                f"## {overview}",
                 f"- Project identity: `{record.identity}`",
                 "",
-                "## Knowledge Index",
+                f"## {knowledge_index}",
                 "",
             ]
         ),
@@ -246,7 +255,7 @@ def _write_minimal_project_files(project_dir: Path, record: ProjectRecord) -> No
 
     _write_minimal_project_file(
         project_dir / "project-status.md",
-        "# Project Status\n\n## Current Status\n- Initialized by Tracebook.\n",
+        f"# {status_title}\n\n## {current_status}\n- {initialized}\n",
     )
 
 
@@ -284,5 +293,5 @@ def ensure_project(knowledge_root: Path, repo: Path) -> ProjectRecord:
                 registry=path,
             )
 
-        _write_minimal_project_files(project_dir, record)
+        _write_minimal_project_files(project_dir, record, language_for_root(root))
         return record

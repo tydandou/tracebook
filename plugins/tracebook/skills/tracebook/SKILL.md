@@ -30,9 +30,21 @@ business code and long-lived project analysis separate.
    reimplementing root initialization or project registration.
 3. The runner creates or repairs only missing external-root template files,
    registers the repository from its normalized Git remote (or a local-path
-   fallback), and returns the required `read_paths`.
+   fallback), and returns the required `read_paths` plus `knowledge_language`.
 4. Do not initialize a project directory beyond `index.md` and
    `project-status.md` until there is durable knowledge to write.
+5. If `resolve` refuses transaction recovery, do not edit
+   `.tracebook-state` manually. Run
+   `$SKILL_DIR/scripts/tracebook_runner.py transactions --root <external-root>`
+   first. This diagnostic command is read-only and reports whether each
+   transaction is recoverable or blocked. Run `recover-transactions` only for
+   an explicit safe roll-forward; it never discards, quarantines, or overwrites
+   a changed target.
+6. Use the returned `knowledge_language` for future human-readable knowledge
+   content. `zh` means write new explanatory prose in Chinese; `en` means
+   English. Do not translate or rewrite existing entries merely because the
+   root preference changed. Keep paths, Markdown links, lifecycle values,
+   evidence references, and structured JSON fields unchanged.
 
 ## Load Knowledge Before Engineering Work
 
@@ -56,6 +68,10 @@ limits. Load these references only when their rule applies:
 - [health check rules](references/health-check-rules.md)
 
 ## Evaluate the Write Gate After the Task
+
+Every engineering task must evaluate the write gate before the final response.
+The final report must state either that verified durable knowledge was captured
+and checked, or that no capture was made and why.
 
 Do not write knowledge after pure log analysis, temporary Q&A, unverified
 inference, or when the user prohibits a write.
@@ -81,6 +97,12 @@ explicitly unresolved item; it may have an empty `evidence` list. Use
 `status: Deprecated` or `status: Historical` only when preserving traceability;
 the runner routes these entries to an archive. Use `status: Superseded` only
 with a `replacement` path to the successor knowledge.
+
+Ordinary capture is content-event idempotent: the same content event is
+skipped, while a changed body, evidence, or lifecycle state creates a new event
+and preserves the prior entry. Do not use a repeated title as an implicit
+overwrite. When a conclusion is replaced, record the lifecycle explicitly with
+`Superseded` and its `replacement` path.
 
 Use `kind` to select the governed destination: project kinds are
 `architecture`, `api`, `business-rule`, `database`, `module`, `source-map`,

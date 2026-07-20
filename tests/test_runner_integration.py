@@ -4,6 +4,9 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
+
+from plugins.tracebook.skills.tracebook.scripts import transaction
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +50,7 @@ class RunnerIntegrationTest(unittest.TestCase):
 
             payload = json.loads(result.stdout)
             self.assertEqual(payload["root"], str(root))
+            self.assertEqual("en", payload["knowledge_language"])
             self.assertEqual(len(payload["read_paths"]), 5)
             self.assertFalse((repo / "AGENTS.md").exists())
 
@@ -110,6 +114,46 @@ class RunnerIntegrationTest(unittest.TestCase):
                 aggregate,
             )
             self.assertIn("2026-07-13", aggregate)
+
+    def test_transaction_inspection_is_read_only_and_recovery_is_explicit(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            root.mkdir()
+            target = root / "entry.md"
+            target.write_text("old\n", encoding="utf-8")
+
+            with patch.object(
+                transaction,
+                "_replace_target",
+                side_effect=OSError("simulated crash"),
+            ):
+                with self.assertRaisesRegex(OSError, "simulated crash"):
+                    transaction.commit_updates(
+                        root,
+                        "project-demo",
+                        "capture",
+                        {target: "new\n"},
+                        transaction_id="runner-inspect",
+                    )
+            inspected = self._run_runner(
+                base,
+                "transactions",
+                "--root", str(root),
+            )
+
+            self.assertEqual(str(root), inspected["root"])
+            self.assertEqual("recoverable", inspected["transactions"][0]["disposition"])
+            self.assertEqual("old\n", target.read_text(encoding="utf-8"))
+
+            recovered = self._run_runner(
+                base,
+                "recover-transactions",
+                "--root", str(root),
+            )
+
+            self.assertEqual([str(target)], recovered["recovered_paths"])
+            self.assertEqual("new\n", target.read_text(encoding="utf-8"))
 
     def test_capture_scope_flows_to_check_and_audit(self) -> None:
         with TemporaryDirectory() as temp:

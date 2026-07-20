@@ -54,7 +54,7 @@ installing files, hooks, or services into those repositories.
 
 ## Install
 
-The `1.0.0` release is published under the `v1.0.0` tag. Use the tagged
+The `1.1.0` release is published under the `v1.1.0` tag. Use the tagged
 installation commands for the stable release, or the local development loading
 instructions when working from a clone.
 
@@ -63,7 +63,7 @@ instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v1.0.0
+codex plugin marketplace add tydandou/tracebook --ref v1.1.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -118,6 +118,31 @@ PowerShell:
 ```powershell
 $env:TRACEBOOK_ROOT = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'team-knowledge'
 ```
+
+### Knowledge-document language
+
+English is the default: if no language file exists, Tracebook creates future
+knowledge-root templates and project bootstrap pages in English. To use Chinese
+for future created content, create this file yourself **before the first
+`resolve`** for that root:
+
+```text
+<TRACEBOOK_ROOT>/.tracebook-state/config.json
+```
+
+```json
+{
+  "version": 1,
+  "knowledge_language": "zh"
+}
+```
+
+The only supported values are `en` and `zh`. This is a root-level preference;
+there is no install prompt, configuration command, or environment-variable
+override. Changing it never translates, rewrites, moves, or deletes existing
+knowledge. It changes only the default language of documents created or
+repaired later. Paths, Markdown links, lifecycle values, event identifiers, and
+health machine fields remain stable English protocol values.
 
 ## Quick Start
 
@@ -190,6 +215,30 @@ external root, registers the normalized Git identity, and returns `root`,
 `project`, and the ordered `read_paths`. It does not search for or import a
 different existing knowledge root.
 
+### Inspect or recover pending transactions
+
+`resolve` attempts a safe roll-forward only when every prepared transaction
+still matches its recorded hashes. If it refuses recovery, inspect the external
+root before taking any manual action:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" transactions \
+  --root "$TRACEBOOK_ROOT"
+```
+
+`transactions` is read-only: it does not need `--cwd`, acquire a lock, create
+templates, or change knowledge files. Its JSON reports each transaction as
+`recoverable`, `blocked`, `cleanup-ready`, or `invalid`, with structured issue
+codes such as `TARGET_CHANGED`.
+
+Use the explicit maintenance command only to roll forward transactions already
+judged safe; it never discards, quarantines, or overwrites a changed target:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" recover-transactions \
+  --root "$TRACEBOOK_ROOT"
+```
+
 ### Capture
 
 Save a request outside the business repository, for example in the system
@@ -225,6 +274,11 @@ item may use `Pending` with an empty evidence list; `Pending` must not be
 presented as a confirmed fact. The source format
 `src/order.py:L20-L38` identifies the business-repository evidence without
 copying source into the knowledge root.
+
+Ordinary capture is content-event idempotent. Repeating the same content event
+is skipped; changing its body, evidence, or lifecycle state creates a new event
+and preserves the prior entry. A repeated title is not an implicit overwrite.
+For a replaced conclusion, use `Superseded` with its `replacement` path.
 
 ### Check the captured scope
 
@@ -277,6 +331,8 @@ evidence before any finding becomes a durable conclusion.
 | Command | Emitted fields | Meaning |
 | --- | --- | --- |
 | `resolve` | `root`, `project`, `read_paths` | Configured root, normalized project record, and focused context paths |
+| `transactions` | `root`, `transactions` | Read-only transaction diagnostics and per-transaction disposition |
+| `recover-transactions` | `recovered_paths` | Explicit safe roll-forward results; never a discard or quarantine action |
 | `capture` | `changed_paths`, `new_paths`, `skipped`, `health_scope`, `event_id` | Knowledge transaction result and scope required by the following check |
 | `check` | `check_type`, `changed_paths`, `report` | Required health level, persisted health paths, and Markdown report |
 | `audit` | `changed_paths`, `report` | Persisted Deep-health paths and Markdown audit report |
@@ -398,7 +454,7 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v1.0.0` release.
+resolves the published `v1.1.0` release.
 
 ## Current Limitations
 

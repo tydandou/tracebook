@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import os
@@ -35,6 +36,23 @@ _UPDATE_KEYS = {"target", "staged", "original_hash", "staged_hash"}
 _LOCK_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _RESERVED_SCOPES = {"maintenance"}
+
+
+@dataclass(frozen=True)
+class TransactionIssue:
+    code: str
+    message: str
+    target: Path | None = None
+
+
+@dataclass(frozen=True)
+class TransactionDiagnostic:
+    transaction_id: str
+    operation: str
+    scope: str
+    state: str
+    disposition: str
+    issues: tuple[TransactionIssue, ...] = ()
 
 
 def _failure(operation: str, message: str) -> TracebookError:
@@ -336,6 +354,135 @@ def commit_updates(
     atomic_write_text(manifest_path, _manifest_text(manifest), operation=operation)
     _cleanup_transaction(resolved_root, transaction_dir, operation=operation)
     return tuple(target for target, _ in ordered)
+
+
+def _diagnose_transaction(
+    root: Path,
+    transactions_dir: Path,
+    discovered_dir: Path,
+) -> TransactionDiagnostic | None:
+    transaction_id = discovered_dir.name
+    try:
+        transaction_dir = _transaction_directory(
+            transactions_dir,
+            transaction_id,
+            operation="inspect",
+        )
+        manifest = _read_manifest(transaction_dir)
+        operation = manifest["operation"]
+        scope = manifest["scope"]
+        if manifest["transaction_id"] != transaction_id:
+            return TransactionDiagnostic(
+                transaction_id,
+                operation,
+                scope,
+                manifest["state"],
+                "invalid",
+                (
+                    TransactionIssue(
+                        "TRANSACTION_ID_MISMATCH",
+                        "Transaction directory does not match manifest id",
+                    ),
+                ),
+            )
+        validated = _validated_updates(root, transaction_dir, manifest)
+    except FileNotFoundError:
+        return None
+    except TracebookError as error:
+        return TransactionDiagnostic(
+            transaction_id,
+            error.operation,
+            "unknown",
+            "unknown",
+            "invalid",
+            (TransactionIssue(error.code, error.message),),
+        )
+    except OSError as error:
+        return TransactionDiagnostic(
+            transaction_id,
+            "inspect",
+            "unknown",
+            "unknown",
+            "invalid",
+            (TransactionIssue("TRANSACTION_INSPECTION_FAILED", str(error)),),
+        )
+
+    if manifest["state"] == "committed":
+        return TransactionDiagnostic(
+            transaction_id,
+            operation,
+            scope,
+            "committed",
+            "cleanup-ready",
+        )
+
+    issues: list[TransactionIssue] = []
+    for update in validated:
+        current_hash = sha256_file(update["target"])
+        if current_hash not in {update["original_hash"], update["staged_hash"]}:
+            issues.append(
+                TransactionIssue(
+                    "TARGET_CHANGED",
+                    f"Target changed after preparation: {update['target']}",
+                    update["target"],
+                )
+            )
+        staged_hash = sha256_file(update["staged"])
+        if staged_hash is None:
+            if current_hash != update["staged_hash"]:
+                issues.append(
+                    TransactionIssue(
+                        "STAGED_FILE_MISSING",
+                        f"Staged file is missing for incomplete target: {update['target']}",
+                        update["target"],
+                    )
+                )
+        elif staged_hash != update["staged_hash"]:
+            issues.append(
+                TransactionIssue(
+                    "STAGED_FILE_CHANGED",
+                    f"Staged file changed after preparation: {update['staged']}",
+                    update["target"],
+                )
+            )
+
+    return TransactionDiagnostic(
+        transaction_id,
+        operation,
+        scope,
+        "prepared",
+        "blocked" if issues else "recoverable",
+        tuple(issues),
+    )
+
+
+def inspect_transactions(root: Path) -> tuple[TransactionDiagnostic, ...]:
+    """Read pending transaction state without creating locks or changing files."""
+    resolved_root = root.expanduser().resolve()
+    try:
+        transactions_dir = _transactions_directory(resolved_root, operation="inspect")
+    except TracebookError as error:
+        return (
+            TransactionDiagnostic(
+                "<transactions>",
+                error.operation,
+                "unknown",
+                "unknown",
+                "invalid",
+                (TransactionIssue(error.code, error.message),),
+            ),
+        )
+    if not transactions_dir.is_dir():
+        return ()
+
+    diagnostics: list[TransactionDiagnostic] = []
+    for discovered_dir in sorted(transactions_dir.iterdir(), key=lambda path: path.name):
+        if not discovered_dir.is_dir() or not (discovered_dir / _MANIFEST_NAME).is_file():
+            continue
+        diagnostic = _diagnose_transaction(resolved_root, transactions_dir, discovered_dir)
+        if diagnostic is not None:
+            diagnostics.append(diagnostic)
+    return tuple(diagnostics)
 
 
 def recover_transactions(root: Path) -> tuple[Path, ...]:

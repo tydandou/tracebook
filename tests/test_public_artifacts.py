@@ -22,6 +22,16 @@ class PublicArtifactsTest(unittest.TestCase):
         self.assertIn("claude --plugin-dir ./plugins/tracebook", readme)
         self.assertIn("plugins/tracebook/skills/tracebook/scripts/validate_skill_package.py", readme)
 
+    def test_guides_document_the_manual_root_language_configuration(self) -> None:
+        english = (ROOT / "README.md").read_text(encoding="utf-8")
+        chinese = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+
+        self.assertIn('"knowledge_language": "zh"', english)
+        self.assertIn("before the first", english)
+        self.assertIn("never translates, rewrites, moves, or deletes", english)
+        self.assertIn('"knowledge_language": "zh"', chinese)
+        self.assertIn("第一次执行 `resolve` **之前**", chinese)
+
     def test_plugin_manifest_and_marketplace_expose_tracebook(self) -> None:
         manifest = json.loads(
             (ROOT / "plugins" / "tracebook" / ".codex-plugin" / "plugin.json").read_text(
@@ -35,7 +45,7 @@ class PublicArtifactsTest(unittest.TestCase):
         )
 
         self.assertEqual("tracebook", manifest["name"])
-        self.assertEqual("1.0.0", manifest["version"])
+        self.assertEqual("1.1.0", manifest["version"])
         self.assertEqual("./skills/", manifest["skills"])
         self.assertEqual(
             "https://github.com/tydandou/tracebook", manifest["homepage"]
@@ -80,9 +90,19 @@ class PublicArtifactsTest(unittest.TestCase):
         self.assertIn("capture", readme)
         self.assertIn("check", readme)
         self.assertIn("audit", readme)
+        self.assertIn("## [1.1.0] - 2026-07-20", changelog)
         self.assertIn("## [1.0.0] - 2026-07-19", changelog)
         self.assertNotIn("## [1.0.0] - Unreleased", changelog)
         self.assertIn("Not Included", changelog)
+
+    def test_guides_document_read_only_transaction_diagnostics(self) -> None:
+        english = (ROOT / "README.md").read_text(encoding="utf-8")
+        chinese = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+
+        self.assertIn("recover-transactions", english)
+        self.assertIn("`transactions` is read-only", english)
+        self.assertIn("recover-transactions", chinese)
+        self.assertIn("`transactions` 是只读命令", chinese)
 
     def test_ci_verifies_supported_python_versions_on_linux_and_windows(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -111,16 +131,18 @@ class PublicArtifactsTest(unittest.TestCase):
         normalized_chinese = " ".join(chinese.split())
 
         self.assertNotIn("release candidate", english)
-        self.assertIn("The `1.0.0` release is published", english)
+        self.assertIn("The `1.1.0` release is published", english)
         self.assertNotIn("optimized for project core-page", english)
         self.assertIn("every active durable Markdown page", english)
         self.assertIn("each level-two knowledge entry", english)
+        self.assertIn("content-event idempotent", english)
 
         self.assertNotIn("发布候选", chinese)
-        self.assertIn("`1.0.0` 已正式发布", chinese)
+        self.assertIn("`1.1.0` 已正式发布", chinese)
         self.assertNotIn("针对 project 核心页面的命名方式优化", chinese)
         self.assertIn("每个活跃的持久 Markdown 页面", normalized_chinese)
         self.assertIn("每个二级标题知识条目", normalized_chinese)
+        self.assertIn("内容事件幂等", chinese)
     def test_license_is_apache_2_0(self) -> None:
         license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
 

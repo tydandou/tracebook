@@ -43,7 +43,7 @@ runner 则用于集成、诊断和高级工作流。
 
 ## 安装
 
-`1.0.0` 已正式发布，对应 `v1.0.0` tag。稳定版本请使用下面带 tag 的安装命令；
+`1.1.0` 已正式发布，对应 `v1.1.0` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -51,7 +51,7 @@ runner 则用于集成、诊断和高级工作流。
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v1.0.0
+codex plugin marketplace add tydandou/tracebook --ref v1.1.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -104,6 +104,26 @@ PowerShell：
 ```powershell
 $env:TRACEBOOK_ROOT = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'team-knowledge'
 ```
+
+### 知识文档语言
+
+默认使用英文：根目录不存在语言配置文件时，Tracebook 会以英文创建后续知识根模板和项目初始化页。
+如需让以后创建的内容使用中文，请在该根目录第一次执行 `resolve` **之前**手工创建：
+
+```text
+<TRACEBOOK_ROOT>/.tracebook-state/config.json
+```
+
+```json
+{
+  "version": 1,
+  "knowledge_language": "zh"
+}
+```
+
+仅支持 `en` 和 `zh`。这是知识根级偏好，不提供安装交互、配置命令或环境变量覆盖。修改它不会翻译、
+改写、移动或删除已有知识；只影响以后创建或补齐文档的默认语言。路径、Markdown 链接、生命周期值、
+事件标识和健康机器字段仍保持稳定的英文协议值。
 
 ## 快速开始
 
@@ -170,6 +190,27 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" resolve \
 `resolve` 只在已配置的外部根目录中初始化或修复缺失的模板文件，注册标准化 Git 身份，
 并返回 `root`、`project` 和有序的 `read_paths`。它不会搜索或导入另一个现有知识根目录。
 
+### 检查或恢复未完成事务
+
+只有当每个 prepared 事务仍与其记录的哈希一致时，`resolve` 才会尝试安全地继续完成它。
+如果恢复被拒绝，在采取任何手工操作前先检查外部根目录：
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" transactions \
+  --root "$TRACEBOOK_ROOT"
+```
+
+`transactions` 是只读命令：不需要 `--cwd`，不会获取锁、创建模板或修改知识文件。其 JSON
+会将每个事务标记为 `recoverable`、`blocked`、`cleanup-ready` 或 `invalid`，并返回诸如
+`TARGET_CHANGED` 的结构化问题代码。
+
+仅当事务已确认安全时，才使用显式维护命令继续完成；它绝不会丢弃、隔离或覆盖已变更的目标：
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" recover-transactions \
+  --root "$TRACEBOOK_ROOT"
+```
+
 ### 捕获
 
 把请求保存在业务仓库之外，例如系统临时目录：
@@ -202,6 +243,10 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
 `Current` 知识必须包含证据列表。持久但明确尚未解决的条目可以使用 `Pending` 并提供
 空证据列表；不能把 `Pending` 表述为已确认事实。证据格式 `src/order.py:L20-L38`
 指向业务仓库中的依据，不会把源码复制到知识根目录。
+
+普通 capture 是内容事件幂等的：重复同一内容事件会被跳过；正文、证据或生命周期状态发生
+变化时会创建新事件，并保留先前条目。重复标题不表示隐式覆盖；结论被替代时，应使用
+`Superseded` 及其 `replacement` 路径明确记录。
 
 ### 检查捕获范围
 
@@ -251,6 +296,8 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" audit \
 | 命令 | 返回字段 | 含义 |
 | --- | --- | --- |
 | `resolve` | `root`、`project`、`read_paths` | 已配置根目录、标准化项目记录和聚焦上下文路径 |
+| `transactions` | `root`、`transactions` | 只读事务诊断与每个事务的处置状态 |
+| `recover-transactions` | `recovered_paths` | 显式安全恢复结果；绝不执行丢弃或隔离 |
 | `capture` | `changed_paths`、`new_paths`、`skipped`、`health_scope`、`event_id` | 知识事务结果，以及后续检查必须使用的范围 |
 | `check` | `check_type`、`changed_paths`、`report` | 要求的健康级别、已持久化健康路径和 Markdown 报告 |
 | `audit` | `changed_paths`、`report` | 已持久化 Deep 健康路径和 Markdown 审计报告 |

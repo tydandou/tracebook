@@ -357,6 +357,44 @@ class TransactionRecoveryTest(unittest.TestCase):
             self.assertEqual("old:b-later.md\n", second.read_text(encoding="utf-8"))
             self.assertTrue(transaction_dir.exists())
 
+    def test_inspection_reports_a_manual_edit_without_writing_or_recovering(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            updates, transaction_dir = self._prepare_crashed_transaction(
+                root,
+                fail_after=0,
+                transaction_id="inspect-conflict",
+                names=("a-conflict.md", "b-later.md"),
+            )
+            first, second = sorted(
+                updates,
+                key=lambda path: path.relative_to(root).as_posix(),
+            )
+            first.write_text("manual edit\n", encoding="utf-8")
+            before = {
+                path.relative_to(root).as_posix(): path.read_bytes()
+                for path in (first, second, transaction_dir / "manifest.json")
+            }
+
+            diagnostics = transaction.inspect_transactions(root)
+
+            self.assertEqual(1, len(diagnostics))
+            diagnostic = diagnostics[0]
+            self.assertEqual("inspect-conflict", diagnostic.transaction_id)
+            self.assertEqual("capture", diagnostic.operation)
+            self.assertEqual("project-demo", diagnostic.scope)
+            self.assertEqual("blocked", diagnostic.disposition)
+            self.assertEqual("TARGET_CHANGED", diagnostic.issues[0].code)
+            self.assertEqual(first.resolve(), diagnostic.issues[0].target)
+            self.assertEqual(
+                before,
+                {
+                    path.relative_to(root).as_posix(): path.read_bytes()
+                    for path in (first, second, transaction_dir / "manifest.json")
+                },
+            )
+            self.assertTrue(transaction_dir.exists())
+
     def test_missing_staged_file_is_rejected_when_target_is_not_staged_content(
         self,
     ) -> None:

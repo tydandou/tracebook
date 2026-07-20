@@ -59,6 +59,23 @@ class SkillWorkflowTest(unittest.TestCase):
         self.assertIn("user prohibits a write", skill)
         self.assertIn("health check", skill.lower())
 
+    def test_skill_requires_a_final_write_gate_outcome(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "Every engineering task must evaluate the write gate before the final response.",
+            skill,
+        )
+        self.assertIn("no capture was made and why", skill)
+
+    def test_skill_requires_read_only_transaction_diagnostics_before_manual_action(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("tracebook_runner.py transactions", skill)
+        self.assertIn("read-only", skill)
+        self.assertIn("recover-transactions", skill)
+        self.assertIn("never discards, quarantines, or overwrites", skill)
+
 
 if __name__ == "__main__":
     unittest.main()

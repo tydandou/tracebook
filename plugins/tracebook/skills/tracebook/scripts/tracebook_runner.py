@@ -38,10 +38,10 @@ if __package__ in (None, ""):
         ensure_health_layout,
         rebuild_global_health,
     )
-    from scripts.knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
+    from scripts.knowledge_root import language_for_root, repair_knowledge_root, validate_external_root
     from scripts.locking import file_lock
     from scripts.project_registry import ProjectRecord, ensure_project, repository_root
-    from scripts.transaction import recover_transactions
+    from scripts.transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 else:
     from .capture import (
         CaptureRequest,
@@ -69,10 +69,10 @@ else:
         ensure_health_layout,
         rebuild_global_health,
     )
-    from .knowledge_root import DEFAULT_TEMPLATE, repair_knowledge_root, validate_external_root
+    from .knowledge_root import language_for_root, repair_knowledge_root, validate_external_root
     from .locking import file_lock
     from .project_registry import ProjectRecord, ensure_project, repository_root
-    from .transaction import recover_transactions
+    from .transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 
 
 def default_root() -> Path:
@@ -90,10 +90,11 @@ class InitializeResult:
 class ResolvedContext:
     root: Path
     record: ProjectRecord
+    knowledge_language: str
     read_paths: tuple[Path, ...]
 
 
-def initialize(root: Path, template: Path = DEFAULT_TEMPLATE) -> InitializeResult:
+def initialize(root: Path, template: Path | None = None) -> InitializeResult:
     """Repair missing template files while preserving existing knowledge."""
     created = repair_knowledge_root(root, template)
     return InitializeResult(
@@ -121,6 +122,7 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
     return ResolvedContext(
         root=initialized.root,
         record=record,
+        knowledge_language=language_for_root(initialized.root),
         read_paths=(
             initialized.root / "AGENTS.md",
             initialized.root / "00-global" / "health" / "health-status.md",
@@ -283,6 +285,7 @@ def _parse_date(value: str | None) -> date:
 def _context_payload(context: ResolvedContext) -> dict[str, object]:
     return {
         "root": str(context.root),
+        "knowledge_language": context.knowledge_language,
         "project": {
             "identity": context.record.identity,
             "slug": context.record.slug,
@@ -296,6 +299,24 @@ def _write_payload(payload: dict[str, object]) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+def _transaction_payload(diagnostic: TransactionDiagnostic) -> dict[str, object]:
+    return {
+        "transaction_id": diagnostic.transaction_id,
+        "operation": diagnostic.operation,
+        "scope": diagnostic.scope,
+        "state": diagnostic.state,
+        "disposition": diagnostic.disposition,
+        "issues": [
+            {
+                "code": issue.code,
+                "message": issue.message,
+                "target": str(issue.target) if issue.target is not None else None,
+            }
+            for issue in diagnostic.issues
+        ],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     """Expose the runner without requiring an installed Python package."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -303,6 +324,12 @@ def main(argv: list[str] | None = None) -> int:
 
     initialize_parser = commands.add_parser("initialize")
     initialize_parser.add_argument("--root")
+
+    transactions_parser = commands.add_parser("transactions")
+    transactions_parser.add_argument("--root")
+
+    recovery_parser = commands.add_parser("recover-transactions")
+    recovery_parser.add_argument("--root")
 
     for name in ("resolve", "capture", "check", "audit"):
         command = commands.add_parser(name)
@@ -337,6 +364,24 @@ def main(argv: list[str] | None = None) -> int:
         _write_payload(
             {"root": str(result.root), "created_paths": [str(path) for path in result.created_paths]}
         )
+        return 0
+
+    if args.command == "transactions":
+        inspected_root = root.expanduser().resolve()
+        _write_payload(
+            {
+                "root": str(inspected_root),
+                "transactions": [
+                    _transaction_payload(diagnostic)
+                    for diagnostic in inspect_transactions(inspected_root)
+                ],
+            }
+        )
+        return 0
+
+    if args.command == "recover-transactions":
+        recovered = recover_transactions(root.expanduser())
+        _write_payload({"recovered_paths": [str(path) for path in recovered]})
         return 0
 
     context = resolve(root, Path(args.cwd))

@@ -78,6 +78,34 @@ class KnowledgeCheckTest(unittest.TestCase):
 
             self.assertIn("01-projects/sample/architecture.md", report.missing_sources)
 
+    def test_pending_status_is_not_inferred_from_an_unrelated_substring(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            project = root / "01-projects" / "sample"
+            project.mkdir(parents=True)
+            self._health_status(root)
+            prose = project / "prose.md"
+            pending = project / "pending.md"
+            prose.write_text(
+                "# Prose\nThe result is depending on the deployment order.\n",
+                encoding="utf-8",
+            )
+            pending.write_text(
+                "# Pending\nAwaiting owner confirmation.\n\nStatus: Pending\n",
+                encoding="utf-8",
+            )
+
+            report = run_check(root, project, [prose, pending], date(2026, 7, 14))
+
+            self.assertIn("01-projects/sample/prose.md", report.missing_sources)
+            self.assertNotIn("01-projects/sample/pending.md", report.missing_sources)
+            self.assertNotIn(
+                "01-projects/sample/prose.md:L2", report.pending_confirmations
+            )
+            self.assertIn(
+                "01-projects/sample/pending.md:L4", report.pending_confirmations
+            )
+
     def test_check_reads_each_project_page_once(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp)
