@@ -45,7 +45,7 @@ class PublicArtifactsTest(unittest.TestCase):
         )
 
         self.assertEqual("tracebook", manifest["name"])
-        self.assertEqual("1.1.0", manifest["version"])
+        self.assertEqual("1.1.1", manifest["version"])
         self.assertEqual("./skills/", manifest["skills"])
         self.assertEqual(
             "https://github.com/tydandou/tracebook", manifest["homepage"]
@@ -58,6 +58,9 @@ class PublicArtifactsTest(unittest.TestCase):
         )
         self.assertEqual("tracebook", marketplace["name"])
         self.assertEqual("./plugins/tracebook", marketplace["plugins"][0]["source"]["path"])
+        self.assertEqual("local", marketplace["plugins"][0]["source"]["source"])
+        self.assertEqual("AVAILABLE", marketplace["plugins"][0]["policy"]["installation"])
+        self.assertEqual("ON_INSTALL", marketplace["plugins"][0]["policy"]["authentication"])
     def test_claude_plugin_manifest_and_marketplace_expose_tracebook(self) -> None:
         manifest = json.loads(
             (ROOT / "plugins" / "tracebook" / ".claude-plugin" / "plugin.json").read_text(
@@ -90,6 +93,7 @@ class PublicArtifactsTest(unittest.TestCase):
         self.assertIn("capture", readme)
         self.assertIn("check", readme)
         self.assertIn("audit", readme)
+        self.assertIn("## [1.1.1] - 2026-07-20", changelog)
         self.assertIn("## [1.1.0] - 2026-07-20", changelog)
         self.assertIn("## [1.0.0] - 2026-07-19", changelog)
         self.assertNotIn("## [1.0.0] - Unreleased", changelog)
@@ -131,14 +135,16 @@ class PublicArtifactsTest(unittest.TestCase):
         normalized_chinese = " ".join(chinese.split())
 
         self.assertNotIn("release candidate", english)
-        self.assertIn("The `1.1.0` release is published", english)
+        self.assertIn("The `1.1.1` release is published", english)
+        self.assertIn("marketplace source is absent", english)
         self.assertNotIn("optimized for project core-page", english)
         self.assertIn("every active durable Markdown page", english)
         self.assertIn("each level-two knowledge entry", english)
         self.assertIn("content-event idempotent", english)
 
         self.assertNotIn("发布候选", chinese)
-        self.assertIn("`1.1.0` 已正式发布", chinese)
+        self.assertIn("`1.1.1` 已正式发布", chinese)
+        self.assertIn("codex plugin marketplace list", chinese)
         self.assertNotIn("针对 project 核心页面的命名方式优化", chinese)
         self.assertIn("每个活跃的持久 Markdown 页面", normalized_chinese)
         self.assertIn("每个二级标题知识条目", normalized_chinese)

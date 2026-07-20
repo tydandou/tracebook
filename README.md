@@ -54,7 +54,7 @@ installing files, hooks, or services into those repositories.
 
 ## Install
 
-The `1.1.0` release is published under the `v1.1.0` tag. Use the tagged
+The `1.1.1` release is published under the `v1.1.1` tag. Use the tagged
 installation commands for the stable release, or the local development loading
 instructions when working from a clone.
 
@@ -63,7 +63,7 @@ instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v1.1.0
+codex plugin marketplace add tydandou/tracebook --ref v1.1.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -77,6 +77,33 @@ codex plugin add tracebook@tracebook
 ```
 
 Start a new Codex session after installation.
+
+### Update or recover a Codex installation
+
+`codex plugin remove` removes the installed plugin, not its knowledge root. If
+`codex plugin add tracebook@tracebook` reports that the plugin was not found,
+the `tracebook` marketplace source is absent from the active Codex profile.
+Check it first:
+
+```text
+codex plugin marketplace list
+```
+
+If `tracebook` is absent, add the intended source before installing again:
+
+```text
+codex plugin marketplace add tydandou/tracebook --ref v1.1.1
+codex plugin add tracebook@tracebook
+```
+
+For a local clone, update that clone and re-add it only when `tracebook` is
+absent from the marketplace list:
+
+```text
+git pull --ff-only
+codex plugin marketplace add .
+codex plugin add tracebook@tracebook
+```
 
 ### Claude Code
 
@@ -409,8 +436,9 @@ may modify business code.
 
 ## Troubleshooting
 
-- **The Plugin is unavailable:** confirm that the marketplace was added before
-  installing `tracebook@tracebook`, then start a new session. In Claude Code,
+- **The Plugin is unavailable:** run `codex plugin marketplace list`. If it
+  does not list `tracebook`, add the intended tagged release or local clone
+  before installing `tracebook@tracebook`, then start a new session. In Claude Code,
   `/reload-plugins` reloads an installed plugin.
 - **Project resolution fails:** run from inside a Git repository and pass its
   directory as `--cwd`. Check `git remote get-url origin` when clones should
@@ -454,7 +482,7 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v1.1.0` release.
+resolves the published `v1.1.1` release.
 
 ## Current Limitations
 

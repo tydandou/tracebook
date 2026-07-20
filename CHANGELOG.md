@@ -3,6 +3,16 @@
 This project follows semantic versioning. Releases are created only after the
 matching Git tag is published.
 
+## [1.1.1] - 2026-07-20
+
+### Fixed
+
+- Clarified the Codex recovery path when a plugin has been removed but its
+  `tracebook` marketplace source is absent from the active Codex profile.
+- Documented separate tagged-release and local-clone recovery commands so a
+  missing marketplace source is restored before `tracebook@tracebook` is
+  installed.
+
 ## [1.1.0] - 2026-07-20
 
 ### Added
