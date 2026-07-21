@@ -1,4 +1,6 @@
 interface:
-  display_name: Tracebook
-  short_description: Durable and traceable project knowledge for Codex.
-  default_prompt: Use Tracebook to load relevant external project knowledge before this engineering task and capture only verified durable conclusions afterwards.
+  display_name: "Tracebook"
+  short_description: "Traceable knowledge for repository work"
+  default_prompt: "Use $tracebook to load minimal project context before this repository task and capture only verified durable conclusions afterward."
+policy:
+  allow_implicit_invocation: true

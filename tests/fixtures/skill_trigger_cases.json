@@ -1,0 +1,16 @@
+{
+  "positive": [
+    "Analyze this repository architecture and identify the main code paths.",
+    "Debug this failing checkout flow and verify the root cause.",
+    "Review this patch for correctness and project-specific risks.",
+    "Change the deployment configuration and run the tests.",
+    "Fix the CI/CD build failure and publish the release.",
+    "Diagnose this production incident using logs and source evidence."
+  ],
+  "negative": [
+    "Explain what a Python decorator is without inspecting a repository.",
+    "Summarize this raw log only; do not write project knowledge.",
+    "Answer this general technology question.",
+    "Do not write to Tracebook for this task."
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "name": "tracebook",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Durable and traceable external project knowledge for Codex.",
   "author": {
     "name": "Tracebook Contributors",
@@ -14,13 +14,13 @@
   "interface": {
     "displayName": "Tracebook",
     "shortDescription": "Durable external project knowledge",
-    "longDescription": "Capture and use verified engineering knowledge outside business repositories.",
+    "longDescription": "Automatically load focused project context for repository work and capture only verified durable engineering knowledge outside business repositories.",
     "developerName": "Tracebook Contributors",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
     "defaultPrompt": [
-      "Use Tracebook to load project knowledge before this task.",
-      "Use Tracebook to capture verified conclusions from this task."
+      "Use Tracebook throughout this repository task.",
+      "Capture and check this task's verified durable conclusions."
     ]
   }
 }
