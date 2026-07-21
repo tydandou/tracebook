@@ -37,6 +37,9 @@ installing files, hooks, or services into those repositories.
   kept as review candidates rather than automatic facts.
 - Portable generated Markdown links plus Wikilink auditing for compatibility
   with manually edited Obsidian knowledge.
+- Broad implicit Skill triggers plus optional Codex lifecycle reminders for
+  repository analysis, debugging, review, implementation, tests, and release
+  work. Durable capture remains evidence-gated rather than automatic.
 - Local storage with a strict zero-write boundary for the business repository.
 
 ## Requirements
@@ -54,7 +57,7 @@ installing files, hooks, or services into those repositories.
 
 ## Install
 
-The `1.1.1` release is published under the `v1.1.1` tag. Use the tagged
+The `1.2.0` release is published under the `v1.2.0` tag. Use the tagged
 installation commands for the stable release, or the local development loading
 instructions when working from a clone.
 
@@ -63,7 +66,7 @@ instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v1.1.1
+codex plugin marketplace add tydandou/tracebook --ref v1.2.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -77,6 +80,12 @@ codex plugin add tracebook@tracebook
 ```
 
 Start a new Codex session after installation.
+
+Codex requires a separate trust review before non-managed plugin Hooks run.
+Open `/hooks`, review the Tracebook `UserPromptSubmit` and `Stop` commands, and
+trust them if you want lifecycle reminders. If they remain untrusted or are
+disabled, the broader Skill metadata and manual `$tracebook` invocation still
+work.
 
 ### Update or recover a Codex installation
 
@@ -92,7 +101,7 @@ codex plugin marketplace list
 If `tracebook` is absent, add the intended source before installing again:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v1.1.1
+codex plugin marketplace add tydandou/tracebook --ref v1.2.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -175,13 +184,13 @@ health machine fields remain stable English protocol values.
 
 1. Install Tracebook through a marketplace or load the local clone.
 2. Open a new agent session inside the Git repository you are working on.
-3. Ask: `Use Tracebook to load the relevant project knowledge before you
-   diagnose this issue.`
+3. Ask for normal repository work, such as: `Diagnose this issue and verify the
+   root cause.` The broader Skill metadata lets Codex select Tracebook without
+   requiring its name in every prompt.
 4. Work normally. Tracebook resolves the external root and project identity,
    then returns a small ordered set of context paths for the agent to read.
-5. After evidence-backed work, ask: `Capture the verified durable conclusions
-   with Tracebook and report the health result.` Review the reported knowledge
-   changes, evidence, lifecycle status, and health outcome.
+5. Review the final gate result. It reports either a verified capture plus its
+   health result, or one controlled reason why no durable capture was made.
 
 Tracebook does not write durable knowledge after temporary Q&A, pure log
 analysis, unverified inference, a user prohibition, or a task with no durable
@@ -408,8 +417,10 @@ for the governed destinations.
 - Initialization, capture, check, and audit write only inside the external
   root. Installing and operating Tracebook requires zero writes to the business
   repository and does not create a project-level `AGENTS.md` there.
-- No API key, cloud sync, MCP server, vector database, background daemon, or
-  hook is required or provided.
+- No API key, cloud sync, MCP server, vector database, or background daemon is
+  required or provided. The Codex plugin bundles non-writing lifecycle reminder
+  Hooks; they require user trust and may be disabled without affecting the
+  deterministic runner or manual Skill use.
 - Tracebook does not discover, migrate, import, copy, or modify an existing
   knowledge root automatically. Pointing `TRACEBOOK_ROOT` at a location is an
   explicit configuration choice, not an import operation.
@@ -482,13 +493,14 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v1.1.1` release.
+resolves the published `v1.2.0` release.
 
 ## Current Limitations
 
 - No migration, discovery, or automatic import of existing knowledge roots.
-- No cloud sync, MCP server, vector database, daemon, hook, or background
-  service.
+- No cloud sync, MCP server, vector database, daemon, or background service.
+- No automatic knowledge write from lifecycle Hooks; they only inject the
+  read and final-gate reminders.
 - No automatic confirmation that a business statement or Deep-audit finding is
   true; evidence and human review remain authoritative.
 - No business-repository installation or generated repository configuration.

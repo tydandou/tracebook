@@ -3,6 +3,33 @@
 This project follows semantic versioning. Releases are created only after the
 matching Git tag is published.
 
+## [1.2.0] - 2026-07-21
+
+### Added
+
+- Codex `UserPromptSubmit` and `Stop` lifecycle reminders for Git repository
+  work. The Hooks never write knowledge, parse transcripts, or block task
+  completion.
+- Positive and negative trigger cases plus executable Hook behavior tests.
+- A documented automatic-workflow design, compatibility contract, and rollback
+  path.
+
+### Changed
+
+- Broadened implicit Skill discovery to cover repository analysis, debugging,
+  review, code/configuration changes, tests, builds, deployments, CI/CD, and
+  incident diagnosis.
+- Separated default minimal context loading from conditional durable capture.
+- Made the final write gate deterministic with four capture conditions and
+  controlled skip reasons.
+
+### Compatibility
+
+- Existing knowledge roots, language preferences, paths, lifecycle values,
+  and runner request/response contracts are unchanged.
+- Plugin Hooks require Codex trust and can be disabled; enhanced Skill metadata
+  remains the fallback.
+
 ## [1.1.1] - 2026-07-20
 
 ### Fixed

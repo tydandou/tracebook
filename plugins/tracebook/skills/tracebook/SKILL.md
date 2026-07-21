@@ -1,6 +1,6 @@
 ---
 name: tracebook
-description: Preserve and use durable external project knowledge for Codex. Use when working on a software project and the task needs business terminology, architecture context, module or code-path knowledge, debugging history, verified engineering conclusions, or a governed write-back after development, debugging, troubleshooting, or code analysis.
+description: Use automatically for software-repository work including analysis, debugging, review, code or configuration changes, tests, builds, deployments, CI/CD, and incident diagnosis. Resolve and read minimal external project knowledge before nontrivial work; before replying, capture and check only new, verified, durable conclusions. Skip general Q&A, non-project work, raw-log summaries, unverified inference, and capture when the user explicitly disables writes.
 ---
 
 # Tracebook
@@ -16,8 +16,9 @@ business code and long-lived project analysis separate.
 - Do not create a project-level `AGENTS.md` in a knowledge directory.
 - Do not store raw chat transcripts, complete logs, or unverified AI assertions
   as durable knowledge.
-- Do not run an MCP service, daemon, hook, cloud service, vector database, or
-  API-key-dependent workflow.
+- Do not run an MCP service, daemon, cloud service, vector database, or
+  API-key-dependent workflow. Plugin lifecycle hooks may inject this Skill's
+  read/write-gate reminders, but they must never write knowledge themselves.
 
 ## Initialize and Resolve Context
 
@@ -48,7 +49,9 @@ business code and long-lived project analysis separate.
 
 ## Load Knowledge Before Engineering Work
 
-Read the external root `AGENTS.md`, health status, current project index, and
+For nontrivial software-repository work, default to this read phase even when
+the user did not explicitly request Tracebook. Read the external root
+`AGENTS.md`, health status, current project index, and
 project status in this order. Then select only documents relevant to the task.
 Do not load complete logs, raw material, archive directories, or `99-archive`
 without a tracing, audit, deep-health, or explicit-user reason.
@@ -71,10 +74,20 @@ limits. Load these references only when their rule applies:
 
 Every engineering task must evaluate the write gate before the final response.
 The final report must state either that verified durable knowledge was captured
-and checked, or that no capture was made and why.
+and checked, or that no capture was made with exactly one controlled reason:
+`not-project-work`, `no-durable-conclusion`, `unverified`, `already-known`, or
+`user-disabled`.
 
 Do not write knowledge after pure log analysis, temporary Q&A, unverified
-inference, or when the user prohibits a write.
+inference, or when the user prohibits a write. Treat tests and logs as evidence,
+not durable knowledge by themselves. A root cause supported by logs plus source,
+configuration, reproduction, or another stable source may pass the gate; never
+capture complete raw logs.
+
+Capture only when the conclusion is new or materially changed, verified,
+useful after the conversation, and has a governed destination. If any condition
+fails, use the matching controlled reason instead. An explicit no-write request
+disables capture, not relevant read-only context loading.
 
 Write only verified, durable knowledge: business rules, terminology, scenarios,
 module relationships, architecture changes, code paths, API or database

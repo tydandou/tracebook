@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import unittest
 
 
@@ -66,7 +67,54 @@ class SkillWorkflowTest(unittest.TestCase):
             "Every engineering task must evaluate the write gate before the final response.",
             skill,
         )
-        self.assertIn("no capture was made and why", skill)
+        self.assertIn("no capture was made with exactly one controlled reason", skill)
+
+    def test_skill_metadata_covers_repository_triggers_and_exclusions(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        description = skill.split("\n---\n", 1)[0].lower()
+        cases = json.loads(
+            (ROOT / "tests" / "fixtures" / "skill_trigger_cases.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        for term in (
+            "software-repository",
+            "analysis",
+            "debugging",
+            "review",
+            "configuration changes",
+            "tests",
+            "builds",
+            "deployments",
+            "ci/cd",
+            "incident diagnosis",
+            "general q&a",
+            "raw-log summaries",
+            "unverified inference",
+        ):
+            self.assertIn(term, description)
+        self.assertGreaterEqual(len(cases["positive"]), 6)
+        self.assertGreaterEqual(len(cases["negative"]), 4)
+
+    def test_skill_defines_deterministic_capture_gate_and_skip_reasons(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        for reason in (
+            "not-project-work",
+            "no-durable-conclusion",
+            "unverified",
+            "already-known",
+            "user-disabled",
+        ):
+            self.assertIn(reason, skill)
+        for condition in (
+            "materially changed",
+            "verified",
+            "useful after",
+            "governed destination",
+        ):
+            self.assertIn(condition, skill)
 
     def test_skill_requires_read_only_transaction_diagnostics_before_manual_action(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
