@@ -123,7 +123,7 @@ def _score(candidate: Candidate, query: str) -> int:
     return score
 
 
-def context(root: Path, project: Path, identity: str, slug: str, query: str, *, include_history: bool = False, as_of: date | None = None, status: str = "current", kind: str | None = None, scope: str = "project", max_results: int = 10, max_chars: int = 20000) -> dict[str, object]:
+def context(root: Path, project: Path, project_id: str, name: str, slug: str, query: str, *, include_history: bool = False, as_of: date | None = None, status: str = "current", kind: str | None = None, scope: str = "project", max_results: int = 10, max_chars: int = 20000) -> dict[str, object]:
     if not query.strip():
         raise ValueError("INVALID_REQUEST: query is required")
     if max_results < 1 or max_chars < 1:
@@ -144,4 +144,4 @@ def context(root: Path, project: Path, identity: str, slug: str, query: str, *, 
         for item in available_history:
             if item.historical and item.fields["knowledge_id"] in ids:
                 historical.append(item.payload(root, _score(item, query)))
-    return {"schema_version": 1, "project": {"identity": identity, "slug": slug}, "query": query, "current_context": payload, "historical_context": historical, "warnings": sorted(set(warnings)), "truncated": len(payload) < min(len(ranked), max_results)}
+    return {"schema_version": 1, "project": {"project_id": project_id, "name": name, "identity": project_id, "slug": slug}, "query": query, "current_context": payload, "historical_context": historical, "warnings": sorted(set(warnings)), "truncated": len(payload) < min(len(ranked), max_results)}

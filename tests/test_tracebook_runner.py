@@ -129,7 +129,7 @@ class TracebookRunnerTest(unittest.TestCase):
 
             def checking_ensure(health_root: Path, project=None):
                 if project is not None:
-                    self.assertIn(f"project-{project.slug}", active_locks)
+                    self.assertIn(tracebook_runner.project_lock_name(project), active_locks)
                 return actual_ensure(health_root, project)
 
             with patch.object(tracebook_runner, "file_lock", recording_lock), patch.object(

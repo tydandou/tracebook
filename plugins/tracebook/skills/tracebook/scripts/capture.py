@@ -11,7 +11,7 @@ import posixpath
 import re
 
 from .locking import file_lock
-from .project_registry import ProjectRecord
+from .project_registry import ProjectRecord, project_lock_name
 from .transaction import commit_updates
 
 
@@ -182,7 +182,7 @@ def validate_capture(request: CaptureRequest) -> None:
 def capture_lock_name(record: ProjectRecord, request: CaptureRequest) -> str:
     """Return the transaction lock scope without acquiring a lock."""
     if request.scope == "project":
-        return f"project-{_safe_category(record.slug)}"
+        return project_lock_name(record)
     if request.scope in {"domain", "pattern"}:
         return request.scope
     raise _invalid_request("scope", "is unsupported")

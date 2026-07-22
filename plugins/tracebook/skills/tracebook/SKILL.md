@@ -22,18 +22,19 @@ business code and long-lived project analysis separate.
 ## Initialize and Resolve Context
 
 1. Set `SKILL_DIR` to the directory containing this `SKILL.md`. Resolve the
-   current Git repository root and read its `AGENTS.md` when present.
+   current project root (the Git root when available) and read its `AGENTS.md`
+   when present.
 2. Set the external root to `TRACEBOOK_ROOT` when configured, otherwise
    `~/.tracebook`. Run `$SKILL_DIR/scripts/tracebook_runner.py resolve --root
-   <external-root> --cwd <repository-root>` with the current Python interpreter. Translate the
+   <external-root> --cwd <project-root>` with the current Python interpreter. Translate the
    command syntax for the active shell. Consume the JSON response rather than
    reimplementing root initialization or project registration.
 3. New roots are initialized as schema version 2. A pre-existing root without
    the schema-v2 marker is rejected explicitly: never migrate, infer IDs for,
    or mix legacy knowledge pages with schema-v2 authority pages.
 4. The runner creates or repairs only missing external-root template files,
-   registers the repository from its normalized Git remote (or a local-path
-   fallback), and returns the required `read_paths` plus `knowledge_language`.
+   resolves the project from its registered location and optional normalized
+   Git remote, and returns the required `read_paths` plus `knowledge_language`.
 5. Do not initialize a project directory beyond `index.md` and
    `project-status.md` until there is durable knowledge to write.
 6. If `resolve` refuses transaction recovery, do not edit

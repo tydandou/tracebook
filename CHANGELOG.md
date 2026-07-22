@@ -3,6 +3,25 @@
 This project follows semantic versioning. Releases are created only after the
 matching Git tag is published.
 
+## [3.0.0] - 2026-07-22
+
+### Added
+
+- Immutable `project_id` project identity with location and normalized Git
+  remote as explicit resolution signals. New non-Git projects are supported.
+- Human-readable project knowledge directories using a display-name slug plus
+  short ID suffix, and a generated project-name navigation index.
+
+### Fixed
+
+- Exclude generated project logs from Light Check orphan-page and
+  missing-source findings.
+
+### Breaking Changes
+
+- Project registry v1 is replaced by registry v2. Existing registry-v1 roots
+  are rejected explicitly and are not migrated, moved, or merged automatically.
+
 ## [2.1.0] - 2026-07-22
 
 ### Changed

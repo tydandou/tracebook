@@ -3,8 +3,8 @@
 When a project directory is missing, create only:
 
 ```text
-01-projects/{project-name}/index.md
-01-projects/{project-name}/project-status.md
+01-projects/{readable-name--id-suffix}/index.md
+01-projects/{readable-name--id-suffix}/project-status.md
 ```
 
 Create architecture, business-rule, source-map, API, database, decision,

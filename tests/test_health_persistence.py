@@ -250,13 +250,13 @@ class HealthPersistenceTest(unittest.TestCase):
                         active.remove(name)
 
             def recording_commit(root: Path, scope: str, operation: str, updates: object):
-                self.assertIn(f"project-{context.record.slug}", active)
+                self.assertIn(health_state.project_lock_name(context.record), active)
                 paths = tuple(updates)
                 commits.append((scope, paths))
                 return actual_commit(root, scope, operation, updates)
 
             def recording_rebuild(root: Path) -> Path:
-                self.assertNotIn(f"project-{context.record.slug}", active)
+                self.assertNotIn(health_state.project_lock_name(context.record), active)
                 return aggregate
 
             with patch.object(health_state, "file_lock", recording_lock), patch.object(
@@ -278,7 +278,7 @@ class HealthPersistenceTest(unittest.TestCase):
             log = health_log_path(
                 context.root, "project", context.record.slug, date(2026, 7, 18)
             )
-            self.assertEqual([(f"project-{context.record.slug}", (status, log))], commits)
+            self.assertEqual([(health_state.project_lock_name(context.record), (status, log))], commits)
             self.assertEqual((status, log), changed)
 
     def test_aggregate_failure_exposes_committed_scope_paths_and_original_error(self) -> None:

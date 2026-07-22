@@ -2,7 +2,7 @@
 
 Use `00-global` for shared workflow, governance rules, and health policy.
 
-Put project-specific knowledge under `01-projects/{project-name}`. Keep
+Put project-specific knowledge under the resolver-provided `01-projects/{readable-name--id-suffix}` path. Keep
 `index.md` and `project-status.md` as the minimum project documents. Create
 architecture, product, modules, terminology, business rules, source maps,
 API, database, decisions, synthesis, logs, and archive documents only when

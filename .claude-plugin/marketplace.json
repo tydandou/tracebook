@@ -9,7 +9,7 @@
       "name": "tracebook",
       "source": "./plugins/tracebook",
       "description": "Durable and traceable external project knowledge for Claude Code.",
-      "version": "2.1.0"
+      "version": "3.0.0"
     }
   ]
 }
