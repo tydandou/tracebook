@@ -1,3 +1,9 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("UserPromptSubmit", "Stop")]
+    [string]$HookEvent
+)
+
 $ErrorActionPreference = "Stop"
 
 $startMessage = "Tracebook workflow: if this is nontrivial software-repository work " +
@@ -15,24 +21,10 @@ $stopMessage = "Tracebook final reminder: assess whether this task produced veri
 
 try {
     [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-    $rawPayload = [Console]::In.ReadToEnd()
-    if ([string]::IsNullOrWhiteSpace($rawPayload)) {
-        exit 0
-    }
+    $null = [Console]::In.ReadToEnd()
 
-    try {
-        $payload = $rawPayload | ConvertFrom-Json -ErrorAction Stop
-    }
-    catch {
-        exit 0
-    }
-
-    if ($null -eq $payload -or $payload -isnot [pscustomobject]) {
-        exit 0
-    }
-
-    $cwd = $payload.cwd
-    if ($cwd -isnot [string] -or [string]::IsNullOrWhiteSpace($cwd) -or -not [IO.Directory]::Exists($cwd)) {
+    $cwd = (Get-Location).Path
+    if ([string]::IsNullOrWhiteSpace($cwd) -or -not [IO.Directory]::Exists($cwd)) {
         exit 0
     }
 
@@ -46,7 +38,7 @@ try {
         exit 0
     }
 
-    $message = switch ($payload.hook_event_name) {
+    $message = switch ($HookEvent) {
         "UserPromptSubmit" { $startMessage; break }
         "Stop" { $stopMessage; break }
         default { $null }
