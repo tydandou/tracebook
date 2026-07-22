@@ -3,6 +3,23 @@
 This project follows semantic versioning. Releases are created only after the
 matching Git tag is published.
 
+## [1.2.1] - 2026-07-22
+
+### Fixed
+
+- Replaced the Windows lifecycle Hook launcher with a native PowerShell Hook,
+  so `UserPromptSubmit` and `Stop` no longer depend on a `python` command in
+  the user PATH.
+- Added executable Windows Hook tests for a PATH without Python, missing Git,
+  malformed input, non-Git directories, unknown events, and plugin paths that
+  contain spaces.
+
+### Compatibility
+
+- The lifecycle Hook remains non-blocking and non-writing. POSIX Hook behavior,
+  the Skill, Runner, and all external knowledge-root formats remain unchanged.
+- Codex users must review and trust the changed Hook commands after upgrading.
+
 ## [1.2.0] - 2026-07-21
 
 ### Added
