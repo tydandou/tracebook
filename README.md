@@ -21,7 +21,7 @@ an inspectable record of what was captured and why.
 
 The knowledge root stays separate from business code. That separation lets
 multiple business repositories use one local knowledge system without
-installing files, hooks, or services into those repositories.
+installing files or services into those repositories.
 
 ## Features
 
@@ -37,9 +37,9 @@ installing files, hooks, or services into those repositories.
   kept as review candidates rather than automatic facts.
 - Portable generated Markdown links plus Wikilink auditing for compatibility
   with manually edited Obsidian knowledge.
-- Broad implicit Skill triggers plus optional Codex lifecycle reminders for
-  repository analysis, debugging, review, implementation, tests, and release
-  work. Durable capture remains evidence-gated rather than automatic.
+- Broad implicit Skill triggers for repository analysis, debugging, review,
+  implementation, tests, and release work. Durable capture remains
+  evidence-gated rather than automatic.
 - Local storage with a strict zero-write boundary for the business repository.
 
 ## Requirements
@@ -57,7 +57,7 @@ installing files, hooks, or services into those repositories.
 
 ## Install
 
-The `2.0.3` release is published under the `v2.0.3` tag. Use the tagged
+The `2.1.0` release is published under the `v2.1.0` tag. Use the tagged
 installation commands for the stable release, or the local development loading
 instructions when working from a clone.
 
@@ -66,7 +66,7 @@ instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v2.0.3
+codex plugin marketplace add tydandou/tracebook --ref v2.1.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -81,13 +81,10 @@ codex plugin add tracebook@tracebook
 
 Start a new Codex session after installation.
 
-Codex requires a separate trust review before non-managed plugin Hooks run.
-Open `/hooks`, review the Tracebook `UserPromptSubmit` and `Stop` commands, and
-trust them if you want lifecycle reminders. Version `2.0.3` changes the Windows
-Hook command, so users upgrading from an earlier release must review and trust
-the two commands again. The Windows lifecycle reminders no longer depend on a
-Python entry in the user PATH or parse Hook stdin JSON. If Hooks remain untrusted or are disabled, the
-broader Skill metadata and manual `$tracebook` invocation still work.
+Tracebook is a pure Skill plugin: it has no lifecycle Hooks and therefore
+requires no `/hooks` trust review. Its Skill description instructs the host to
+invoke it before repository engineering work and evaluate its write gate after
+task completion. You can always invoke `$tracebook` explicitly.
 
 ### Update or recover a Codex installation
 
@@ -103,7 +100,7 @@ codex plugin marketplace list
 If `tracebook` is absent, add the intended source before installing again:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v2.0.3
+codex plugin marketplace add tydandou/tracebook --ref v2.1.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -113,7 +110,7 @@ source, Codex requires replacing the marketplace before adding it again:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v2.0.3
+codex plugin marketplace add tydandou/tracebook --ref v2.1.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -452,9 +449,9 @@ for the governed destinations.
   root. Installing and operating Tracebook requires zero writes to the business
   repository and does not create a project-level `AGENTS.md` there.
 - No API key, cloud sync, MCP server, vector database, or background daemon is
-  required or provided. The Codex plugin bundles non-writing lifecycle reminder
-  Hooks; they require user trust and may be disabled without affecting the
-  deterministic runner or manual Skill use.
+  required or provided. No lifecycle Hooks are bundled; focused context loading
+  and write-gate evaluation are handled by the Skill, with manual
+  `$tracebook` invocation always available.
 - Tracebook does not discover, migrate, import, copy, or modify an existing
   knowledge root automatically. Pointing `TRACEBOOK_ROOT` at a location is an
   explicit configuration choice, not an import operation.
@@ -527,18 +524,18 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v2.0.3` release.
+resolves the published `v2.1.0` release.
 
 ## Current Limitations
 
-- `2.0.3` uses schema-v2 authority pages. Existing pre-v2 knowledge roots are
+- `2.1.0` uses schema-v2 authority pages. Existing pre-v2 knowledge roots are
   intentionally not migrated, imported, or mixed with the new format; point
   `TRACEBOOK_ROOT` at a new empty root for v2 work.
 
 - No migration, discovery, or automatic import of existing knowledge roots.
 - No cloud sync, MCP server, vector database, daemon, or background service.
-- No automatic knowledge write from lifecycle Hooks; they only inject the
-  read and final-gate reminders.
+- No lifecycle Hooks. Automatic Skill selection remains host-dependent, but
+  `$tracebook` can always be invoked explicitly.
 - No automatic confirmation that a business statement or Deep-audit finding is
   true; evidence and human review remain authoritative.
 - No business-repository installation or generated repository configuration.

@@ -1,6 +1,6 @@
 ---
 name: tracebook
-description: Use automatically for software-repository work including analysis, debugging, review, code or configuration changes, tests, builds, deployments, CI/CD, and incident diagnosis. Resolve and read minimal external project knowledge before nontrivial work; before replying, capture and check only new, verified, durable conclusions. Skip general Q&A, non-project work, raw-log summaries, unverified inference, and capture when the user explicitly disables writes.
+description: MUST invoke before any software-repository work (analysis, debugging, review, code changes, tests, builds, deploys, CI/CD, incidents). Loads external project knowledge context. After task completion, evaluates write gate for durable knowledge capture. Skip only for general Q&A or non-project conversations.
 ---
 
 # Tracebook
@@ -17,8 +17,7 @@ business code and long-lived project analysis separate.
 - Do not store raw chat transcripts, complete logs, or unverified AI assertions
   as durable knowledge.
 - Do not run an MCP service, daemon, cloud service, vector database, or
-  API-key-dependent workflow. Plugin lifecycle hooks may inject this Skill's
-  read/write-gate reminders, but they must never write knowledge themselves.
+  API-key-dependent workflow.
 
 ## Initialize and Resolve Context
 
