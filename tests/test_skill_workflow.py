@@ -31,7 +31,7 @@ class SkillWorkflowTest(unittest.TestCase):
     def test_skill_declares_the_governed_capture_contract(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 
-        for field in ("write_intent", "content_kind", "evidence", "kind", "replacement"):
+        for field in ("operation", "knowledge_id", "expected_version", "evidence", "kind", "replacement_knowledge_id"):
             self.assertIn(field, skill)
         self.assertIn("business-rule", skill)
         self.assertIn("decision", skill)
@@ -67,7 +67,7 @@ class SkillWorkflowTest(unittest.TestCase):
             "Every engineering task must evaluate the write gate before the final response.",
             skill,
         )
-        self.assertIn("no capture was made with exactly one controlled reason", skill)
+        self.assertIn("Routine work with no durable conclusion needs no skip", skill)
 
     def test_skill_metadata_covers_repository_triggers_and_exclusions(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -97,17 +97,11 @@ class SkillWorkflowTest(unittest.TestCase):
         self.assertGreaterEqual(len(cases["positive"]), 6)
         self.assertGreaterEqual(len(cases["negative"]), 4)
 
-    def test_skill_defines_deterministic_capture_gate_and_skip_reasons(self) -> None:
+    def test_skill_defines_deterministic_capture_gate_and_soft_reporting(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 
-        for reason in (
-            "not-project-work",
-            "no-durable-conclusion",
-            "unverified",
-            "already-known",
-            "user-disabled",
-        ):
-            self.assertIn(reason, skill)
+        self.assertIn("evaluate the write gate", skill)
+        self.assertIn("no skip", skill)
         for condition in (
             "materially changed",
             "verified",

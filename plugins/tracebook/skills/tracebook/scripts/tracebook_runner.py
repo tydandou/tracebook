@@ -29,6 +29,7 @@ if __package__ in (None, ""):
         run_check,
         run_deep_audit,
     )
+    from scripts.context_search import context as build_context
     from scripts.health_state import (
         _finish_health_persistence,
         _load_scope_state,
@@ -60,6 +61,7 @@ else:
         run_check,
         run_deep_audit,
     )
+    from .context_search import context as build_context
     from .health_state import (
         _finish_health_persistence,
         _load_scope_state,
@@ -136,6 +138,34 @@ def capture(
 ) -> CaptureResult:
     """Persist an explicitly classified durable knowledge entry."""
     return capture_knowledge(context.root, context.record, request, today)
+
+
+def retrieve_context(
+    resolved: ResolvedContext,
+    query: str,
+    *,
+    include_history: bool = False,
+    as_of: date | None = None,
+    status: str = "current",
+    kind: str | None = None,
+    scope: str = "project",
+    max_results: int = 10,
+    max_chars: int = 20000,
+) -> dict[str, object]:
+    return build_context(
+        resolved.root,
+        resolved.root / resolved.record.relative_path,
+        resolved.record.identity,
+        resolved.record.slug,
+        query,
+        include_history=include_history,
+        as_of=as_of,
+        status=status,
+        kind=kind,
+        scope=scope,
+        max_results=max_results,
+        max_chars=max_chars,
+    )
 
 
 @dataclass(frozen=True)
@@ -331,7 +361,7 @@ def main(argv: list[str] | None = None) -> int:
     recovery_parser = commands.add_parser("recover-transactions")
     recovery_parser.add_argument("--root")
 
-    for name in ("resolve", "capture", "check", "audit"):
+    for name in ("resolve", "capture", "check", "audit", "context"):
         command = commands.add_parser(name)
         command.add_argument("--root")
         command.add_argument("--cwd", required=True)
@@ -339,6 +369,16 @@ def main(argv: list[str] | None = None) -> int:
     capture_parser = commands.choices["capture"]
     capture_parser.add_argument("--request", required=True)
     capture_parser.add_argument("--today")
+
+    context_parser = commands.choices["context"]
+    context_parser.add_argument("--query", required=True)
+    context_parser.add_argument("--include-history", action="store_true")
+    context_parser.add_argument("--as-of")
+    context_parser.add_argument("--status", default="current")
+    context_parser.add_argument("--kind")
+    context_parser.add_argument("--scope", choices=("project", "domain", "pattern", "all"), default="project")
+    context_parser.add_argument("--max-results", type=int, default=10)
+    context_parser.add_argument("--max-chars", type=int, default=20000)
 
     check_parser = commands.choices["check"]
     check_parser.add_argument("--changed", action="append", default=[])
@@ -389,6 +429,19 @@ def main(argv: list[str] | None = None) -> int:
         _write_payload(_context_payload(context))
         return 0
 
+    if args.command == "context":
+        try:
+            _write_payload(retrieve_context(
+                context, args.query, include_history=args.include_history,
+                as_of=_parse_date(args.as_of) if args.as_of else None,
+                status=args.status, kind=args.kind, scope=args.scope,
+                max_results=args.max_results, max_chars=args.max_chars,
+            ))
+            return 0
+        except ValueError as error:
+            _write_payload({"error": str(error)})
+            return 2
+
     if args.command == "audit":
         result = audit(
             context,
@@ -405,7 +458,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "capture":
         request_payload = json.loads(Path(args.request).read_text(encoding="utf-8"))
-        result = capture(context, CaptureRequest(**request_payload), _parse_date(args.today))
+        required = {"operation", "knowledge_id"}
+        missing = sorted(required - request_payload.keys())
+        if missing:
+            _write_payload({"error": f"INVALID_REQUEST: schema-v2 capture requires {', '.join(missing)}"})
+            return 2
+        try:
+            result = capture(context, CaptureRequest(**request_payload), _parse_date(args.today))
+        except ValueError as error:
+            _write_payload({"error": str(error)})
+            return 2
         _write_payload(
             {
                 "changed_paths": [str(path) for path in result.changed_paths],

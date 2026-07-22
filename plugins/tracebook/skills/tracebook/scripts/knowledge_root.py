@@ -18,7 +18,9 @@ CHINESE_TEMPLATE = (
     Path(__file__).resolve().parents[1] / "assets" / "knowledge-root-template-zh"
 )
 _LANGUAGE_CONFIG = Path(".tracebook-state") / "config.json"
+_SCHEMA_CONFIG = Path(".tracebook-state") / "schema.json"
 _SUPPORTED_LANGUAGES = {"en", "zh"}
+_SCHEMA_VERSION = 2
 
 
 def _invalid_language_config(root: Path, message: str) -> TracebookError:
@@ -58,6 +60,32 @@ def language_for_root(root: Path) -> str:
 
 def template_for_root(root: Path) -> Path:
     return CHINESE_TEMPLATE if language_for_root(root) == "zh" else DEFAULT_TEMPLATE
+
+
+def schema_for_root(root: Path) -> int:
+    """Return the supported schema version without silently upgrading legacy roots."""
+    resolved_root = root.expanduser().resolve()
+    path = resolved_root / _SCHEMA_CONFIG
+    if not path.exists():
+        legacy_markers = ("00-global", "01-projects", "02-domain", "03-patterns")
+        if any((resolved_root / marker).exists() for marker in legacy_markers):
+            raise TracebookError(
+                "UNSUPPORTED_SCHEMA",
+                "Existing knowledge root has no schema-v2 config; create a new empty root instead of migrating or mixing formats.",
+                "initialize",
+            )
+        return _SCHEMA_VERSION
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise TracebookError("INVALID_SCHEMA_CONFIG", str(error), "initialize") from None
+    if payload != {"version": _SCHEMA_VERSION}:
+        raise TracebookError(
+            "UNSUPPORTED_SCHEMA",
+            f"Expected {{\"version\": {_SCHEMA_VERSION}}} at {path}",
+            "initialize",
+        )
+    return _SCHEMA_VERSION
 
 
 def _template_sources(root: Path, template: Path | None) -> dict[Path, Path]:
@@ -103,6 +131,7 @@ def repair_knowledge_root(
 ) -> tuple[Path, ...]:
     """Atomically restore missing templates without overwriting existing content."""
     target = target.expanduser().resolve()
+    schema_for_root(target)
     sources = _template_sources(target, template)
 
     created: list[Path] = []
@@ -125,6 +154,11 @@ def repair_knowledge_root(
             )
             atomic_write_text(destination, content, operation="initialize")
             created.append(destination)
+        schema = target / _SCHEMA_CONFIG
+        if not schema.exists():
+            schema.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(schema, json.dumps({"version": _SCHEMA_VERSION}) + "\n", operation="initialize")
+            created.append(schema)
     return tuple(created)
 
 

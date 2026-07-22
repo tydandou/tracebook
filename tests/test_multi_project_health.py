@@ -43,6 +43,7 @@ class MultiProjectHealthTest(unittest.TestCase):
             "pending_confirmations": [],
             "duplicate_pages": [],
             "log_growth": [],
+            "entity_issues": [],
         }
         values.update(overrides)
         return CheckReport(**values)

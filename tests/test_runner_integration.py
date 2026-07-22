@@ -177,6 +177,8 @@ class RunnerIntegrationTest(unittest.TestCase):
                     request.write_text(
                         json.dumps(
                             {
+                                "operation": "create",
+                                "knowledge_id": f"{scope}-scope-check",
                                 "scope": scope,
                                 "kind": scope,
                                 "category": category,

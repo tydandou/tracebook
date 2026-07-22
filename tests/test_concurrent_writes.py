@@ -185,6 +185,8 @@ class ConcurrentWritesTest(unittest.TestCase):
                 request_path.write_text(
                     json.dumps(
                         {
+                            "operation": "create",
+                            "knowledge_id": f"concurrent-rule-{index}",
                             "scope": "project",
                             "kind": "business-rule",
                             "category": "business-rules",
@@ -255,21 +257,20 @@ class ConcurrentWritesTest(unittest.TestCase):
             self.assertEqual(2, len(event_ids), payloads)
 
             project = context.root / context.record.relative_path
-            document = (project / "business-rules.md").read_text(encoding="utf-8")
             index_content = (project / "index.md").read_text(encoding="utf-8")
             status = (project / "project-status.md").read_text(encoding="utf-8")
-            log = (project / "logs" / "2026-07.md").read_text(encoding="utf-8")
             for index in range(2):
+                document = (
+                    project / "knowledge" / "business-rule" / f"concurrent-rule-{index}.md"
+                ).read_text(encoding="utf-8")
                 self.assertIn(f"Concurrent rule {index}", document)
                 self.assertIn(f"Concurrent rule {index}", status)
-            for event_id in event_ids:
-                marker = f"<!-- tracebook:event:{event_id} -->"
+                marker = f"<!-- tracebook:event:{payloads[index]['event_id']} -->"
                 self.assertEqual(1, document.count(marker))
-                self.assertEqual(1, log.count(marker))
-            self.assertEqual(1, index_content.count("(business-rules.md)"))
-            self.assertEqual(1, status.count("<!-- tracebook:last-event:"))
+            self.assertEqual(2, index_content.count("knowledge/business-rule/"))
+            self.assertEqual(0, status.count("<!-- tracebook:last-event:"))
 
-    def test_opposite_lifecycle_captures_keep_one_entity_and_one_pointer(self) -> None:
+    def test_concurrent_same_entity_create_reports_a_version_conflict(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)
             root = base / "knowledge"
@@ -298,7 +299,7 @@ class ConcurrentWritesTest(unittest.TestCase):
             )
             request_values = (
                 ("Current", "Concurrent current body must be retained."),
-                ("Historical", "Concurrent historical body must be retained."),
+                ("Pending", "Concurrent pending body must be retained."),
             )
             processes: list[subprocess.Popen[str]] = []
             for index, (status, body) in enumerate(request_values):
@@ -306,6 +307,8 @@ class ConcurrentWritesTest(unittest.TestCase):
                 request_path.write_text(
                     json.dumps(
                         {
+                            "operation": "create",
+                            "knowledge_id": "concurrent-lifecycle-authority",
                             "scope": "project",
                             "kind": "decision",
                             "category": "adr-0001",
@@ -363,51 +366,19 @@ class ConcurrentWritesTest(unittest.TestCase):
 
             if failure_reason is not None:
                 self.fail(f"{failure_reason}\n\n{self._format_results(collected)}")
-            failures = [
-                f"child {index}: exit={returncode}\nstdout={stdout}\nstderr={stderr}"
-                for index, (returncode, stdout, stderr) in enumerate(collected)
-                if returncode != 0
-            ]
-            self.assertEqual([], failures, "\n\n".join(failures))
-            payloads = [json.loads(stdout) for _, stdout, _ in collected]
-            event_ids = {payload["event_id"] for payload in payloads}
-            self.assertEqual(2, len(event_ids), payloads)
+            successes = [json.loads(stdout) for code, stdout, _ in collected if code == 0]
+            conflicts = [json.loads(stdout) for code, stdout, _ in collected if code == 2]
+            self.assertEqual(1, len(successes), collected)
+            self.assertEqual(1, len(conflicts), collected)
+            self.assertIn("already exists; use revise", conflicts[0]["error"])
 
-            project = context.root / context.record.relative_path
-            active = project / "decisions" / "adr-0001.md"
-            archived = project / "archive" / "decisions" / "adr-0001.md"
-            contents = {
-                path: path.read_text(encoding="utf-8")
-                for path in (active, archived)
-            }
-            entities = [
-                path for path, content in contents.items()
-                if "type: decision" in content
-            ]
-            pointers = [
-                path for path, content in contents.items()
-                if "<!-- tracebook:managed-pointer -->" in content
-            ]
-            self.assertEqual(1, len(entities), contents)
-            self.assertEqual(1, len(pointers), contents)
-            self.assertEqual({active, archived}, set(entities + pointers))
-            authority = contents[entities[0]]
-            pointer = contents[pointers[0]]
-            for _, body in request_values:
-                self.assertIn(body, authority)
-            self.assertNotIn("type: decision", pointer)
-            self.assertNotRegex(pointer, r"(?m)^#{1,2} ")
-
-            index_path = project / "index.md"
-            index_content = index_path.read_text(encoding="utf-8")
-            authority_link = entities[0].relative_to(index_path.parent).as_posix()
-            self.assertEqual(1, index_content.count("- [adr-0001]("))
-            self.assertIn(f"- [adr-0001]({authority_link})", index_content)
-            log = (project / "logs" / "2026-07.md").read_text(encoding="utf-8")
-            for event_id in event_ids:
-                marker = f"<!-- tracebook:event:{event_id} -->"
-                self.assertEqual(1, authority.count(marker))
-                self.assertEqual(1, log.count(marker))
+            authority = (
+                context.root / context.record.relative_path / "knowledge" / "decision"
+                / "concurrent-lifecycle-authority.md"
+            )
+            content = authority.read_text(encoding="utf-8")
+            self.assertEqual(1, content.count("<!-- tracebook:event:"))
+            self.assertIn(successes[0]["event_id"], content)
 
 
 if __name__ == "__main__":

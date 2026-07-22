@@ -6,10 +6,9 @@ Use these labels for durable knowledge:
 - `Pending`: insufficiently sourced or unverified.
 - `Deprecated`: explicitly no longer applicable.
 - `Superseded`: replaced by a newer rule, document, or implementation.
-- `Historical`: retained only for traceability.
 
-Pending information must remain marked. Superseded information identifies its
-replacement. Deprecated material moves to a project archive or `99-archive`.
-Status files contain current summaries, while historical process detail belongs
-in logs. Prefer sourced, recently updated `Current` knowledge over historical
-documents when sources conflict.
+Pending information must remain marked. Superseded information identifies an
+existing active replacement ID. Each entity has one Current section and an
+append-only History: create writes version 1; revise and status changes require
+the prior `expected_version`. Prefer sourced Current authority pages; use
+`--include-history` or `--as-of` only for traceability questions.

@@ -1,22 +1,26 @@
-# Frontmatter Rules
+# Schema-v2 Frontmatter Rules
 
-Add frontmatter to new cross-project knowledge, patterns, ADRs, synthesis
-pages, and other important durable conclusions. Do not require it for rules,
-indexes, status files, logs, or raw material.
+Every runner-managed knowledge entity has schema-v2 frontmatter:
 
 ```yaml
 ---
-type: knowledge
+schema_version: 2
+type: business-rule
+scope: project
+project: github.com/acme/order-service
+knowledge_id: order-retry-idempotency
+title: Order retry idempotency
 status: current
-scope: global
-owner_project: project-name
-source: code-review
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-tags: []
+version: 3
+created: 2026-07-01
+updated: 2026-07-22
+replacement_knowledge_id: null
 ---
 ```
 
-Use `knowledge`, `decision`, `pattern`, `synthesis`, or `reference` for type.
-Use `current`, `draft`, `deprecated`, `superseded`, or `unconfirmed` for
-status. At minimum include type, status, and creation date.
+`knowledge_id` is immutable and must be a lowercase-hyphenated slug. `version`
+is incremented only by a successful `revise` or `change-status`. Valid status
+values are `current`, `pending`, `deprecated`, and `superseded`. A superseded
+entity names an existing active replacement ID. Do not hand-edit these fields;
+use the Runner so frontmatter, Current content, History, index, status, and
+event markers remain one transaction.

@@ -3,6 +3,22 @@
 This project follows semantic versioning. Releases are created only after the
 matching Git tag is published.
 
+## [2.0.0] - 2026-07-22
+
+### Added
+
+- Stable `knowledge_id` authority pages with versioned Current and History
+  sections while retaining content-event `event_id` idempotence.
+- Explicit `create`, `revise`, and `change-status` capture operations with
+  optimistic `expected_version` conflict detection.
+- Deterministic `context` retrieval with Current-by-default behavior, CJK-aware
+  tokenization, evidence-aware scoring, history, and `as-of` queries.
+
+### Breaking Changes
+
+- Knowledge roots now require schema version 2. Existing pre-v2 roots are
+  rejected explicitly and are not migrated, imported, or mixed with v2 pages.
+
 ## [1.2.1] - 2026-07-22
 
 ### Fixed

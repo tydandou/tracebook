@@ -26,6 +26,7 @@ class CheckReport:
     pending_confirmations: list[str]
     duplicate_pages: list[str]
     log_growth: list[str]
+    entity_issues: list[str]
 
     def to_markdown(self) -> str:
         sections = [
@@ -37,6 +38,7 @@ class CheckReport:
             ("Missing Sources", self.missing_sources),
             ("Outdated Source Map Paths", self.outdated_paths),
             ("Pending Confirmations", self.pending_confirmations),
+            ("Schema-v2 Entity Integrity", self.entity_issues),
         ]
         lines = ["## Knowledge Health Check", ""]
         for heading, values in sections:
@@ -290,6 +292,69 @@ def _duplicate_pages(root: Path, pages: PageContents) -> list[str]:
             duplicates.append(f"{_relative(root, first)} <-> {_relative(root, page)}")
     return sorted(duplicates)
 
+
+ENTITY_FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
+ENTITY_HISTORY_VERSION = re.compile(r"(?m)^### Version (\d+) — (\d{4}-\d{2}-\d{2})$")
+ENTITY_EVENT = re.compile(r"<!-- tracebook:event:[0-9a-f]{16} -->")
+ENTITY_SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+
+
+def _entity_fields(content: str) -> dict[str, str] | None:
+    match = ENTITY_FRONTMATTER.match(content)
+    if match is None:
+        return None
+    values: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        key, separator, value = line.partition(":")
+        if separator:
+            values[key.strip()] = value.strip()
+    return values if values.get("schema_version") == "2" else None
+
+
+def _schema_v2_entity_issues(root: Path, pages: PageContents) -> list[str]:
+    issues: list[str] = []
+    authorities: dict[tuple[str, str, str, str], Path] = {}
+    entities: dict[tuple[str, str, str, str], tuple[Path, dict[str, str], str]] = {}
+    for page, content in pages.items():
+        fields = _entity_fields(content)
+        if fields is None:
+            continue
+        relative = _relative(root, page)
+        required = ("type", "scope", "project", "knowledge_id", "status", "version", "created", "updated")
+        missing = [field for field in required if not fields.get(field)]
+        knowledge_id = fields.get("knowledge_id", "")
+        if missing or ENTITY_SLUG.fullmatch(knowledge_id) is None:
+            issues.append(f"{relative}: invalid schema-v2 frontmatter")
+            continue
+        try:
+            version = int(fields["version"])
+        except ValueError:
+            issues.append(f"{relative}: version is invalid")
+            continue
+        history = [int(value) for value, _ in ENTITY_HISTORY_VERSION.findall(content)]
+        if version < 1 or sorted(history, reverse=True) != list(range(version - 1, 0, -1)):
+            issues.append(f"{relative}: version history is not contiguous")
+        if not ENTITY_EVENT.findall(content):
+            issues.append(f"{relative}: entity has no event marker")
+        if fields.get("status") == "current" and not _has_evidence(content):
+            issues.append(f"{relative}: Current entity has no evidence")
+        key = (fields["scope"], fields["project"], fields["type"], knowledge_id)
+        if key in authorities:
+            issues.append(f"{_relative(root, authorities[key])} <-> {relative}: duplicate authority")
+        else:
+            authorities[key] = page
+            entities[key] = (page, fields, content)
+    for key, (page, fields, _) in entities.items():
+        replacement = fields.get("replacement_knowledge_id", "null")
+        if fields.get("status") == "superseded":
+            replacement_key = (key[0], key[1], key[2], replacement)
+            replacement_entity = entities.get(replacement_key)
+            if replacement == key[3] or replacement_entity is None:
+                issues.append(f"{_relative(root, page)}: replacement is missing or self-referential")
+            elif replacement_entity[1].get("status") in {"deprecated", "superseded"}:
+                issues.append(f"{_relative(root, page)}: replacement is inactive")
+    return sorted(set(issues))
+
 def _log_growth(root: Path, pages: PageContents) -> list[str]:
     growth: list[str] = []
     for log, content in pages.items():
@@ -449,4 +514,5 @@ def run_check(
         pending_confirmations=_pending_confirmations(root, pages),
         duplicate_pages=_duplicate_pages(root, pages) if check_type == "Regular" else [],
         log_growth=_log_growth(root, pages) if check_type == "Regular" else [],
+        entity_issues=_schema_v2_entity_issues(root, pages),
     )

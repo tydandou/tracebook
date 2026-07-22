@@ -57,7 +57,7 @@ installing files, hooks, or services into those repositories.
 
 ## Install
 
-The `1.2.1` release is published under the `v1.2.1` tag. Use the tagged
+The `2.0.0` release is published under the `v2.0.0` tag. Use the tagged
 installation commands for the stable release, or the local development loading
 instructions when working from a clone.
 
@@ -66,7 +66,7 @@ instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v1.2.1
+codex plugin marketplace add tydandou/tracebook --ref v2.0.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -83,7 +83,7 @@ Start a new Codex session after installation.
 
 Codex requires a separate trust review before non-managed plugin Hooks run.
 Open `/hooks`, review the Tracebook `UserPromptSubmit` and `Stop` commands, and
-trust them if you want lifecycle reminders. Version `1.2.1` changes the Windows
+trust them if you want lifecycle reminders. Version `2.0.0` retains the Windows
 Hook command, so users upgrading from an earlier release must review and trust
 the two commands again. The Windows lifecycle reminders no longer depend on a
 Python entry in the user PATH. If Hooks remain untrusted or are disabled, the
@@ -103,7 +103,7 @@ codex plugin marketplace list
 If `tracebook` is absent, add the intended source before installing again:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v1.2.1
+codex plugin marketplace add tydandou/tracebook --ref v2.0.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -190,9 +190,10 @@ health machine fields remain stable English protocol values.
    root cause.` The broader Skill metadata lets Codex select Tracebook without
    requiring its name in every prompt.
 4. Work normally. Tracebook resolves the external root and project identity,
-   then returns a small ordered set of context paths for the agent to read.
-5. Review the final gate result. It reports either a verified capture plus its
-   health result, or one controlled reason why no durable capture was made.
+   then uses deterministic `context` retrieval to select task-relevant Current
+   authority pages.
+5. At task end, it captures and checks only a new, verified durable conclusion.
+   Routine work with no such conclusion needs no extra skip report.
 
 Tracebook does not write durable knowledge after temporary Q&A, pure log
 analysis, unverified inference, a user prohibition, or a task with no durable
@@ -284,17 +285,16 @@ temporary directory:
 
 ```json
 {
+  "operation": "create",
+  "knowledge_id": "order-retry-eligibility",
   "scope": "project",
   "kind": "business-rule",
-  "category": "business-rules",
   "title": "Order retry eligibility",
   "body": "Only orders in the retryable state may re-enter fulfillment.",
   "evidence": [
     "src/order.py:L20-L38"
   ],
-  "status": "Current",
-  "write_intent": "durable",
-  "content_kind": "knowledge"
+  "status": "current"
 }
 ```
 
@@ -307,16 +307,37 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
   --request "$REQUEST_FILE"
 ```
 
-`Current` knowledge requires an evidence list. A durable, explicitly unresolved
-item may use `Pending` with an empty evidence list; `Pending` must not be
+`current` knowledge requires an evidence list. A durable, explicitly unresolved
+item may use `pending` with an empty evidence list; `pending` must not be
 presented as a confirmed fact. The source format
 `src/order.py:L20-L38` identifies the business-repository evidence without
 copying source into the knowledge root.
 
-Ordinary capture is content-event idempotent. Repeating the same content event
-is skipped; changing its body, evidence, or lifecycle state creates a new event
-and preserves the prior entry. A repeated title is not an implicit overwrite.
-For a replaced conclusion, use `Superseded` with its `replacement` path.
+Create is idempotent for the same entity event. To change an entity, first use
+`context` to obtain its `knowledge_id` and current version, then send `revise`
+or `change-status` with `expected_version`. The Runner preserves the former
+Current section in History. A version mismatch is an explicit conflict; it is
+never silently merged. For a replaced conclusion, use `superseded` with an
+existing `replacement_knowledge_id`.
+
+### Context
+
+Run a bounded, deterministic search before detailed repository work:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" context \
+  --root "$TRACEBOOK_ROOT" \
+  --cwd . \
+  --query "order retry duplicate charge" \
+  --max-results 10 \
+  --max-chars 20000
+```
+
+Default results contain only matching `current` authority pages. Add
+`--include-history` for prior versions, or `--as-of YYYY-MM-DD` to reconstruct
+what was current on a date. The JSON includes stable IDs, score, evidence,
+status, update date, and a short summary; it is not a vector database or a
+claim that the returned result is business truth.
 
 ### Check the captured scope
 
@@ -371,7 +392,8 @@ evidence before any finding becomes a durable conclusion.
 | `resolve` | `root`, `project`, `read_paths` | Configured root, normalized project record, and focused context paths |
 | `transactions` | `root`, `transactions` | Read-only transaction diagnostics and per-transaction disposition |
 | `recover-transactions` | `recovered_paths` | Explicit safe roll-forward results; never a discard or quarantine action |
-| `capture` | `changed_paths`, `new_paths`, `skipped`, `health_scope`, `event_id` | Knowledge transaction result and scope required by the following check |
+| `context` | `current_context`, `historical_context`, `warnings`, `truncated` | Bounded deterministic authority-page retrieval |
+| `capture` | `changed_paths`, `new_paths`, `skipped`, `health_scope`, `event_id` | Schema-v2 entity transaction result and scope required by the following check |
 | `check` | `check_type`, `changed_paths`, `report` | Required health level, persisted health paths, and Markdown report |
 | `audit` | `changed_paths`, `report` | Persisted Deep-health paths and Markdown audit report |
 
@@ -495,9 +517,13 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v1.2.1` release.
+resolves the published `v2.0.0` release.
 
 ## Current Limitations
+
+- `2.0.0` uses schema-v2 authority pages. Existing pre-v2 knowledge roots are
+  intentionally not migrated, imported, or mixed with the new format; point
+  `TRACEBOOK_ROOT` at a new empty root for v2 work.
 
 - No migration, discovery, or automatic import of existing knowledge roots.
 - No cloud sync, MCP server, vector database, daemon, or background service.

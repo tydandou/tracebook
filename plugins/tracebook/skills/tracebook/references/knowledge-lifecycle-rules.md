@@ -1,10 +1,13 @@
 # Knowledge Lifecycle Rules
 
-Label durable knowledge `Current`, `Pending`, `Deprecated`, `Superseded`, or
-`Historical`. Pending information remains clearly uncertain. Superseded
-information identifies its replacement. Deprecated material moves to an
-archive. Current status belongs in summaries while historical process detail
-belongs in logs.
+An authority page has exactly one current version and an append-only History.
+`create` writes version 1. `revise` and `change-status` require
+`expected_version`; a mismatch is a visible conflict, not a merge invitation.
+The old Current section is retained under `## History` and the new content is
+written under `## Current`.
 
-When documents conflict, prefer sourced, recently updated, current knowledge.
-Do not treat raw, archive, or log material as current facts without review.
+Default retrieval returns only `current` entities. `pending`, `deprecated`,
+and `superseded` are excluded unless explicitly requested or historical
+context is requested. A `superseded` entity must refer to an existing active
+replacement in its own collection. Use `--include-history` or `--as-of` when
+the task is specifically about prior reasoning or behavior.

@@ -13,7 +13,8 @@ full documents.
 3. `00-global/health/health-status.md`.
 4. Current project `index.md`.
 5. Current project `project-status.md`.
-6. Task-relevant entry documents and child documents.
+6. Run Runner `context` with the task wording.
+7. Read task-relevant authority pages returned by context.
 
 ## Default Do Not Read
 
@@ -36,6 +37,5 @@ user request requires them.
 Keep `AGENTS.md`, root indexes, project indexes, project status, and health
 status under 100 lines when possible. Keep `source-map.md` under 150 lines.
 
-Split `source-map.md`, `business-rules.md`, `api.md`, or `database.md` into
-child documents when they exceed 300 lines. Roll long project or health status
-history into logs when it exceeds 100 lines.
+Do not scan or load every entity by default. Context is Current-only unless a
+user asks for historical reasoning; use `--include-history` or `--as-of` then.

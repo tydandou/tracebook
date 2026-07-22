@@ -1,21 +1,22 @@
 # Writing Rules
 
-Write structured durable knowledge, not raw conversation. Prefer extending an
-existing relevant document over creating a duplicate. Put project state in
-`project-status.md`, monthly detail in `logs/YYYY-MM.md`, important decisions
-in `decisions/ADR-xxxx.md`, project-specific facts in `01-projects`, reusable
-business knowledge in `02-domain`, and reusable technical knowledge in
-`03-patterns`.
+Write verified, durable conclusions as schema-v2 authority pages. Do not write
+raw conversations, logs, guesses, or ordinary code changes. A knowledge entity
+has a stable lowercase-hyphenated `knowledge_id`; the ID does not change when
+the title, evidence, body, or lifecycle state changes.
 
-Write only business rules, terminology, scenarios, module relations,
-architecture changes, code paths, API or database changes, verified bug root
-causes, verification conclusions, important risks, and reusable patterns.
-Never write business code in the knowledge root. Move obsolete information to
-an archive and label uncertain information `Pending`.
+Before writing, use `context` to find an existing entity. Use `create` only
+for a new conclusion. Use `revise` or `change-status` with its returned
+version for a changed conclusion. Never create a second ID merely to avoid a
+version conflict.
 
-## Link Format
+Choose scope deliberately:
 
-Use standard Markdown `[label](path)` links for all generated or agent-written
-knowledge links. Wikilinks may remain in imported material or manual Obsidian
-edits as compatibility input; do not generate new Wikilinks in runner-managed
-content.
+- `project` for conclusions tied to one repository;
+- `domain` for reusable business knowledge; and
+- `pattern` for reusable technical practice.
+
+Every Current conclusion needs concrete evidence. Preserve event markers and
+the generated `Current`/`History` structure; the runner is the authority for
+rendering an entity page. Generated links must use standard Markdown links,
+not new Wikilinks.

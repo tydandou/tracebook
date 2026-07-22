@@ -1,23 +1,23 @@
 # Frontmatter Rules
 
-Use frontmatter for cross-project domain knowledge, patterns, ADRs, synthesis
-pages, and other high-value durable conclusions. Do not require it for rules,
-entry indexes, status files, logs, or raw material.
+Every Runner-managed durable conclusion is a schema-v2 authority page. Do not
+add schema-v2 frontmatter to rules, indexes, status files, logs, or raw material.
 
 ```yaml
 ---
-type: knowledge
+schema_version: 2
+type: business-rule
 status: current
-scope: global
-owner_project: project-name
-source: code-review
+scope: project
+project: github.com/acme/project
+knowledge_id: stable-conclusion-id
+version: 1
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-tags: []
+replacement_knowledge_id: null
 ---
 ```
 
-Valid `type` values are `knowledge`, `decision`, `pattern`, `synthesis`, and
-`reference`. Valid `status` values are `current`, `draft`, `deprecated`,
-`superseded`, and `unconfirmed`. At minimum, new frontmatter includes `type`,
-`status`, and `created`. Update `updated` when content changes.
+`knowledge_id` is immutable lowercase-hyphenated text. Valid statuses are
+`current`, `pending`, `deprecated`, and `superseded`. The Runner increments
+`version` and maintains the History section; do not hand-edit those fields.
