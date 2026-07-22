@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 
 from .locking import file_lock
-from .project_registry import ProjectRecord
+from .project_registry import ProjectRecord, project_lock_name
 from .transaction import commit_updates
 
 
@@ -155,7 +155,7 @@ def capture_entity(root: Path, record: ProjectRecord, request: object, today: da
     validate_request(request)
     path = entity_path(root, record, request)
     index = _index_path(root, record, getattr(request, "scope"))
-    lock = f"project-{record.slug}" if getattr(request, "scope") == "project" else getattr(request, "scope")
+    lock = project_lock_name(record) if getattr(request, "scope") == "project" else getattr(request, "scope")
     with file_lock(root, lock, operation="capture"):
         path.parent.mkdir(parents=True, exist_ok=True)
         current = path.read_text(encoding="utf-8") if path.exists() else ""

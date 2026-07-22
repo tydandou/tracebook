@@ -54,6 +54,53 @@ class RunnerIntegrationTest(unittest.TestCase):
             self.assertEqual(len(payload["read_paths"]), 5)
             self.assertFalse((repo / "AGENTS.md").exists())
 
+    def test_runner_updates_locations_and_binds_a_remote_by_project_id(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            first = base / "first"
+            first.mkdir()
+            resolved = self._run_runner(
+                base, "resolve", "--root", str(root), "--cwd", str(first)
+            )
+            project_id = str(resolved["project"]["project_id"])
+            self.assertTrue(str(resolved["project"]["slug"]).startswith("first--"))
+            moved = base / "moved"
+            updated = self._run_runner(
+                base,
+                "project-update",
+                "--root",
+                str(root),
+                "--project-id",
+                project_id,
+                "--location",
+                str(moved),
+            )
+            self.assertEqual([str(moved.resolve())], updated["project"]["locations"])
+            bound = self._run_runner(
+                base,
+                "project-bind-remote",
+                "--root",
+                str(root),
+                "--project-id",
+                project_id,
+                "--remote",
+                "git@github.com:acme/widgets.git",
+            )
+            self.assertEqual(["github.com/acme/widgets"], bound["project"]["remotes"])
+
+            clone = base / "clone"
+            clone.mkdir()
+            subprocess.run(["git", "-C", str(clone), "init", "--quiet"], check=True)
+            subprocess.run(
+                ["git", "-C", str(clone), "remote", "add", "origin", "https://github.com/acme/widgets.git"],
+                check=True,
+            )
+            clone_resolved = self._run_runner(
+                base, "resolve", "--root", str(root), "--cwd", str(clone)
+            )
+            self.assertEqual(project_id, clone_resolved["project"]["project_id"])
+
     def test_runner_accepts_utf8_bom_capture_requests_and_reports_legacy_roots(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp).resolve()
@@ -80,7 +127,7 @@ class RunnerIntegrationTest(unittest.TestCase):
             self.assertTrue(captured["event_id"])
             self.assertEqual(
                 "Tracebook: created `bom-compatible-request` "
-                f"(project `{resolved['project']['slug']}`, kind `business-rule`).",
+                f"(project `{resolved['project']['name']}`, kind `business-rule`).",
                 captured["user_summary"],
             )
 
@@ -101,7 +148,7 @@ class RunnerIntegrationTest(unittest.TestCase):
             )
             self.assertEqual(
                 "Tracebook: revised `bom-compatible-request` "
-                f"(project `{resolved['project']['slug']}`, kind `business-rule`).",
+                f"(project `{resolved['project']['name']}`, kind `business-rule`).",
                 revised["user_summary"],
             )
 

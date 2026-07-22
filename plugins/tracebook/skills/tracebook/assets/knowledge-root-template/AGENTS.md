@@ -17,7 +17,7 @@ For a business-project task, read in this order:
 1. The current business repository's `AGENTS.md`, when present.
 2. This file.
 3. `00-global/health/health-status.md`.
-4. The current project `01-projects/{project}/index.md`.
+4. The current project path returned by the resolver, then its `index.md`.
 5. The current project `project-status.md`, when present.
 6. Run the Runner `context` command with the task wording.
 7. Only task-relevant authority pages returned by that command.
@@ -59,7 +59,7 @@ by default.
 Project knowledge belongs in:
 
 ```text
-{{knowledge_root}}/01-projects/{project-name}
+{{knowledge_root}}/01-projects/{readable-name--id-suffix}
 ```
 
 ## Task End Report

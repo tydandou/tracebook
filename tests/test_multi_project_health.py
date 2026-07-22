@@ -67,19 +67,28 @@ class MultiProjectHealthTest(unittest.TestCase):
         (health / "logs").mkdir()
         (health / "logs" / "2026-06.md").write_bytes(legacy_log)
         records = {
-            "github.com/acme/alpha": {
-                "identity": "github.com/acme/alpha",
-                "slug": "alpha",
-                "relative_path": "01-projects/alpha",
-            },
-            "github.com/acme/beta": {
-                "identity": "github.com/acme/beta",
-                "slug": "beta",
-                "relative_path": "01-projects/beta",
-            },
+            "github.com/acme/alpha": {"relative_path": "01-projects/alpha"},
+            "github.com/acme/beta": {"relative_path": "01-projects/beta"},
         }
+        for project_id, value in records.items():
+            project = root / value["relative_path"]
+            project.mkdir(parents=True)
+            project.joinpath("project.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "project_id": project_id,
+                        "name": project.name,
+                        "locations": [],
+                        "remotes": [project_id],
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
         (root / "registry.json").write_text(
-            json.dumps({"version": 1, "projects": records}, indent=2) + "\n",
+            json.dumps({"version": 2, "projects": records}, indent=2) + "\n",
             encoding="utf-8",
         )
         return root, legacy, legacy_log
@@ -106,6 +115,10 @@ class MultiProjectHealthTest(unittest.TestCase):
                 health_log_path(root, "project", "widgets", month),
             )
             self.assertEqual(
+                root / "01-projects" / "widgets--a3f91c2d" / "health-status.md",
+                health_path(root, "project", "widgets--a3f91c2d"),
+            )
+            self.assertEqual(
                 root / "00-global" / "health" / "logs" / "domain" / "2026-07.md",
                 health_log_path(root, "domain", "domain", month),
             )
@@ -127,8 +140,7 @@ class MultiProjectHealthTest(unittest.TestCase):
                 "Widgets",
                 "-widgets",
                 "widgets-",
-                "widgets--api",
-                "widgets_api",
+            "widgets_api",
             )
             for slug in invalid_slugs:
                 with self.subTest(slug=slug):
@@ -438,7 +450,7 @@ class MultiProjectHealthTest(unittest.TestCase):
                         encoding="utf-8",
                     )
                     (root / "registry.json").write_text(
-                        json.dumps({"version": 1, "projects": {}}) + "\n",
+                        json.dumps({"version": 2, "projects": {}}) + "\n",
                         encoding="utf-8",
                     )
 
@@ -605,7 +617,6 @@ class MultiProjectHealthTest(unittest.TestCase):
             "01-projects/C:drive/health-status.md",
             "01-projects/Widgets/health-status.md",
             "01-projects/widgets_api/health-status.md",
-            "01-projects/widgets--api/health-status.md",
             "/01-projects/widgets/health-status.md",
             "C:/01-projects/widgets/health-status.md",
         )

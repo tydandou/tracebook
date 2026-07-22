@@ -62,6 +62,19 @@ class KnowledgeCheckTest(unittest.TestCase):
             report = run_check(root, project, [page], date(2026, 7, 13))
 
             self.assertNotIn("01-projects/sample/architecture.md", report.missing_sources)
+
+    def test_generated_project_logs_are_exempt_from_source_and_orphan_checks(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            project = root / "01-projects" / "sample"
+            log = project / "logs" / "2026-07.md"
+            log.parent.mkdir(parents=True)
+            log.write_text("# 2026-07 knowledge\n\n- created `entry`\n", encoding="utf-8")
+
+            report = run_check(root, project, [log], date(2026, 7, 13))
+
+            self.assertNotIn("01-projects/sample/logs/2026-07.md", report.missing_sources)
+            self.assertNotIn("01-projects/sample/logs/2026-07.md", report.orphan_pages)
     def test_plain_source_word_does_not_satisfy_evidence_requirement(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp)

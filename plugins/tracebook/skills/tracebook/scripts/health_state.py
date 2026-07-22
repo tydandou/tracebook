@@ -11,7 +11,7 @@ import stat
 from .errors import TracebookError
 from .check_knowledge import CheckReport, DeepAuditReport
 from .locking import file_lock
-from .project_registry import ProjectRecord, _load_registry, registry_path
+from .project_registry import ProjectRecord, _load_registry, project_lock_name, registry_path
 from .storage import confined_path, sha256_bytes, sha256_file
 from .transaction import commit_updates
 
@@ -24,7 +24,6 @@ _MIGRATION_MANIFEST = ".tracebook-state/migrations/health-v1.json"
 _LEGACY_SOURCE = "00-global/health/health-status.md"
 _LEGACY_ARCHIVE = "00-global/health/archive/health-status-pre-v1.md"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
-_PROJECT_SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
 _TEXT_FIELDS = (
     ("Scope", "scope"),
@@ -115,13 +114,24 @@ def _relative_path(root: Path, value: str, *, operation: str) -> Path:
 
 
 def _project_slug(identity: str) -> str:
-    if not isinstance(identity, str) or _PROJECT_SLUG.fullmatch(identity) is None:
+    if not _is_project_slug(identity):
         raise TracebookError(
             "PATH_OUTSIDE_ROOT",
             f"Project health identity {identity!r} is not one portable slug",
             "health",
         )
     return identity
+
+
+def _is_project_slug(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and value[0].isalnum()
+        and value[-1].isalnum()
+        and value == value.casefold()
+        and all(character.isalnum() or character == "-" for character in value)
+    )
 
 
 def health_path(root: Path, scope: str, identity: str) -> Path:
@@ -507,7 +517,7 @@ def ensure_health_layout(
         _ensure_parent_directories((path,))
         return commit_updates(
             resolved_root,
-            f"project-{project.slug}",
+            project_lock_name(project),
             "resolve",
             {path: content},
         )
@@ -553,8 +563,7 @@ def rebuild_global_health(root: Path) -> Path:
 
 def _scope_lock_name(record: ProjectRecord, scope: str) -> str:
     if scope == "project":
-        _project_slug(record.slug)
-        return f"project-{record.slug}"
+        return project_lock_name(record)
     if scope in {"domain", "pattern"}:
         return scope
     raise ValueError(f"Unsupported health scope: {scope}")
@@ -911,7 +920,7 @@ def _validated_manifest(root: Path, path: Path) -> tuple[Path, Path, tuple[tuple
             len(relative.parts) == 3
             and relative.as_posix() == entry["path"]
             and relative.parts[0] == "01-projects"
-            and _PROJECT_SLUG.fullmatch(relative.parts[1]) is not None
+            and _is_project_slug(relative.parts[1])
             and relative.parts[2] == "health-status.md"
         )
         if not (allowed_archive or allowed_namespace or allowed_project):

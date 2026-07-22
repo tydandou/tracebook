@@ -9,5 +9,5 @@ sources, generation or update time, pending items, and invalidation
 conditions. Do not make unsourced secondary summaries or generate one for all
 material. Mark synthesis pages for review when their underlying facts change.
 
-Project synthesis pages live in `01-projects/{project}/synthesis/`. Decide
+Project synthesis pages live under the resolver-provided project directory's `synthesis/` folder. Decide
 whether cross-project synthesis belongs in `02-domain` or `03-patterns`.

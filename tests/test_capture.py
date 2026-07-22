@@ -68,7 +68,7 @@ class CaptureTest(unittest.TestCase):
             ) as committed:
                 result = capture(context, self._request(), date(2026, 7, 13))
 
-            expected_scope = f"project-{context.record.slug}"
+            expected_scope = capture_module.project_lock_name(context.record)
             locked.assert_called_once()
             self.assertEqual(expected_scope, locked.call_args.args[1])
             committed.assert_called_once()
@@ -140,7 +140,7 @@ class CaptureTest(unittest.TestCase):
             context = resolve(base / "knowledge", repo)
 
             self.assertEqual(
-                f"project-{context.record.slug}",
+                capture_module.project_lock_name(context.record),
                 tracebook_runner.capture_lock_name(context.record, self._request()),
             )
             self.assertEqual(

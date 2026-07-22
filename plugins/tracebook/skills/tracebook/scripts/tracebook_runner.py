@@ -42,7 +42,14 @@ if __package__ in (None, ""):
     )
     from scripts.knowledge_root import language_for_root, repair_knowledge_root, validate_external_root
     from scripts.locking import file_lock
-    from scripts.project_registry import ProjectRecord, ensure_project, repository_root
+    from scripts.project_registry import (
+        ProjectRecord,
+        bind_remote,
+        ensure_project,
+        project_lock_name,
+        repository_root,
+        update_project,
+    )
     from scripts.transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 else:
     from .capture import (
@@ -75,7 +82,14 @@ else:
     )
     from .knowledge_root import language_for_root, repair_knowledge_root, validate_external_root
     from .locking import file_lock
-    from .project_registry import ProjectRecord, ensure_project, repository_root
+    from .project_registry import (
+        ProjectRecord,
+        bind_remote,
+        ensure_project,
+        project_lock_name,
+        repository_root,
+        update_project,
+    )
     from .transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 
 
@@ -117,7 +131,7 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
     ensure_health_layout(initialized.root)
     with file_lock(
         initialized.root,
-        f"project-{record.slug}",
+        project_lock_name(record),
         operation="resolve",
     ):
         ensure_health_layout(initialized.root, record)
@@ -157,7 +171,8 @@ def retrieve_context(
     return build_context(
         resolved.root,
         resolved.root / resolved.record.relative_path,
-        resolved.record.identity,
+        resolved.record.project_id,
+        resolved.record.name,
         resolved.record.slug,
         query,
         include_history=include_history,
@@ -319,11 +334,27 @@ def _context_payload(context: ResolvedContext) -> dict[str, object]:
         "root": str(context.root),
         "knowledge_language": context.knowledge_language,
         "project": {
-            "identity": context.record.identity,
-            "slug": context.record.slug,
+            "project_id": context.record.project_id,
+            "name": context.record.name,
             "relative_path": context.record.relative_path,
+            "locations": list(context.record.locations),
+            "remotes": list(context.record.remotes),
+            "identity": context.record.project_id,
+            "slug": context.record.slug,
         },
         "read_paths": [str(path) for path in context.read_paths],
+    }
+
+
+def _project_payload(record: ProjectRecord) -> dict[str, object]:
+    return {
+        "project_id": record.project_id,
+        "name": record.name,
+        "relative_path": record.relative_path,
+        "locations": list(record.locations),
+        "remotes": list(record.remotes),
+        "identity": record.project_id,
+        "slug": record.slug,
     }
 
 
@@ -346,7 +377,7 @@ def _user_summary(
         "change-status": "changed status for",
     }
     location = (
-        f"project `{context.record.slug}`"
+        f"project `{context.record.name}`"
         if request.scope == "project"
         else f"{request.scope} scope"
     )
@@ -392,6 +423,22 @@ def main(argv: list[str] | None = None) -> int:
         command = commands.add_parser(name)
         command.add_argument("--root")
         command.add_argument("--cwd", required=True)
+
+    project_update_parser = commands.add_parser("project-update")
+    project_update_parser.add_argument("--root")
+    project_update_parser.add_argument("--project-id", required=True)
+    project_update_parser.add_argument("--name")
+    project_update_parser.add_argument(
+        "--location",
+        action="append",
+        dest="locations",
+        help="Replace the complete project location list; repeat for multiple clones.",
+    )
+
+    project_bind_remote_parser = commands.add_parser("project-bind-remote")
+    project_bind_remote_parser.add_argument("--root")
+    project_bind_remote_parser.add_argument("--project-id", required=True)
+    project_bind_remote_parser.add_argument("--remote", required=True)
 
     capture_parser = commands.choices["capture"]
     capture_parser.add_argument("--request", required=True)
@@ -453,6 +500,35 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "recover-transactions":
         recovered = recover_transactions(root.expanduser())
         _write_payload({"recovered_paths": [str(path) for path in recovered]})
+        return 0
+
+    if args.command == "project-update":
+        try:
+            record = update_project(
+                root,
+                args.project_id,
+                name=args.name,
+                locations=tuple(args.locations) if args.locations is not None else None,
+            )
+        except (TracebookError, ValueError) as error:
+            if isinstance(error, TracebookError):
+                _write_payload(error_payload(error))
+            else:
+                _write_payload({"error": str(error)})
+            return 2
+        _write_payload({"project": _project_payload(record)})
+        return 0
+
+    if args.command == "project-bind-remote":
+        try:
+            record = bind_remote(root, args.project_id, args.remote)
+        except (TracebookError, ValueError) as error:
+            if isinstance(error, TracebookError):
+                _write_payload(error_payload(error))
+            else:
+                _write_payload({"error": str(error)})
+            return 2
+        _write_payload({"project": _project_payload(record)})
         return 0
 
     try:

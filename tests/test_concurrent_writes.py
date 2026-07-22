@@ -145,7 +145,7 @@ class ConcurrentWritesTest(unittest.TestCase):
                 self.assertIn("project", payload)
 
             registry = json.loads((root / "registry.json").read_text(encoding="utf-8"))
-            self.assertEqual(1, registry["version"])
+            self.assertEqual(2, registry["version"])
             self.assertEqual(20, len(registry["projects"]), registry)
             self.assertEqual(
                 20,

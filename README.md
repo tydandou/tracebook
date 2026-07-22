@@ -31,8 +31,9 @@ installing files or services into those repositories.
   `Superseded`, and `Historical` lifecycle states.
 - Deterministic project resolution, governed writes, index/status/log updates,
   and structured JSON results.
-- Normalized Git identity so clones of the same remote share project knowledge,
-  while unrelated projects remain isolated.
+- Immutable project IDs with local paths and normalized Git remotes resolving to
+  the same project, so clones of one remote share knowledge while unrelated
+  projects remain isolated.
 - Local, Light, Regular, and explicit Deep health behavior, with Deep findings
   kept as review candidates rather than automatic facts.
 - Portable generated Markdown links plus Wikilink auditing for compatibility
@@ -44,8 +45,9 @@ installing files or services into those repositories.
 
 ## Requirements
 
-- A Git repository for project resolution. A repository with no remote is
-  supported through a stable absolute-path fallback identity.
+- Project resolution accepts any local directory. Git is optional: clones with
+  the same `origin` resolve to one project, while non-Git directories resolve
+  through their externally stored project locations.
 - Python syntax used by the source requires Python 3.10 or newer. The release
   CI matrix is configured for Python 3.10 and 3.13 on Ubuntu and Windows; the
   local full verification environment is Python 3.13.12 on Windows.
@@ -57,7 +59,7 @@ installing files or services into those repositories.
 
 ## Install
 
-The `2.1.0` release is published under the `v2.1.0` tag. Use the tagged
+The `3.0.0` release is published under the `v3.0.0` tag. Use the tagged
 installation commands for the stable release, or the local development loading
 instructions when working from a clone.
 
@@ -66,7 +68,7 @@ instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v2.1.0
+codex plugin marketplace add tydandou/tracebook --ref v3.0.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -100,7 +102,7 @@ codex plugin marketplace list
 If `tracebook` is absent, add the intended source before installing again:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v2.1.0
+codex plugin marketplace add tydandou/tracebook --ref v3.0.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -110,7 +112,7 @@ source, Codex requires replacing the marketplace before adding it again:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v2.1.0
+codex plugin marketplace add tydandou/tracebook --ref v3.0.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -192,7 +194,8 @@ health machine fields remain stable English protocol values.
 ## Quick Start
 
 1. Install Tracebook through a marketplace or load the local clone.
-2. Open a new agent session inside the Git repository you are working on.
+2. Open a new agent session in the project root you are working on; Git does
+   not need to be initialized yet.
 3. Ask for normal repository work, such as: `Diagnose this issue and verify the
    root cause.` The broader Skill metadata lets Codex select Tracebook without
    requiring its name in every prompt.
@@ -210,7 +213,7 @@ conclusion.
 
 | Scope | Use it for | Stored under |
 | --- | --- | --- |
-| `project` | Facts specific to one repository | `01-projects/<slug>` |
+| `project` | Facts specific to one project | `01-projects/<readable-name>--<id-suffix>` |
 | `domain` | Reusable business terminology, rules, processes, or industry knowledge | `02-domain` |
 | `pattern` | Reusable engineering practice | `03-patterns` |
 
@@ -257,9 +260,37 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" resolve \
 ```
 
 `resolve` initializes or repairs only missing template files in the configured
-external root, registers the normalized Git identity, and returns `root`,
+external root. Every project has an immutable `project_id`; the current local
+path and optional normalized Git remote resolve to that ID. It returns `root`,
 `project`, and the ordered `read_paths`. It does not search for or import a
 different existing knowledge root.
+
+### Update a project location or remote
+
+Project metadata lives outside the business repository at
+`01-projects/<readable-name>--<id-suffix>/project.json`. Names are the primary
+human-facing label and may repeat; the suffix disambiguates folders while the
+immutable `project_id` remains the actual identity. `01-projects/index.md`
+lists projects by name for browsing and search. Locations and remotes are unique
+signals that resolve to a `project_id`. When a project moves, replace its
+complete location list (repeat `--location` for multiple clones):
+
+```text
+python "$SKILL_DIR/scripts/tracebook_runner.py" project-update \
+  --root "$TRACEBOOK_ROOT" \
+  --project-id prj-... \
+  --location /workspace/project
+```
+
+Bind a later remote explicitly. A remote already owned by another project is
+rejected; Tracebook never automatically merges knowledge:
+
+```text
+python "$SKILL_DIR/scripts/tracebook_runner.py" project-bind-remote \
+  --root "$TRACEBOOK_ROOT" \
+  --project-id prj-... \
+  --remote github.com/acme/project
+```
 
 ### Inspect or recover pending transactions
 
@@ -396,7 +427,9 @@ evidence before any finding becomes a durable conclusion.
 
 | Command | Emitted fields | Meaning |
 | --- | --- | --- |
-| `resolve` | `root`, `project`, `read_paths` | Configured root, normalized project record, and focused context paths |
+| `resolve` | `root`, `project`, `read_paths` | Configured root, project record resolved by `project_id`, and focused context paths |
+| `project-update` | `project` | Explicitly update a project name or complete location list |
+| `project-bind-remote` | `project` | Bind a normalized remote to an existing project |
 | `transactions` | `root`, `transactions` | Read-only transaction diagnostics and per-transaction disposition |
 | `recover-transactions` | `recovered_paths` | Explicit safe roll-forward results; never a discard or quarantine action |
 | `context` | `current_context`, `historical_context`, `warnings`, `truncated` | Bounded deterministic authority-page retrieval |
@@ -415,17 +448,21 @@ The default local root has this governed layout:
 ```text
 ~/.tracebook/
 ├── 00-global/          # shared rules, workflow, and health state
-├── 01-projects/        # one isolated directory per normalized project slug
+├── 01-projects/        # one readable, isolated directory per project
 ├── 02-domain/          # reusable business knowledge
 ├── 03-patterns/        # reusable engineering knowledge
 ├── raw/                # original material awaiting organization
 └── 99-archive/         # historical material
 ```
 
-For a repository with `origin`, Tracebook normalizes the remote into a stable
-Git identity. Multiple clones of that remote share the same directory under
-`01-projects/<slug>`. Different repositories receive different project
-records. A local-only repository uses a stable absolute-path fallback identity.
+Every project is stored under
+`01-projects/<readable-name>--<id-suffix>` and identified by an immutable
+`project_id`. The storage label is created once from the name plus a short ID
+suffix, so duplicate names remain distinguishable. A later name change updates
+the project configuration and navigation but does not move the knowledge
+directory. The same normalized remote or registered location resolves to the
+same project; different matches for a path and remote are reported as a conflict
+and never merged automatically.
 
 ## Link Policy
 
@@ -482,9 +519,9 @@ may modify business code.
   does not list `tracebook`, add the intended tagged release or local clone
   before installing `tracebook@tracebook`, then start a new session. In Claude Code,
   `/reload-plugins` reloads an installed plugin.
-- **Project resolution fails:** run from inside a Git repository and pass its
-  directory as `--cwd`. Check `git remote get-url origin` when clones should
-  share knowledge.
+- **Unexpected project resolution:** pass the project root with `--cwd`. Check
+  `git remote get-url origin` when clones should share knowledge; use
+  `project-update` or `project-bind-remote` to resolve a path/remote conflict.
 - **Knowledge is in an unexpected location:** inspect `TRACEBOOK_ROOT` in the
   environment that launched the agent. If unset, the root is `~/.tracebook`.
 - **Capture is rejected:** verify `write_intent: durable`,
@@ -524,13 +561,17 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v2.1.0` release.
+resolves the published `v3.0.0` release.
 
 ## Current Limitations
 
-- `2.1.0` uses schema-v2 authority pages. Existing pre-v2 knowledge roots are
-  intentionally not migrated, imported, or mixed with the new format; point
-  `TRACEBOOK_ROOT` at a new empty root for v2 work.
+- `3.0.0` uses schema-v2 authority pages and registry v2. Existing registry-v1
+  knowledge roots are intentionally not migrated, imported, or mixed with the
+  new format; point `TRACEBOOK_ROOT` at a new empty root for v3 work.
+
+- Registry v1 is not upgraded automatically or mixed with the project-id
+  registry. `resolve` reports an explicit upgrade requirement; existing
+  knowledge pages are never moved or merged automatically.
 
 - No migration, discovery, or automatic import of existing knowledge roots.
 - No cloud sync, MCP server, vector database, daemon, or background service.

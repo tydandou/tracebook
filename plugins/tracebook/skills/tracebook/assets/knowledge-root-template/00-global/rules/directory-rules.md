@@ -6,7 +6,7 @@
 
 ## Project Knowledge
 
-`01-projects/{project-name}` contains project-specific durable knowledge. Its
+The resolver-provided `01-projects/{readable-name--id-suffix}` directory contains project-specific durable knowledge. Its
 minimum files are `index.md` and `project-status.md`. Create files on demand:
 
 ```text

@@ -223,7 +223,12 @@ def _orphan_pages(
     exempt = {"index.md", "project-status.md", "source-map.md"}
     orphans: list[str] = []
     for page in changed_paths:
-        if page.name in exempt or not page.exists() or page.suffix != ".md":
+        if (
+            page.name in exempt
+            or "logs" in page.relative_to(project_dir).parts
+            or not page.exists()
+            or page.suffix != ".md"
+        ):
             continue
         relative_to_project = page.relative_to(project_dir).as_posix()
         if relative_to_project not in all_text:
@@ -231,12 +236,17 @@ def _orphan_pages(
     return sorted(set(orphans))
 
 def _missing_sources(
-    root: Path, changed_paths: list[Path], pages: PageContents
+    root: Path, project_dir: Path, changed_paths: list[Path], pages: PageContents
 ) -> list[str]:
     missing: list[str] = []
     exempt = {"index.md", "project-status.md", "source-map.md"}
     for page in changed_paths:
-        if page.name in exempt or not page.exists() or page.suffix != ".md":
+        if (
+            page.name in exempt
+            or "logs" in page.relative_to(project_dir).parts
+            or not page.exists()
+            or page.suffix != ".md"
+        ):
             continue
         content = pages.get(page)
         if content is None:
@@ -509,7 +519,7 @@ def run_check(
         broken_links=sorted(set(_broken_links(root, pages) + broken_wikilinks)),
         ambiguous_wikilinks=ambiguous_wikilinks,
         orphan_pages=_orphan_pages(root, project_dir, changed, pages),
-        missing_sources=_missing_sources(root, changed, pages),
+        missing_sources=_missing_sources(root, project_dir, changed, pages),
         outdated_paths=_outdated_paths(root, pages, source_root),
         pending_confirmations=_pending_confirmations(root, pages),
         duplicate_pages=_duplicate_pages(root, pages) if check_type == "Regular" else [],
