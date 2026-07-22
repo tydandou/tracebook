@@ -45,7 +45,7 @@ runner 则用于集成、诊断和高级工作流。
 
 ## 安装
 
-`2.0.1` 已正式发布，对应 `v2.0.1` tag。稳定版本请使用下面带 tag 的安装命令；
+`2.0.2` 已正式发布，对应 `v2.0.2` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -53,7 +53,7 @@ runner 则用于集成、诊断和高级工作流。
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v2.0.1
+codex plugin marketplace add tydandou/tracebook --ref v2.0.2
 codex plugin add tracebook@tracebook
 ```
 
@@ -69,7 +69,7 @@ codex plugin add tracebook@tracebook
 安装后启动新的 Codex 会话。
 
 Codex 会在运行非托管插件 Hook 前单独要求信任审查。打开 `/hooks`，检查 Tracebook 的
-`UserPromptSubmit` 与 `Stop` 命令，并在需要生命周期提醒时信任它们。`2.0.1` 保留了 Windows
+`UserPromptSubmit` 与 `Stop` 命令，并在需要生命周期提醒时信任它们。`2.0.2` 保留了 Windows
 Hook 命令，升级用户需要重新检查并信任这两个命令；Windows 生命周期提醒不再依赖用户 PATH
 中的 Python。即使 Hook 未信任或已禁用，更广的 Skill metadata 与手工 `$tracebook` 调用仍可使用。
 
@@ -86,7 +86,7 @@ codex plugin marketplace list
 如果列表中没有 `tracebook`，先添加目标版本来源，再重新安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v2.0.1
+codex plugin marketplace add tydandou/tracebook --ref v2.0.2
 codex plugin add tracebook@tracebook
 ```
 
@@ -95,7 +95,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v2.0.1
+codex plugin marketplace add tydandou/tracebook --ref v2.0.2
 codex plugin add tracebook@tracebook
 ```
 
@@ -443,11 +443,11 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v2.0.1` 版本。
+`v2.0.2` 版本。
 
 ## 当前限制
 
-- `2.0.1` 使用 schema-v2 authority 页面。旧版本知识根不会被迁移、导入或与新格式混写；
+- `2.0.2` 使用 schema-v2 authority 页面。旧版本知识根不会被迁移、导入或与新格式混写；
   使用 v2 时请将 `TRACEBOOK_ROOT` 指向新的空知识根。
 
 - 不迁移、不发现、也不自动导入现有知识根目录。

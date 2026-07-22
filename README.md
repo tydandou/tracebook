@@ -57,7 +57,7 @@ installing files, hooks, or services into those repositories.
 
 ## Install
 
-The `2.0.1` release is published under the `v2.0.1` tag. Use the tagged
+The `2.0.2` release is published under the `v2.0.2` tag. Use the tagged
 installation commands for the stable release, or the local development loading
 instructions when working from a clone.
 
@@ -66,7 +66,7 @@ instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v2.0.1
+codex plugin marketplace add tydandou/tracebook --ref v2.0.2
 codex plugin add tracebook@tracebook
 ```
 
@@ -83,7 +83,7 @@ Start a new Codex session after installation.
 
 Codex requires a separate trust review before non-managed plugin Hooks run.
 Open `/hooks`, review the Tracebook `UserPromptSubmit` and `Stop` commands, and
-trust them if you want lifecycle reminders. Version `2.0.1` retains the Windows
+trust them if you want lifecycle reminders. Version `2.0.2` retains the Windows
 Hook command, so users upgrading from an earlier release must review and trust
 the two commands again. The Windows lifecycle reminders no longer depend on a
 Python entry in the user PATH. If Hooks remain untrusted or are disabled, the
@@ -103,7 +103,7 @@ codex plugin marketplace list
 If `tracebook` is absent, add the intended source before installing again:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v2.0.1
+codex plugin marketplace add tydandou/tracebook --ref v2.0.2
 codex plugin add tracebook@tracebook
 ```
 
@@ -113,7 +113,7 @@ source, Codex requires replacing the marketplace before adding it again:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v2.0.1
+codex plugin marketplace add tydandou/tracebook --ref v2.0.2
 codex plugin add tracebook@tracebook
 ```
 
@@ -527,11 +527,11 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v2.0.1` release.
+resolves the published `v2.0.2` release.
 
 ## Current Limitations
 
-- `2.0.1` uses schema-v2 authority pages. Existing pre-v2 knowledge roots are
+- `2.0.2` uses schema-v2 authority pages. Existing pre-v2 knowledge roots are
   intentionally not migrated, imported, or mixed with the new format; point
   `TRACEBOOK_ROOT` at a new empty root for v2 work.
 
