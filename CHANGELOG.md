@@ -3,6 +3,21 @@
 This project follows semantic versioning. Releases are created only after the
 matching Git tag is published.
 
+## [2.0.3] - 2026-07-22
+
+### Fixed
+
+- Pass the lifecycle event explicitly to the Windows PowerShell Hook and use
+  the hook working directory for Git detection. The Hook now drains stdin
+  without parsing its JSON, so malformed Windows hook input cannot silently
+  suppress its context reminder.
+
+### Compatibility
+
+- The Hook remains non-blocking and non-writing, and retains the existing
+  `systemMessage` response format. Users upgrading must re-review and trust
+  the changed Windows Hook commands.
+
 ## [2.0.2] - 2026-07-22
 
 ### Added

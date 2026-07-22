@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "python3 \"$PLUGIN_ROOT/hooks/tracebook_hook.py\"",
-            "commandWindows": "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%PLUGIN_ROOT%\\hooks\\tracebook_hook.ps1\"",
+            "commandWindows": "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%PLUGIN_ROOT%\\hooks\\tracebook_hook.ps1\" -HookEvent UserPromptSubmit",
             "timeout": 5,
             "statusMessage": "Applying Tracebook workflow"
           }
@@ -20,7 +20,7 @@
           {
             "type": "command",
             "command": "python3 \"$PLUGIN_ROOT/hooks/tracebook_hook.py\"",
-            "commandWindows": "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%PLUGIN_ROOT%\\hooks\\tracebook_hook.ps1\"",
+            "commandWindows": "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%PLUGIN_ROOT%\\hooks\\tracebook_hook.ps1\" -HookEvent Stop",
             "timeout": 5,
             "statusMessage": "Checking Tracebook write gate"
           }

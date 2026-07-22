@@ -25,13 +25,14 @@ class HookTest(unittest.TestCase):
         config = json.loads((PLUGIN_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
 
         self.assertEqual({"UserPromptSubmit", "Stop"}, set(config["hooks"]))
-        for event in config["hooks"].values():
+        for event_name, event in config["hooks"].items():
             handler = event[0]["hooks"][0]
             self.assertEqual("command", handler["type"])
             self.assertIn("PLUGIN_ROOT", handler["command"])
             self.assertIn("PLUGIN_ROOT", handler["commandWindows"])
             self.assertIn("SystemRoot", handler["commandWindows"])
             self.assertIn("tracebook_hook.ps1", handler["commandWindows"])
+            self.assertIn(f"-HookEvent {event_name}", handler["commandWindows"])
             self.assertLessEqual(handler["timeout"], 5)
         self.assertTrue(WINDOWS_HOOK_PATH.is_file())
 
@@ -78,20 +79,23 @@ class HookTest(unittest.TestCase):
         *,
         plugin_root: Path = PLUGIN_ROOT,
         include_git: bool = True,
+        raw_input: str | None = None,
+        event: str = "UserPromptSubmit",
+        cwd: Path = ROOT,
     ) -> subprocess.CompletedProcess[str]:
         config = json.loads((PLUGIN_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
-        command = config["hooks"]["UserPromptSubmit"][0]["hooks"][0]["commandWindows"]
+        command = config["hooks"][event][0]["hooks"][0]["commandWindows"]
         environment = HookTest._windows_hook_environment(include_git=include_git)
         environment["PLUGIN_ROOT"] = str(plugin_root)
         return subprocess.run(
             f'"{environment["ComSpec"]}" /d /c {command}',
-            input=json.dumps(payload),
+            input=raw_input if raw_input is not None else json.dumps(payload),
             capture_output=True,
             check=False,
             encoding="utf-8",
             errors="strict",
             env=environment,
-            cwd=ROOT,
+            cwd=cwd,
             timeout=5,
         )
 
@@ -99,7 +103,7 @@ class HookTest(unittest.TestCase):
     def test_windows_hook_uses_no_python_path_and_matches_python_semantics(self) -> None:
         for event in ("UserPromptSubmit", "Stop"):
             payload = {"cwd": str(ROOT), "hook_event_name": event}
-            result = self._run_windows_hook(payload)
+            result = self._run_windows_hook(payload, event=event)
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual("", result.stderr)
             self.assertNotEqual("", result.stdout, f"stdout was empty: returncode={result.returncode}")
@@ -109,16 +113,23 @@ class HookTest(unittest.TestCase):
             )
 
     @unittest.skipUnless(os.name == "nt", "Windows-only Hook process test")
-    def test_windows_hook_fails_open_for_invalid_and_missing_prerequisites(self) -> None:
-        invalid_payloads = ("", "not-json", {"cwd": str(ROOT), "hook_event_name": "SessionStart"})
-        for payload in invalid_payloads:
-            result = self._run_windows_hook(payload)
+    def test_windows_hook_ignores_invalid_stdin_and_uses_explicit_event(self) -> None:
+        payload = {"cwd": str(ROOT), "hook_event_name": "UserPromptSubmit"}
+        for raw_input in ("", "not-json", '{"cwd":"unterminated'):
+            result = self._run_windows_hook(payload, raw_input=raw_input)
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertEqual("", result.stdout)
             self.assertEqual("", result.stderr)
+            self.assertNotEqual("", result.stdout)
+            self.assertEqual(HOOK.build_output(payload), json.loads(result.stdout))
 
+    @unittest.skipUnless(os.name == "nt", "Windows-only Hook process test")
+    def test_windows_hook_fails_open_for_invalid_and_missing_prerequisites(self) -> None:
         with TemporaryDirectory() as temp:
-            result = self._run_windows_hook({"cwd": temp, "hook_event_name": "UserPromptSubmit"})
+            result = self._run_windows_hook(
+                {"cwd": temp, "hook_event_name": "UserPromptSubmit"},
+                raw_input="not-json",
+                cwd=Path(temp),
+            )
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual("", result.stdout)
             self.assertEqual("", result.stderr)
@@ -126,6 +137,7 @@ class HookTest(unittest.TestCase):
         result = self._run_windows_hook(
             {"cwd": str(ROOT), "hook_event_name": "UserPromptSubmit"},
             include_git=False,
+            raw_input="not-json",
         )
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("", result.stdout)
@@ -137,7 +149,7 @@ class HookTest(unittest.TestCase):
             plugin_root = Path(temp) / "plugin root with spaces"
             shutil.copytree(PLUGIN_ROOT / "hooks", plugin_root / "hooks")
             payload = {"cwd": str(ROOT), "hook_event_name": "UserPromptSubmit"}
-            result = self._run_windows_hook(payload, plugin_root=plugin_root)
+            result = self._run_windows_hook(payload, plugin_root=plugin_root, raw_input="not-json")
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertNotEqual("", result.stdout, f"stdout was empty: returncode={result.returncode}")
             self.assertEqual(HOOK.build_output(payload), json.loads(result.stdout))
