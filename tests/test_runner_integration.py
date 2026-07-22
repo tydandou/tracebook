@@ -60,7 +60,7 @@ class RunnerIntegrationTest(unittest.TestCase):
             root = base / "knowledge"
             repo = base / "business"
             (repo / ".git").mkdir(parents=True)
-            self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(repo))
+            resolved = self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(repo))
             request = base / "capture.json"
             payload = {
                 "operation": "create",
@@ -78,6 +78,52 @@ class RunnerIntegrationTest(unittest.TestCase):
                 "--request", str(request), "--today", "2026-07-22",
             )
             self.assertTrue(captured["event_id"])
+            self.assertEqual(
+                "Tracebook: created `bom-compatible-request` "
+                f"(project `{resolved['project']['slug']}`, kind `business-rule`).",
+                captured["user_summary"],
+            )
+
+            replay = self._run_runner(
+                base, "capture", "--root", str(root), "--cwd", str(repo),
+                "--request", str(request), "--today", "2026-07-22",
+            )
+            self.assertTrue(replay["skipped"])
+            self.assertNotIn("user_summary", replay)
+
+            payload["operation"] = "revise"
+            payload["expected_version"] = 1
+            payload["body"] = "A revised Windows-authored request remains readable."
+            request.write_text(json.dumps(payload), encoding="utf-8")
+            revised = self._run_runner(
+                base, "capture", "--root", str(root), "--cwd", str(repo),
+                "--request", str(request), "--today", "2026-07-22",
+            )
+            self.assertEqual(
+                "Tracebook: revised `bom-compatible-request` "
+                f"(project `{resolved['project']['slug']}`, kind `business-rule`).",
+                revised["user_summary"],
+            )
+
+            domain_payload = {
+                "operation": "create",
+                "knowledge_id": "refund-terminology",
+                "scope": "domain",
+                "kind": "domain",
+                "title": "Refund terminology",
+                "body": "A refund remains incomplete until settlement succeeds.",
+                "evidence": ["src/refund.py:L1-L1"],
+                "status": "current",
+            }
+            request.write_text(json.dumps(domain_payload), encoding="utf-8")
+            domain = self._run_runner(
+                base, "capture", "--root", str(root), "--cwd", str(repo),
+                "--request", str(request), "--today", "2026-07-22",
+            )
+            self.assertEqual(
+                "Tracebook: created `refund-terminology` (domain scope, kind `domain`).",
+                domain["user_summary"],
+            )
 
             legacy = base / "legacy"
             (legacy / "01-projects").mkdir(parents=True)
@@ -90,6 +136,60 @@ class RunnerIntegrationTest(unittest.TestCase):
             error = json.loads(result.stdout)["error"]
             self.assertEqual("UNSUPPORTED_SCHEMA", error["code"])
             self.assertEqual("initialize", error["operation"])
+
+    def test_runner_rejects_null_operation_before_legacy_capture_can_write(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            resolved = self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(repo))
+            request = base / "capture.json"
+            request.write_text(
+                json.dumps(
+                    {
+                        "operation": None,
+                        "knowledge_id": "must-not-fall-back",
+                        "scope": "project",
+                        "kind": "business-rule",
+                        "category": "business-rules",
+                        "title": "Must not use the legacy capture path",
+                        "body": "A null operation must be rejected before any write.",
+                        "evidence": ["src/example.py:L1-L1"],
+                        "status": "Current",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RUNNER),
+                    "capture",
+                    "--root",
+                    str(root),
+                    "--cwd",
+                    str(repo),
+                    "--request",
+                    str(request),
+                    "--today",
+                    "2026-07-22",
+                ],
+                cwd=base,
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+
+            self.assertEqual(2, result.returncode)
+            self.assertEqual("", result.stderr)
+            self.assertEqual(
+                "INVALID_REQUEST: schema-v2 capture requires a non-empty operation",
+                json.loads(result.stdout)["error"],
+            )
+            project = root / resolved["project"]["relative_path"]
+            self.assertFalse((project / "business-rules.md").exists())
 
     def test_installed_runner_executes_an_explicit_deep_audit(self) -> None:
         with TemporaryDirectory() as temp:

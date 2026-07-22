@@ -143,6 +143,11 @@ After every successful capture, require `changed_paths`, `new_paths`, and
 response if `health_scope` is absent or is not `project`, `domain`, or
 `pattern`; do not fall back to the default project scope.
 
+When a non-skipped capture with changed paths returns `user_summary`, display
+it to the user verbatim in the next user-facing message. Do not defer it to
+the Final Task Report, paraphrase it, or omit it: this confirms a file write
+that has already occurred on the user's system.
+
 Run `$SKILL_DIR/scripts/tracebook_runner.py check` with the external root as
 `--root` and repository root as `--cwd`. Pass every capture `changed_paths`
 item as `--changed`, every `new_paths` item as `--new-path`, and the capture

@@ -3,6 +3,18 @@
 This project follows semantic versioning. Releases are created only after the
 matching Git tag is published.
 
+## [2.0.2] - 2026-07-22
+
+### Added
+
+- Return a human-readable `user_summary` for every capture that actually
+  changes knowledge files, so the host can confirm the write immediately.
+
+### Fixed
+
+- Reject missing, null, and blank schema-v2 `operation` values at the Runner
+  boundary before they can reach the retired aggregate capture path.
+
 ## [2.0.1] - 2026-07-22
 
 ### Fixed

@@ -331,6 +331,31 @@ def _write_payload(payload: dict[str, object]) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+def _user_summary(
+    context: ResolvedContext,
+    request: CaptureRequest,
+    result: CaptureResult,
+) -> str | None:
+    """Return a safe, user-facing confirmation only for an actual write."""
+    if result.skipped or not result.changed_paths:
+        return None
+
+    verbs = {
+        "create": "created",
+        "revise": "revised",
+        "change-status": "changed status for",
+    }
+    location = (
+        f"project `{context.record.slug}`"
+        if request.scope == "project"
+        else f"{request.scope} scope"
+    )
+    return (
+        f"Tracebook: {verbs[request.operation]} `{request.knowledge_id}` "
+        f"({location}, kind `{request.kind}`)."
+    )
+
+
 def _transaction_payload(diagnostic: TransactionDiagnostic) -> dict[str, object]:
     return {
         "transaction_id": diagnostic.transaction_id,
@@ -482,20 +507,29 @@ def main(argv: list[str] | None = None) -> int:
         if missing:
             _write_payload({"error": f"INVALID_REQUEST: schema-v2 capture requires {', '.join(missing)}"})
             return 2
+        operation = request_payload["operation"]
+        if not isinstance(operation, str) or not operation.strip():
+            _write_payload(
+                {"error": "INVALID_REQUEST: schema-v2 capture requires a non-empty operation"}
+            )
+            return 2
         try:
-            result = capture(context, CaptureRequest(**request_payload), _parse_date(args.today))
+            request = CaptureRequest(**request_payload)
+            result = capture(context, request, _parse_date(args.today))
         except ValueError as error:
             _write_payload({"error": str(error)})
             return 2
-        _write_payload(
-            {
-                "changed_paths": [str(path) for path in result.changed_paths],
-                "new_paths": [str(path) for path in result.new_paths],
-                "skipped": result.skipped,
-                "health_scope": result.health_scope,
-                "event_id": result.event_id,
-            }
-        )
+        response = {
+            "changed_paths": [str(path) for path in result.changed_paths],
+            "new_paths": [str(path) for path in result.new_paths],
+            "skipped": result.skipped,
+            "health_scope": result.health_scope,
+            "event_id": result.event_id,
+        }
+        user_summary = _user_summary(context, request, result)
+        if user_summary is not None:
+            response["user_summary"] = user_summary
+        _write_payload(response)
         return 0
 
     result = check(

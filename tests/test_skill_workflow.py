@@ -48,6 +48,13 @@ class SkillWorkflowTest(unittest.TestCase):
         self.assertIn("check_type: Deep", skill)
         self.assertIn("tracebook_runner.py audit", skill)
         self.assertIn("human review", skill)
+
+    def test_skill_requires_immediate_user_confirmation_for_a_real_write(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("non-skipped capture with changed paths returns `user_summary`", skill)
+        self.assertIn("next user-facing message", skill)
+        self.assertIn("display\nit to the user verbatim", skill)
     def test_skill_declares_external_only_read_and_write_gates(self) -> None:
         skill = " ".join(
             (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8").split()
