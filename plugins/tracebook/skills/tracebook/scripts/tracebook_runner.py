@@ -30,6 +30,7 @@ if __package__ in (None, ""):
         run_deep_audit,
     )
     from scripts.context_search import context as build_context
+    from scripts.errors import TracebookError, error_payload
     from scripts.health_state import (
         _finish_health_persistence,
         _load_scope_state,
@@ -62,6 +63,7 @@ else:
         run_deep_audit,
     )
     from .context_search import context as build_context
+    from .errors import TracebookError, error_payload
     from .health_state import (
         _finish_health_persistence,
         _load_scope_state,
@@ -400,7 +402,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = Path(args.root) if args.root else default_root()
     if args.command == "initialize":
-        result = initialize(root)
+        try:
+            result = initialize(root)
+        except TracebookError as error:
+            _write_payload(error_payload(error))
+            return 2
         _write_payload(
             {"root": str(result.root), "created_paths": [str(path) for path in result.created_paths]}
         )
@@ -424,7 +430,11 @@ def main(argv: list[str] | None = None) -> int:
         _write_payload({"recovered_paths": [str(path) for path in recovered]})
         return 0
 
-    context = resolve(root, Path(args.cwd))
+    try:
+        context = resolve(root, Path(args.cwd))
+    except TracebookError as error:
+        _write_payload(error_payload(error))
+        return 2
     if args.command == "resolve":
         _write_payload(_context_payload(context))
         return 0
@@ -457,7 +467,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if args.command == "capture":
-        request_payload = json.loads(Path(args.request).read_text(encoding="utf-8"))
+        try:
+            request_payload = json.loads(
+                Path(args.request).read_text(encoding="utf-8-sig")
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            _write_payload({"error": f"INVALID_REQUEST: request file is unreadable: {error}"})
+            return 2
+        if not isinstance(request_payload, dict):
+            _write_payload({"error": "INVALID_REQUEST: request must be a JSON object"})
+            return 2
         required = {"operation", "knowledge_id"}
         missing = sorted(required - request_payload.keys())
         if missing:

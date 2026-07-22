@@ -3,6 +3,17 @@
 This project follows semantic versioning. Releases are created only after the
 matching Git tag is published.
 
+## [2.0.1] - 2026-07-22
+
+### Fixed
+
+- Accept UTF-8 BOM capture request files, including the default UTF-8 output
+  produced by Windows PowerShell 5.1.
+- Return structured `UNSUPPORTED_SCHEMA` JSON for legacy knowledge roots rather
+  than a Python traceback.
+- Document the required marketplace replacement sequence when an existing
+  Tracebook marketplace must move to a new tagged release.
+
 ## [2.0.0] - 2026-07-22
 
 ### Added
