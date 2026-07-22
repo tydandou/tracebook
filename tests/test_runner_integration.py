@@ -54,6 +54,43 @@ class RunnerIntegrationTest(unittest.TestCase):
             self.assertEqual(len(payload["read_paths"]), 5)
             self.assertFalse((repo / "AGENTS.md").exists())
 
+    def test_runner_accepts_utf8_bom_capture_requests_and_reports_legacy_roots(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(repo))
+            request = base / "capture.json"
+            payload = {
+                "operation": "create",
+                "knowledge_id": "bom-compatible-request",
+                "scope": "project",
+                "kind": "business-rule",
+                "title": "BOM-compatible request",
+                "body": "A Windows-authored request remains readable.",
+                "evidence": ["src/example.py:L1-L1"],
+                "status": "current",
+            }
+            request.write_bytes(b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8"))
+            captured = self._run_runner(
+                base, "capture", "--root", str(root), "--cwd", str(repo),
+                "--request", str(request), "--today", "2026-07-22",
+            )
+            self.assertTrue(captured["event_id"])
+
+            legacy = base / "legacy"
+            (legacy / "01-projects").mkdir(parents=True)
+            result = subprocess.run(
+                [sys.executable, str(RUNNER), "resolve", "--root", str(legacy), "--cwd", str(repo)],
+                cwd=base, capture_output=True, check=False, text=True,
+            )
+            self.assertEqual(2, result.returncode)
+            self.assertEqual("", result.stderr)
+            error = json.loads(result.stdout)["error"]
+            self.assertEqual("UNSUPPORTED_SCHEMA", error["code"])
+            self.assertEqual("initialize", error["operation"])
+
     def test_installed_runner_executes_an_explicit_deep_audit(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)
