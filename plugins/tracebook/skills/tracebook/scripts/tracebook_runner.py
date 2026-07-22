@@ -46,10 +46,14 @@ if __package__ in (None, ""):
         ProjectRecord,
         bind_remote,
         ensure_project,
+        find_projects,
+        load_projects,
         project_lock_name,
+        registered_project,
         repository_root,
         update_project,
     )
+    from scripts.system_registry import add_relation, bind_project as bind_system_project, create_system, get_system
     from scripts.transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 else:
     from .capture import (
@@ -86,10 +90,14 @@ else:
         ProjectRecord,
         bind_remote,
         ensure_project,
+        find_projects,
+        load_projects,
         project_lock_name,
+        registered_project,
         repository_root,
         update_project,
     )
+    from .system_registry import add_relation, bind_project as bind_system_project, create_system, get_system
     from .transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 
 
@@ -149,6 +157,32 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
             project / "health-status.md",
         ),
     )
+
+
+def preflight(root: Path, cwd: Path) -> dict[str, object]:
+    """Inspect a target without initializing, registering, or modifying knowledge."""
+    target = repository_root(cwd)
+    resolved_root, target = validate_external_root(root, target)
+    record = registered_project(resolved_root, target)
+    read_paths = [
+        resolved_root / "AGENTS.md",
+        resolved_root / "00-global" / "health" / "health-status.md",
+    ]
+    if record is not None:
+        project = resolved_root / record.relative_path
+        read_paths.extend(
+            (project / "index.md", project / "project-status.md", project / "health-status.md")
+        )
+    return {
+        "root": str(resolved_root),
+        "target": str(target),
+        "target_exists": target.exists(),
+        "registered": record is not None,
+        "project": _project_payload(record) if record is not None else None,
+        "read_paths": [str(path) for path in read_paths if path.is_file()],
+    }
+
+
 def capture(
     context: ResolvedContext, request: CaptureRequest, today: date
 ) -> CaptureResult:
@@ -164,10 +198,39 @@ def retrieve_context(
     as_of: date | None = None,
     status: str = "current",
     kind: str | None = None,
+    project_ids: tuple[str, ...] = (),
+    system_ids: tuple[str, ...] = (),
+    profile: str = "default",
     scope: str = "project",
     max_results: int = 10,
     max_chars: int = 20000,
 ) -> dict[str, object]:
+    if profile not in {"default", "reference"}:
+        raise ValueError("INVALID_REQUEST: profile is unsupported")
+    known = {record.project_id: record for record in load_projects(resolved.root)}
+    selected: list[ProjectRecord] = [resolved.record]
+    selected_ids = {resolved.record.project_id}
+    for project_id in project_ids:
+        record = known.get(project_id)
+        if record is None:
+            raise TracebookError("UNKNOWN_PROJECT", f"Unknown project {project_id}", "context")
+        if record.project_id not in selected_ids:
+            selected.append(record)
+            selected_ids.add(record.project_id)
+    for system_id in system_ids:
+        system = get_system(resolved.root, system_id)
+        for project_id in system.project_ids:
+            record = known.get(project_id)
+            if record is None:
+                raise TracebookError(
+                    "UNKNOWN_PROJECT",
+                    f"System {system_id} references unknown project {project_id}",
+                    "context",
+                )
+            if record.project_id not in selected_ids:
+                selected.append(record)
+                selected_ids.add(record.project_id)
+    allowed_kinds = ("architecture", "module", "decision") if profile == "reference" else None
     return build_context(
         resolved.root,
         resolved.root / resolved.record.relative_path,
@@ -175,10 +238,61 @@ def retrieve_context(
         resolved.record.name,
         resolved.record.slug,
         query,
+        projects=tuple(selected),
         include_history=include_history,
         as_of=as_of,
         status=status,
         kind=kind,
+        allowed_kinds=allowed_kinds,
+        scope=scope,
+        max_results=max_results,
+        max_chars=max_chars,
+    )
+
+
+def read_context(
+    root: Path,
+    project_ids: tuple[str, ...],
+    query: str,
+    *,
+    include_history: bool = False,
+    as_of: date | None = None,
+    status: str = "current",
+    kind: str | None = None,
+    profile: str = "default",
+    scope: str = "project",
+    max_results: int = 10,
+    max_chars: int = 20000,
+) -> dict[str, object]:
+    """Read explicitly registered project knowledge without activating a target."""
+    if not project_ids:
+        raise ValueError("INVALID_REQUEST: at least one project_id is required")
+    if profile not in {"default", "reference"}:
+        raise ValueError("INVALID_REQUEST: profile is unsupported")
+    resolved_root = root.expanduser().resolve()
+    known = {record.project_id: record for record in load_projects(resolved_root)}
+    selected: list[ProjectRecord] = []
+    for project_id in project_ids:
+        record = known.get(project_id)
+        if record is None:
+            raise TracebookError("UNKNOWN_PROJECT", f"Unknown project {project_id}", "context-read")
+        if record.project_id not in {item.project_id for item in selected}:
+            selected.append(record)
+    primary = selected[0]
+    allowed_kinds = ("architecture", "module", "decision") if profile == "reference" else None
+    return build_context(
+        resolved_root,
+        resolved_root / primary.relative_path,
+        primary.project_id,
+        primary.name,
+        primary.slug,
+        query,
+        projects=tuple(selected),
+        include_history=include_history,
+        as_of=as_of,
+        status=status,
+        kind=kind,
+        allowed_kinds=allowed_kinds,
         scope=scope,
         max_results=max_results,
         max_chars=max_chars,
@@ -358,6 +472,23 @@ def _project_payload(record: ProjectRecord) -> dict[str, object]:
     }
 
 
+def _system_payload(record: object) -> dict[str, object]:
+    return {
+        "system_id": getattr(record, "system_id"),
+        "name": getattr(record, "name"),
+        "relative_path": getattr(record, "relative_path"),
+        "project_ids": list(getattr(record, "project_ids")),
+        "relations": [
+            {
+                "source_project_id": relation.source_project_id,
+                "target_project_id": relation.target_project_id,
+                "kind": relation.kind,
+            }
+            for relation in getattr(record, "relations")
+        ],
+    }
+
+
 def _write_payload(payload: dict[str, object]) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
@@ -419,6 +550,43 @@ def main(argv: list[str] | None = None) -> int:
     recovery_parser = commands.add_parser("recover-transactions")
     recovery_parser.add_argument("--root")
 
+    preflight_parser = commands.add_parser("preflight")
+    preflight_parser.add_argument("--root")
+    preflight_parser.add_argument("--cwd", required=True)
+
+    project_search_parser = commands.add_parser("project-search")
+    project_search_parser.add_argument("--root")
+    project_search_parser.add_argument("--query", required=True)
+
+    system_create_parser = commands.add_parser("system-create")
+    system_create_parser.add_argument("--root")
+    system_create_parser.add_argument("--name", required=True)
+
+    system_bind_parser = commands.add_parser("system-bind-project")
+    system_bind_parser.add_argument("--root")
+    system_bind_parser.add_argument("--system-id", required=True)
+    system_bind_parser.add_argument("--project-id", required=True)
+
+    system_relation_parser = commands.add_parser("system-relate")
+    system_relation_parser.add_argument("--root")
+    system_relation_parser.add_argument("--system-id", required=True)
+    system_relation_parser.add_argument("--source-project-id", required=True)
+    system_relation_parser.add_argument("--target-project-id", required=True)
+    system_relation_parser.add_argument("--kind", required=True)
+
+    context_read_parser = commands.add_parser("context-read")
+    context_read_parser.add_argument("--root")
+    context_read_parser.add_argument("--project-id", action="append", required=True)
+    context_read_parser.add_argument("--query", required=True)
+    context_read_parser.add_argument("--include-history", action="store_true")
+    context_read_parser.add_argument("--as-of")
+    context_read_parser.add_argument("--status", default="current")
+    context_read_parser.add_argument("--kind")
+    context_read_parser.add_argument("--profile", choices=("default", "reference"), default="default")
+    context_read_parser.add_argument("--scope", choices=("project", "domain", "pattern", "all"), default="project")
+    context_read_parser.add_argument("--max-results", type=int, default=10)
+    context_read_parser.add_argument("--max-chars", type=int, default=20000)
+
     for name in ("resolve", "capture", "check", "audit", "context"):
         command = commands.add_parser(name)
         command.add_argument("--root")
@@ -450,6 +618,9 @@ def main(argv: list[str] | None = None) -> int:
     context_parser.add_argument("--as-of")
     context_parser.add_argument("--status", default="current")
     context_parser.add_argument("--kind")
+    context_parser.add_argument("--project-id", action="append", default=[])
+    context_parser.add_argument("--system-id", action="append", default=[])
+    context_parser.add_argument("--profile", choices=("default", "reference"), default="default")
     context_parser.add_argument("--scope", choices=("project", "domain", "pattern", "all"), default="project")
     context_parser.add_argument("--max-results", type=int, default=10)
     context_parser.add_argument("--max-chars", type=int, default=20000)
@@ -502,6 +673,66 @@ def main(argv: list[str] | None = None) -> int:
         _write_payload({"recovered_paths": [str(path) for path in recovered]})
         return 0
 
+    if args.command == "preflight":
+        try:
+            _write_payload(preflight(root, Path(args.cwd)))
+            return 0
+        except TracebookError as error:
+            _write_payload(error_payload(error))
+            return 2
+
+    if args.command == "project-search":
+        try:
+            _write_payload({"projects": [_project_payload(record) for record in find_projects(root, args.query)]})
+            return 0
+        except (TracebookError, ValueError) as error:
+            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
+            return 2
+
+    if args.command == "system-create":
+        try:
+            _write_payload({"system": _system_payload(create_system(root, args.name))})
+            return 0
+        except (TracebookError, ValueError) as error:
+            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
+            return 2
+
+    if args.command == "system-bind-project":
+        try:
+            _write_payload({"system": _system_payload(bind_system_project(root, args.system_id, args.project_id))})
+            return 0
+        except (TracebookError, ValueError) as error:
+            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
+            return 2
+
+    if args.command == "system-relate":
+        try:
+            _write_payload({"system": _system_payload(add_relation(root, args.system_id, args.source_project_id, args.target_project_id, args.kind))})
+            return 0
+        except (TracebookError, ValueError) as error:
+            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
+            return 2
+
+    if args.command == "context-read":
+        try:
+            _write_payload(read_context(
+                root,
+                tuple(args.project_id),
+                args.query,
+                include_history=args.include_history,
+                as_of=_parse_date(args.as_of) if args.as_of else None,
+                status=args.status,
+                kind=args.kind,
+                profile=args.profile,
+                scope=args.scope,
+                max_results=args.max_results,
+                max_chars=args.max_chars,
+            ))
+            return 0
+        except (TracebookError, ValueError) as error:
+            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
+            return 2
+
     if args.command == "project-update":
         try:
             record = update_project(
@@ -545,12 +776,14 @@ def main(argv: list[str] | None = None) -> int:
             _write_payload(retrieve_context(
                 context, args.query, include_history=args.include_history,
                 as_of=_parse_date(args.as_of) if args.as_of else None,
-                status=args.status, kind=args.kind, scope=args.scope,
+                status=args.status, kind=args.kind,
+                project_ids=tuple(args.project_id), system_ids=tuple(args.system_id),
+                profile=args.profile, scope=args.scope,
                 max_results=args.max_results, max_chars=args.max_chars,
             ))
             return 0
-        except ValueError as error:
-            _write_payload({"error": str(error)})
+        except (TracebookError, ValueError) as error:
+            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
             return 2
 
     if args.command == "audit":

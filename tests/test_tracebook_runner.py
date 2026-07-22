@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from plugins.tracebook.skills.tracebook.scripts import tracebook_runner
-from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import default_root, initialize, resolve
+from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import default_root, initialize, preflight, resolve
 
 
 class TracebookRunnerTest(unittest.TestCase):
@@ -102,6 +102,33 @@ class TracebookRunnerTest(unittest.TestCase):
             self.assertFalse(
                 (root / ".tracebook-state" / "migrations" / "health-v1.json").exists()
             )
+
+    def test_preflight_does_not_initialize_or_register_a_new_target(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            target = base / "new-service"
+
+            result = preflight(root, target)
+
+            self.assertFalse(result["target_exists"])
+            self.assertFalse(result["registered"])
+            self.assertIsNone(result["project"])
+            self.assertFalse(root.exists())
+
+    def test_preflight_returns_an_existing_registered_project_without_writing(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            repo = base / "business"; repo.mkdir()
+            resolved = resolve(root, repo)
+            registry_before = (root / "registry.json").read_bytes()
+
+            result = preflight(root, repo)
+
+            self.assertTrue(result["registered"])
+            self.assertEqual(resolved.record.project_id, result["project"]["project_id"])
+            self.assertEqual(registry_before, (root / "registry.json").read_bytes())
 
     def test_resolve_ensures_project_health_while_holding_the_project_lock(self) -> None:
         with TemporaryDirectory() as temp:

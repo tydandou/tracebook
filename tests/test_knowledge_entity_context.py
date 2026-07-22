@@ -7,6 +7,7 @@ import unittest
 from plugins.tracebook.skills.tracebook.scripts.capture import CaptureRequest
 from plugins.tracebook.skills.tracebook.scripts.errors import TracebookError
 from plugins.tracebook.skills.tracebook.scripts.knowledge_root import repair_knowledge_root
+from plugins.tracebook.skills.tracebook.scripts.system_registry import bind_project, create_system
 from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import capture, retrieve_context, resolve
 
 
@@ -74,6 +75,77 @@ class KnowledgeEntityContextTest(unittest.TestCase):
             second = retrieve_context(resolved, "order-retry-idempotency", max_results=1, max_chars=1000)
             self.assertEqual(json.dumps(first, ensure_ascii=False), json.dumps(second, ensure_ascii=False))
             self.assertGreaterEqual(first["current_context"][0]["score"], 100)
+
+    def test_context_reads_only_explicitly_selected_other_projects(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            first_repo = base / "payment"; first_repo.mkdir()
+            second_repo = base / "order"; second_repo.mkdir()
+            root = base / "knowledge"
+            first = resolve(root, first_repo)
+            second = resolve(root, second_repo)
+            capture(
+                second,
+                self._request(
+                    kind="architecture",
+                    category="architecture",
+                    knowledge_id="order-event-contract",
+                    title="Order event contract",
+                    body="Order service publishes OrderPaid events.",
+                ),
+                date(2026, 7, 22),
+            )
+
+            local = retrieve_context(first, "OrderPaid", scope="project")
+            expanded = retrieve_context(
+                first,
+                "OrderPaid",
+                project_ids=(second.record.project_id,),
+                scope="project",
+            )
+            reference = retrieve_context(
+                first,
+                "OrderPaid",
+                project_ids=(second.record.project_id,),
+                profile="reference",
+                scope="project",
+            )
+
+            self.assertEqual([], local["current_context"])
+            self.assertEqual(second.record.project_id, expanded["current_context"][0]["source_project"]["project_id"])
+            self.assertEqual("order-event-contract", reference["current_context"][0]["knowledge_id"])
+
+    def test_context_can_select_registered_system_members(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            first_repo = base / "payment"; first_repo.mkdir()
+            second_repo = base / "order"; second_repo.mkdir()
+            root = base / "knowledge"
+            first = resolve(root, first_repo)
+            second = resolve(root, second_repo)
+            capture(
+                second,
+                self._request(
+                    kind="architecture",
+                    category="architecture",
+                    knowledge_id="order-event-contract",
+                    title="Order event contract",
+                    body="Order service publishes OrderPaid events.",
+                ),
+                date(2026, 7, 22),
+            )
+            system = create_system(root, "Commerce")
+            system = bind_project(root, system.system_id, first.record.project_id)
+            system = bind_project(root, system.system_id, second.record.project_id)
+
+            result = retrieve_context(
+                first,
+                "OrderPaid",
+                system_ids=(system.system_id,),
+                scope="project",
+            )
+
+            self.assertEqual(second.record.project_id, result["current_context"][0]["source_project"]["project_id"])
 
 
 if __name__ == "__main__":

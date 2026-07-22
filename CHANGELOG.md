@@ -3,6 +3,25 @@
 This project follows semantic versioning. Releases are created only after the
 matching Git tag is published.
 
+## [3.1.0] - 2026-07-23
+
+### Added
+
+- Read-only `preflight` and `context-read` flows for new or uncertain target
+  projects, so reference architecture can be loaded before the target exists
+  or is registered.
+- Explicit multi-project systems with stable system IDs, member projects, and
+  directed API/event relationships for bounded microservice context reads.
+- Explicit cross-project context selection, source-project attribution, and a
+  `reference` profile limited to architecture, module, and decision knowledge.
+
+### Fixed
+
+- Context retrieval now returns an empty result when no authority page matches
+  the query instead of returning unrelated Current entries by lifecycle score.
+- Documented and regression-tested the full project registration, related
+  project, empty project, iterative capture, and retrieval flow.
+
 ## [3.0.0] - 2026-07-22
 
 ### Added

@@ -76,7 +76,7 @@ class SkillWorkflowTest(unittest.TestCase):
         )
         self.assertIn("Routine work with no durable conclusion needs no skip", skill)
 
-    def test_skill_metadata_covers_repository_triggers_and_exclusions(self) -> None:
+    def test_skill_metadata_covers_development_triggers_and_exclusions(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         description = skill.split("\n---\n", 1)[0].lower()
         cases = json.loads(
@@ -87,7 +87,9 @@ class SkillWorkflowTest(unittest.TestCase):
 
         for term in (
             "must invoke before",
-            "software-repository",
+            "software-development",
+            "scaffolding a new project",
+            "outside the current repository",
             "analysis",
             "debugging",
             "review",

@@ -101,6 +101,130 @@ class RunnerIntegrationTest(unittest.TestCase):
             )
             self.assertEqual(project_id, clone_resolved["project"]["project_id"])
 
+    def test_runner_preflights_and_selects_explicit_system_members(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            target = base / "new-service"
+            preflight = self._run_runner(
+                base, "preflight", "--root", str(root), "--cwd", str(target)
+            )
+            self.assertFalse(preflight["registered"])
+            self.assertFalse(root.exists())
+
+            first_path = base / "payment"; first_path.mkdir()
+            second_path = base / "order"; second_path.mkdir()
+            first = self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(first_path))
+            second = self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(second_path))
+            search = self._run_runner(base, "project-search", "--root", str(root), "--query", "order")
+            self.assertEqual(second["project"]["project_id"], search["projects"][0]["project_id"])
+
+            system = self._run_runner(base, "system-create", "--root", str(root), "--name", "Commerce")["system"]
+            system_id = str(system["system_id"])
+            self._run_runner(base, "system-bind-project", "--root", str(root), "--system-id", system_id, "--project-id", str(first["project"]["project_id"]))
+            self._run_runner(base, "system-bind-project", "--root", str(root), "--system-id", system_id, "--project-id", str(second["project"]["project_id"]))
+            self._run_runner(base, "system-relate", "--root", str(root), "--system-id", system_id, "--source-project-id", str(first["project"]["project_id"]), "--target-project-id", str(second["project"]["project_id"]), "--kind", "event")
+            context = self._run_runner(base, "context", "--root", str(root), "--cwd", str(first_path), "--system-id", system_id, "--query", "OrderPaid")
+            self.assertEqual({str(first["project"]["project_id"]), str(second["project"]["project_id"])}, {item["project_id"] for item in context["queried_projects"]})
+
+    def test_runner_reads_reference_context_for_an_uncreated_target_without_registration(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            source_path = base / "source"; source_path.mkdir()
+            target_path = base / "new-service"
+            source = self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(source_path))
+            project_id = str(source["project"]["project_id"])
+            before = (root / "registry.json").read_bytes()
+
+            preflight = self._run_runner(base, "preflight", "--root", str(root), "--cwd", str(target_path))
+            reference = self._run_runner(
+                base,
+                "context-read",
+                "--root",
+                str(root),
+                "--project-id",
+                project_id,
+                "--profile",
+                "reference",
+                "--query",
+                "architecture",
+            )
+
+            self.assertFalse(preflight["registered"])
+            self.assertEqual([project_id], [item["project_id"] for item in reference["queried_projects"]])
+            self.assertFalse(target_path.exists())
+            self.assertEqual(before, (root / "registry.json").read_bytes())
+
+    def test_complete_knowledge_flow_for_related_empty_and_iterating_projects(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            uncreated = base / "image-gen-agent"
+            self.assertFalse(
+                self._run_runner(base, "preflight", "--root", str(root), "--cwd", str(uncreated))["registered"]
+            )
+            self.assertFalse(root.exists())
+
+            payment_path = base / "payment"; payment_path.mkdir()
+            order_path = base / "order"; order_path.mkdir()
+            payment = self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(payment_path))
+            order = self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(order_path))
+
+            def capture_request(name: str, payload: dict[str, object]) -> dict[str, object]:
+                request = base / f"{name}.json"
+                request.write_text(json.dumps(payload), encoding="utf-8")
+                return self._run_runner(base, "capture", "--root", str(root), "--cwd", str(order_path), "--request", str(request), "--today", "2026-07-23")
+
+            capture_request("order-architecture", {
+                "operation": "create", "knowledge_id": "order-paid-contract", "scope": "project", "kind": "architecture",
+                "title": "OrderPaid contract", "body": "Order service publishes OrderPaid with order_id.",
+                "evidence": ["src/events.py:L1-L10"], "status": "current", "write_intent": "durable", "content_kind": "knowledge",
+            })
+            capture_request("order-source-map", {
+                "operation": "create", "knowledge_id": "order-event-source-map", "scope": "project", "kind": "source-map",
+                "title": "Order event source map", "body": "SOURCE_MAP_ONLY_TOKEN is implementation navigation.",
+                "evidence": ["src/events.py:L1-L10"], "status": "current", "write_intent": "durable", "content_kind": "knowledge",
+            })
+
+            system = self._run_runner(base, "system-create", "--root", str(root), "--name", "Commerce")["system"]
+            system_id = str(system["system_id"])
+            payment_id = str(payment["project"]["project_id"])
+            order_id = str(order["project"]["project_id"])
+            for project_id in (payment_id, order_id):
+                self._run_runner(base, "system-bind-project", "--root", str(root), "--system-id", system_id, "--project-id", project_id)
+            self._run_runner(base, "system-relate", "--root", str(root), "--system-id", system_id, "--source-project-id", payment_id, "--target-project-id", order_id, "--kind", "event")
+
+            related = self._run_runner(base, "context", "--root", str(root), "--cwd", str(payment_path), "--system-id", system_id, "--query", "OrderPaid")
+            self.assertEqual(order_id, related["current_context"][0]["source_project"]["project_id"])
+            reference = self._run_runner(base, "context-read", "--root", str(root), "--project-id", order_id, "--profile", "reference", "--query", "OrderPaid")
+            self.assertEqual("order-paid-contract", reference["current_context"][0]["knowledge_id"])
+            excluded = self._run_runner(base, "context-read", "--root", str(root), "--project-id", order_id, "--profile", "reference", "--query", "SOURCE_MAP_ONLY_TOKEN")
+            self.assertEqual([], excluded["current_context"])
+
+            blank_path = base / "blank"; blank_path.mkdir()
+            blank = self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(blank_path))
+            empty = self._run_runner(base, "context", "--root", str(root), "--cwd", str(blank_path), "--query", "anything")
+            self.assertEqual(blank["project"]["project_id"], empty["project"]["project_id"])
+            self.assertEqual([], empty["current_context"])
+
+            request = base / "payment-iteration.json"
+            request.write_text(json.dumps({
+                "operation": "create", "knowledge_id": "payment-retry-policy", "scope": "project", "kind": "decision",
+                "title": "Payment retry policy", "body": "Retry once.", "evidence": ["src/retry.py:L1-L10"],
+                "status": "current", "write_intent": "durable", "content_kind": "knowledge",
+            }), encoding="utf-8")
+            self._run_runner(base, "capture", "--root", str(root), "--cwd", str(payment_path), "--request", str(request), "--today", "2026-07-23")
+            request.write_text(json.dumps({
+                "operation": "revise", "expected_version": 1, "knowledge_id": "payment-retry-policy", "scope": "project", "kind": "decision",
+                "title": "Payment retry policy", "body": "Retry once after a transient failure.", "evidence": ["src/retry.py:L1-L12"],
+                "status": "current", "write_intent": "durable", "content_kind": "knowledge",
+            }), encoding="utf-8")
+            self._run_runner(base, "capture", "--root", str(root), "--cwd", str(payment_path), "--request", str(request), "--today", "2026-07-23")
+            iteration = self._run_runner(base, "context", "--root", str(root), "--cwd", str(payment_path), "--query", "transient failure", "--include-history")
+            self.assertEqual(2, iteration["current_context"][0]["version"])
+            self.assertEqual(1, iteration["historical_context"][0]["version"])
+
     def test_runner_accepts_utf8_bom_capture_requests_and_reports_legacy_roots(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp).resolve()

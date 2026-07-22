@@ -33,6 +33,10 @@ industry references. `03-patterns` holds reusable agent workflows, RAG,
 frontend, backend, and operations patterns. Keep single-project facts in the
 project directory.
 
+`04-systems` records explicit multi-project system membership and directed
+service relationships. It selects a bounded cross-project read scope; it does
+not merge project identity or make all projects default context.
+
 ## Raw and Archive
 
 `raw` contains unstructured source material pending processing. `99-archive`

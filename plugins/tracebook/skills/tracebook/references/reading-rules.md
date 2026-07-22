@@ -1,6 +1,7 @@
 # Reading Rules
 
-For repository work, first resolve the external root and read only its minimal
+For repository work, first preflight a new or uncertain target; once work on
+an existing target starts, resolve the external root and read only its minimal
 ordered context: root rules, global health, project index, and project status.
 Then run the Runner's deterministic `context` command with the task wording.
 Read only the returned authority pages that are relevant to the work.
@@ -11,3 +12,6 @@ stable ID, title, evidence/source-path, and body matches. Use
 reconstruct a prior state. Do not load logs, archives, raw files, or every
 knowledge page by default. If structured context fails, say so and fall back
 to index navigation; do not claim a search was completed.
+
+The current project is the default search boundary. Select another project or
+system only through the explicit cross-project reading rules.
