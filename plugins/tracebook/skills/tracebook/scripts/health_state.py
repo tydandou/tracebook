@@ -631,6 +631,7 @@ def _check_state(
         *report.broken_links,
         *report.missing_sources,
         *report.outdated_paths,
+        *report.entity_issues,
     )
     medium_findings = (
         *report.pending_confirmations,

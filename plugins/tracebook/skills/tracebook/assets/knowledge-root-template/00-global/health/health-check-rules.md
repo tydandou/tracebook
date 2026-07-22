@@ -24,8 +24,9 @@ Run a Deep check when any condition holds:
 ## Check Scope
 
 Light checks validate references for new documents, sources for key facts,
-links, source-map paths, project-status updates, and whether health status
-needs updating.
+links, source-map paths, project-status updates, and schema-v2 entity
+integrity: authority uniqueness, continuous versions, event markers, Current
+evidence, and active replacement IDs.
 
 Regular checks cover broken links, orphan pages, missing sources, outdated
 source maps, long-pending confirmations, duplicate pages, and log growth.

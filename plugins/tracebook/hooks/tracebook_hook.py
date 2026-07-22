@@ -13,18 +13,17 @@ START_MESSAGE = (
     "Tracebook workflow: if this is nontrivial software-repository work "
     "(analysis, debugging, review, code/config changes, tests, builds, "
     "deployment, CI/CD, or incident diagnosis), invoke the Tracebook Skill "
-    "and resolve/read its minimal external context before proceeding. Before "
-    "the final response, capture and check only new, verified, durable "
-    "knowledge, or report exactly one skip reason: not-project-work, "
-    "no-durable-conclusion, unverified, already-known, or user-disabled. An "
+    "and resolve/read its minimal external context before proceeding, then use "
+    "deterministic context retrieval for task-relevant authority pages. Before "
+    "the final response, assess whether new verified durable knowledge exists "
+    "and capture/check it only when it does. An "
     "explicit no-write request disables capture, not relevant read-only context."
 )
 
 STOP_MESSAGE = (
-    "Tracebook final gate: ensure the response reports either the verified "
-    "capture plus health-check result, or one controlled skip reason "
-    "(not-project-work, no-durable-conclusion, unverified, already-known, "
-    "user-disabled). Do not capture raw logs, temporary answers, or inference."
+    "Tracebook final reminder: assess whether this task produced verified, "
+    "durable knowledge. Capture and check it only when it did; routine tasks "
+    "need no skip report. Do not capture raw logs, temporary answers, or inference."
 )
 
 

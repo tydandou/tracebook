@@ -47,9 +47,10 @@ class HookTest(unittest.TestCase):
 
         self.assertEqual(True, start["continue"])
         self.assertIn("resolve/read", start["systemMessage"])
-        self.assertIn("user-disabled", start["systemMessage"])
+        self.assertIn("deterministic context retrieval", start["systemMessage"])
         self.assertEqual(True, stop["continue"])
-        self.assertIn("final gate", stop["systemMessage"])
+        self.assertIn("final reminder", stop["systemMessage"])
+        self.assertIn("no skip report", stop["systemMessage"])
         self.assertNotIn("stopReason", stop)
 
     def test_unknown_event_is_ignored(self) -> None:

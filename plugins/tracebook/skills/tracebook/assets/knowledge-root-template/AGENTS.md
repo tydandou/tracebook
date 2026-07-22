@@ -19,7 +19,8 @@ For a business-project task, read in this order:
 3. `00-global/health/health-status.md`.
 4. The current project `01-projects/{project}/index.md`.
 5. The current project `project-status.md`, when present.
-6. Only task-relevant rule files and project documents.
+6. Run the Runner `context` command with the task wording.
+7. Only task-relevant authority pages returned by that command.
 
 Do not load complete logs, raw material, archive directories, or `99-archive`
 by default.
@@ -32,6 +33,10 @@ by default.
   automatically; never create a project-level `AGENTS.md`.
 - Write only durable, evidence-backed conclusions. Mark uncertainty as
   `Pending`.
+- Create schema-v2 authority pages with stable `knowledge_id`; revise an
+  existing ID rather than creating a duplicate for an updated conclusion.
+- Default retrieval is Current-only. Request history only for an explicit
+  historical question or an `as-of` reconstruction.
 - Do not store raw chat transcripts or unverified AI inferences as facts.
 - Maintain entry indexes and run local checks after knowledge writes.
 

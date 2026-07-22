@@ -1,13 +1,14 @@
 # Writing Rules
 
 1. Structure knowledge; do not paste chat transcripts.
-2. Extend an existing relevant document before creating a duplicate.
+2. Use `context` before writing and retain the stable `knowledge_id` for a
+   conclusion across revisions.
 3. Mark uncertain information as `Pending`.
 4. State the evidence for conclusions inferred from code.
 5. Put stable project knowledge in project documents.
 6. Put current state in `project-status.md`.
 7. Put detailed process history in `logs/YYYY-MM.md`.
-8. Put important engineering decisions in `decisions/ADR-xxxx.md`.
+8. Store important engineering decisions as schema-v2 authority pages.
 9. Put cross-project business knowledge in `02-domain`.
 10. Put cross-project technical patterns in `03-patterns`.
 11. Move deprecated material to a project `archive/` or `99-archive/`.
@@ -15,7 +16,8 @@
 13. Create synthesis pages only for stable, high-value conclusions with
     sources, update time, and invalidation conditions.
 14. Label deprecated, superseded, pending, and historical information.
-15. Add frontmatter to new important knowledge documents when required.
+15. Use the Runner to create, revise, or change status so it maintains
+    frontmatter, Current, History, indexes, and event markers together.
 
 Place current project status in `project-status.md`; business rules in
 `business-rules.md`; terminology in `terminology.md`; module boundaries in

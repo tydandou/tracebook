@@ -1,14 +1,12 @@
 # Health Check Rules
 
-Perform a local self-check after every knowledge write. Run Light checks for a
-knowledge write, a new Markdown page, an index/source-map/status/global-rule
-change, three or more changed knowledge files, or user request.
+Run the required Light check after a successful capture. It checks links,
+indexes, evidence, source paths, status, and schema-v2 entity integrity:
+frontmatter, authority uniqueness, version continuity, event markers,
+Current evidence, and valid active replacements. Checks report problems; they
+never guess a repair or change business code.
 
-Run Regular checks after seven days, ten changes, five pages, ten pending
-confirmations, or ten missing sources. Run Deep checks after 30 days, large
-business-rule/source-map/API/database changes, or user request.
-
-Light checks cover links, index references, sources, code paths, and status.
-Regular checks cover links, orphans, sources, drift, duplicates, pending items,
-and logs. Deep checks sample durable conclusions against their evidence. Health
-checks never modify business code.
+Regular checks remain low-frequency and add duplicate, orphan, drift,
+pending, and log-growth review. Deep audit remains an explicit manual command
+for evidence sampling and major re-entry work; it is not a Hook gate. The
+health report is a signal for human review, not proof of business truth.

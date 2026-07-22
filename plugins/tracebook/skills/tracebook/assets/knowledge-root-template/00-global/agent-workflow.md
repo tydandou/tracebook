@@ -1,8 +1,10 @@
 # Agent Knowledge Workflow
 
-After a business task, decide whether verified durable knowledge was learned.
-When it was, write it according to the writing, attribution, index,
-lifecycle, log, and frontmatter rules.
+Before a business task, resolve the project and run deterministic `context`
+retrieval with the task wording. After a business task, decide whether
+verified durable knowledge was learned. Create a new schema-v2 `knowledge_id`
+only for a new conclusion; otherwise revise the existing entity with its
+expected version.
 
 After every write, perform a local self-check:
 

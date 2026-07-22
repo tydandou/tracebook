@@ -19,9 +19,9 @@ from .transaction import commit_updates
 class CaptureRequest:
     scope: str
     kind: str
-    category: str
     title: str
     body: str
+    category: str = "knowledge"
     evidence: tuple[str, ...] = ()
     status: str = "Current"
     write_intent: str = "durable"
@@ -29,6 +29,10 @@ class CaptureRequest:
     replacement: str | None = None
     topic: str | None = None
     user_prohibits_write: bool = False
+    operation: str | None = None
+    knowledge_id: str | None = None
+    expected_version: int | None = None
+    replacement_knowledge_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -703,6 +707,18 @@ def capture_knowledge(
             skipped=True,
             health_scope=health_scope,
             event_id=None,
+        )
+
+    if request.operation is not None:
+        from .knowledge_entity import capture_entity
+
+        result = capture_entity(root.expanduser().resolve(), record, request, today)
+        return CaptureResult(
+            changed_paths=result.changed_paths,
+            new_paths=result.new_paths,
+            skipped=result.skipped,
+            health_scope=request.scope,
+            event_id=result.event_id,
         )
 
     validate_capture(request)
