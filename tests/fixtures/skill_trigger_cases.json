@@ -5,7 +5,8 @@
     "Review this patch for correctness and project-specific risks.",
     "Change the deployment configuration and run the tests.",
     "Fix the CI/CD build failure and publish the release.",
-    "Diagnose this production incident using logs and source evidence."
+    "Diagnose this production incident using logs and source evidence.",
+    "Create D:\\AIWorks\\image-gen-agent as a new project and reuse the selected architecture."
   ],
   "negative": [
     "Explain what a Python decorator is without inspecting a repository.",

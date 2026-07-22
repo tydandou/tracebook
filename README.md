@@ -59,7 +59,7 @@ installing files or services into those repositories.
 
 ## Install
 
-The `3.0.0` release is published under the `v3.0.0` tag. Use the tagged
+The `3.1.0` release is published under the `v3.1.0` tag. Use the tagged
 installation commands for the stable release, or the local development loading
 instructions when working from a clone.
 
@@ -68,7 +68,7 @@ instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.0.0
+codex plugin marketplace add tydandou/tracebook --ref v3.1.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -102,7 +102,7 @@ codex plugin marketplace list
 If `tracebook` is absent, add the intended source before installing again:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.0.0
+codex plugin marketplace add tydandou/tracebook --ref v3.1.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -112,7 +112,7 @@ source, Codex requires replacing the marketplace before adding it again:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v3.0.0
+codex plugin marketplace add tydandou/tracebook --ref v3.1.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -242,6 +242,18 @@ other cases that need reproducible commands. Natural-language Plugin use
 remains the primary interface. The examples below assume the shell is at the
 business repository root, `SKILL_DIR` points to the installed Tracebook Skill,
 and `TRACEBOOK_ROOT` is set as shown above.
+
+### Preflight a new or uncertain target
+
+Before creating a new project outside the current repository, run the read-only
+preflight. It reports whether a target is already registered and never creates
+the root, project metadata, or target directory:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" preflight \
+  --root "$TRACEBOOK_ROOT" \
+  --cwd /workspace/new-service
+```
 
 ### Resolve
 
@@ -377,6 +389,45 @@ what was current on a date. The JSON includes stable IDs, score, evidence,
 status, update date, and a short summary; it is not a vector database or a
 claim that the returned result is business truth.
 
+### Read related microservices deliberately
+
+The active project remains the default boundary. To read a service explicitly
+named by the user, discover its stable ID first, then include only that ID:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" project-search \
+  --root "$TRACEBOOK_ROOT" --query order-service
+
+python "$SKILL_DIR/scripts/tracebook_runner.py" context \
+  --root "$TRACEBOOK_ROOT" --cwd . \
+  --project-id prj-... --query "OrderPaid event contract"
+```
+
+Register a system when a bounded set of microservices shares contracts or
+directed relationships. A project may belong to multiple systems:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" system-create --root "$TRACEBOOK_ROOT" --name "Commerce"
+python "$SKILL_DIR/scripts/tracebook_runner.py" system-bind-project --root "$TRACEBOOK_ROOT" --system-id sys-... --project-id prj-...
+python "$SKILL_DIR/scripts/tracebook_runner.py" system-relate --root "$TRACEBOOK_ROOT" --system-id sys-... --source-project-id prj-... --target-project-id prj-... --kind event
+python "$SKILL_DIR/scripts/tracebook_runner.py" context --root "$TRACEBOOK_ROOT" --cwd . --system-id sys-... --query "OrderPaid event contract"
+```
+
+For a new project that explicitly borrows another project's architecture, pass
+that source project to the read-only command and use `--profile reference`.
+It does not require `--cwd`, so it cannot initialize or register the new
+target before development starts:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" context-read \
+  --root "$TRACEBOOK_ROOT" --project-id prj-... \
+  --profile reference --query "image generation architecture"
+```
+
+The profile returns only architecture, module, and decision entries. Every
+cross-project result identifies its source; Tracebook never scans every
+registered project by default.
+
 ### Check the captured scope
 
 Integrations must preserve this exact data dependency:
@@ -428,8 +479,14 @@ evidence before any finding becomes a durable conclusion.
 | Command | Emitted fields | Meaning |
 | --- | --- | --- |
 | `resolve` | `root`, `project`, `read_paths` | Configured root, project record resolved by `project_id`, and focused context paths |
+| `preflight` | `target`, `registered`, `project`, `read_paths` | Read-only target inspection; does not initialize or register |
+| `project-search` | `projects` | Deterministic registered-project candidates |
+| `context-read` | `current_context`, `historical_context`, `warnings`, `truncated` | Read selected registered projects without activating a target |
 | `project-update` | `project` | Explicitly update a project name or complete location list |
 | `project-bind-remote` | `project` | Bind a normalized remote to an existing project |
+| `system-create` | `system` | Create an explicit multi-project system |
+| `system-bind-project` | `system` | Add a registered project to a system |
+| `system-relate` | `system` | Add a directed relationship between two system members |
 | `transactions` | `root`, `transactions` | Read-only transaction diagnostics and per-transaction disposition |
 | `recover-transactions` | `recovered_paths` | Explicit safe roll-forward results; never a discard or quarantine action |
 | `context` | `current_context`, `historical_context`, `warnings`, `truncated` | Bounded deterministic authority-page retrieval |
@@ -561,11 +618,11 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v3.0.0` release.
+resolves the published `v3.1.0` release.
 
 ## Current Limitations
 
-- `3.0.0` uses schema-v2 authority pages and registry v2. Existing registry-v1
+- `3.1.0` retains schema-v2 authority pages and registry v2. Existing registry-v1
   knowledge roots are intentionally not migrated, imported, or mixed with the
   new format; point `TRACEBOOK_ROOT` at a new empty root for v3 work.
 

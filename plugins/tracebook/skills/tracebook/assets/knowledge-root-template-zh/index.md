@@ -6,4 +6,5 @@
 - [项目知识](01-projects/index.md)
 - [领域知识](02-domain/index.md)
 - [工程模式](03-patterns/index.md)
+- [系统](04-systems/index.md)
 - [历史归档](99-archive/index.md)

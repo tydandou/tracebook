@@ -351,6 +351,48 @@ def _load_registry(path: Path, root: Path) -> dict[str, ProjectRecord]:
     return records
 
 
+def load_projects(knowledge_root: Path) -> tuple[ProjectRecord, ...]:
+    """Return registered projects without registering a path or repairing the root."""
+    root = knowledge_root.expanduser().resolve()
+    records = _load_registry(registry_path(root), root)
+    return tuple(sorted(records.values(), key=lambda item: (item.name.casefold(), item.project_id)))
+
+
+def registered_project(knowledge_root: Path, repo: Path) -> ProjectRecord | None:
+    """Resolve an already registered project without changing the knowledge root."""
+    location = repository_root(repo)
+    root, location = validate_external_root(knowledge_root, location)
+    path = registry_path(root)
+    records = _load_registry(path, root)
+    location_text, location_key = _canonical_location(location, registry=path)
+    remote = _origin_remote(location)
+    locations, remotes = _signal_indexes(records, registry=path)
+    by_location = locations.get(location_key)
+    by_remote = remotes.get(remote) if remote else None
+    if by_location and by_remote and by_location.project_id != by_remote.project_id:
+        raise _identity_conflict(location_text, by_location, remote or "", by_remote)
+    return by_location or by_remote
+
+
+def find_projects(knowledge_root: Path, query: str) -> tuple[ProjectRecord, ...]:
+    """Find registered projects by exact ID or a deterministic display/signal match."""
+    needle = query.strip().casefold()
+    if not needle:
+        raise ValueError("Project query must not be empty")
+    records = load_projects(knowledge_root)
+    exact = [record for record in records if record.project_id.casefold() == needle]
+    if exact:
+        return tuple(exact)
+    matched = [
+        record
+        for record in records
+        if needle in record.name.casefold()
+        or any(needle in location.casefold() for location in record.locations)
+        or any(needle in remote.casefold() for remote in record.remotes)
+    ]
+    return tuple(matched)
+
+
 def _registry_content(records: dict[str, ProjectRecord]) -> str:
     payload = {
         "version": 2,

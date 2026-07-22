@@ -45,7 +45,7 @@ runner 则用于集成、诊断和高级工作流。
 
 ## 安装
 
-`3.0.0` 已正式发布，对应 `v3.0.0` tag。稳定版本请使用下面带 tag 的安装命令；
+`3.1.0` 已正式发布，对应 `v3.1.0` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -53,7 +53,7 @@ runner 则用于集成、诊断和高级工作流。
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.0.0
+codex plugin marketplace add tydandou/tracebook --ref v3.1.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -85,7 +85,7 @@ codex plugin marketplace list
 如果列表中没有 `tracebook`，先添加目标版本来源，再重新安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.0.0
+codex plugin marketplace add tydandou/tracebook --ref v3.1.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -94,7 +94,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v3.0.0
+codex plugin marketplace add tydandou/tracebook --ref v3.1.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -210,6 +210,16 @@ Plugin 的设计目标是在日常任务语言中直接调用。例如：
 Plugin 用法仍是主要入口。下面的示例假定 shell 位于业务仓库根目录，`SKILL_DIR`
 指向已安装的 Tracebook Skill，并且已按前文设置 `TRACEBOOK_ROOT`。
 
+### 新项目或不确定目标的预检
+
+在当前仓库外创建新项目、或尚不能确定目标项目是否已有知识时，先运行只读 `preflight`。它不会创建目标目录、初始化知识根目录或注册项目：
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" preflight \
+  --root "$TRACEBOOK_ROOT" \
+  --cwd D:\workspace\new-service
+```
+
 ### 解析
 
 使用默认知识根目录时，可运行简短命令：
@@ -312,6 +322,29 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
 变化时会创建新事件，并保留先前条目。重复标题不表示隐式覆盖；结论被替代时，应使用
 `Superseded` 及其 `replacement` 路径明确记录。
 
+### 有边界地读取关联微服务
+
+当前项目始终是默认读取边界。用户明确点名其他服务时，先用 `project-search` 查找候选项目，再把选定的稳定 `project_id` 传给 `context --project-id`；不能因共用知识根目录而扫描全部项目。
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" project-search \
+  --root "$TRACEBOOK_ROOT" --query order-service
+
+python "$SKILL_DIR/scripts/tracebook_runner.py" context \
+  --root "$TRACEBOOK_ROOT" --cwd . \
+  --project-id prj-... --query "OrderPaid 事件契约"
+```
+
+可为一组微服务创建 `system`，登记成员与有向 API 或事件关系；`context --system-id sys-...` 仅读取该系统成员。新项目明确参考某个来源项目时，使用没有 `--cwd` 的只读命令，因而不会注册尚未创建的目标项目：
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" context-read \
+  --root "$TRACEBOOK_ROOT" --project-id prj-... \
+  --profile reference --query "图片生成架构"
+```
+
+此视图只返回架构、模块和决策知识。跨项目结果保留来源项目，不能把来源服务事实写成当前服务事实。
+
 ### 检查捕获范围
 
 集成必须保持以下精确数据依赖：
@@ -360,8 +393,14 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" audit \
 | 命令 | 返回字段 | 含义 |
 | --- | --- | --- |
 | `resolve` | `root`、`project`、`read_paths` | 已配置根目录、按 `project_id` 解析的项目记录和聚焦上下文路径 |
+| `preflight` | `target`、`registered`、`project`、`read_paths` | 只读检查目标；不初始化、不注册 |
+| `project-search` | `projects` | 按名称、ID 或已登记信号查找项目候选项 |
+| `context-read` | `current_context`、`historical_context`、`warnings`、`truncated` | 不激活目标项目，仅读取选定的已登记项目 |
 | `project-update` | `project` | 显式更新项目名称或完整 location 列表 |
 | `project-bind-remote` | `project` | 将一个规范化 remote 绑定到既有项目 |
+| `system-create` | `system` | 创建显式的多项目系统 |
+| `system-bind-project` | `system` | 将已登记项目加入系统 |
+| `system-relate` | `system` | 为两个系统成员登记有向关系 |
 | `transactions` | `root`、`transactions` | 只读事务诊断与每个事务的处置状态 |
 | `recover-transactions` | `recovered_paths` | 显式安全恢复结果；绝不执行丢弃或隔离 |
 | `capture` | `changed_paths`、`new_paths`、`skipped`、`health_scope`、`event_id` | 知识事务结果，以及后续检查必须使用的范围 |
@@ -381,6 +420,7 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" audit \
 ├── 01-projects/        # 每个项目一个可读、隔离的目录
 ├── 02-domain/          # 可复用业务知识
 ├── 03-patterns/        # 可复用工程知识
+├── 04-systems/         # 显式微服务成员与有向关系
 ├── raw/                # 等待整理的原始材料
 └── 99-archive/         # 历史材料
 ```
@@ -471,11 +511,11 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v3.0.0` 版本。
+`v3.1.0` 版本。
 
 ## 当前限制
 
-- `3.0.0` 使用 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
+- `3.1.0` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
   导入或与新格式混写；使用 v3 时请将 `TRACEBOOK_ROOT` 指向新的空知识根。
 
 - 项目 registry v1 不会被自动升级或与 project-id registry 混写；`resolve` 会返回明确的

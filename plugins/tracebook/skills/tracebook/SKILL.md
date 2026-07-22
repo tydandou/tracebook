@@ -1,6 +1,6 @@
 ---
 name: tracebook
-description: MUST invoke before any software-repository work (analysis, debugging, review, code changes, tests, builds, deploys, CI/CD, incidents). Loads external project knowledge context. After task completion, evaluates write gate for durable knowledge capture. Skip only for general Q&A or non-project conversations.
+description: MUST invoke before any software-development work in the session (analysis, scaffolding a new project, debugging, review, code changes, tests, builds, deploys, CI/CD, incidents), including work outside the current repository. Loads external project knowledge context. After task completion, evaluates write gate for durable knowledge capture. Skip only for general Q&A or non-project conversations.
 ---
 
 # Tracebook
@@ -21,9 +21,13 @@ business code and long-lived project analysis separate.
 
 ## Initialize and Resolve Context
 
-1. Set `SKILL_DIR` to the directory containing this `SKILL.md`. Resolve the
-   current project root (the Git root when available) and read its `AGENTS.md`
-   when present.
+1. Set `SKILL_DIR` to the directory containing this `SKILL.md`. Identify the
+   intended target path, not merely the agent's current working directory.
+   For an existing project, resolve its Git root when available and read its
+   `AGENTS.md` when present. For a new or uncertain target, first run
+   `$SKILL_DIR/scripts/tracebook_runner.py preflight --root <external-root>
+   --cwd <intended-target>` before creating files. `preflight` is read-only:
+   it must not initialize a root or register a project.
 2. Set the external root to `TRACEBOOK_ROOT` when configured, otherwise
    `~/.tracebook`. Run `$SKILL_DIR/scripts/tracebook_runner.py resolve --root
    <external-root> --cwd <project-root>` with the current Python interpreter. Translate the
@@ -50,6 +54,10 @@ business code and long-lived project analysis separate.
    root preference changed. Keep paths, Markdown links, lifecycle values,
    evidence references, and structured JSON fields unchanged.
 
+Do not decide that knowledge is irrelevant before the preflight/read phase.
+An empty structured result is valid; skipping Tracebook because the target is
+new, outside the current repository, or of uncertain relevance is not valid.
+
 ## Load Knowledge Before Engineering Work
 
 For nontrivial software-repository work, default to this read phase even when
@@ -62,6 +70,29 @@ minimal read set, call `tracebook_runner.py context --query <task text>` and
 read only the returned schema-v2 authority pages. Context failure must be
 reported and may fall back to index navigation; do not pretend a structured
 search succeeded.
+
+## Read Related Projects Deliberately
+
+The active project is the default and only automatic project scope. Do not scan
+all registered projects. When the user explicitly names another project, first
+run `project-search --root <external-root> --query <name-or-id>`, then pass the
+selected stable IDs through repeated `context --project-id <project-id>`
+arguments. When the request is about a registered microservice system, use
+`context --system-id <system-id>`; it selects only that system's recorded
+members. Context results identify their source project.
+
+Use `--profile reference` only when the user asks to reuse an existing
+project's architecture for a new project. Before that target is activated, use
+`context-read --root <external-root> --project-id <source-project-id>
+--profile reference --query <task text>`; it has no `--cwd` and must not
+initialize or register the target. It returns architecture, module, and
+decision knowledge from explicitly selected source projects and excludes
+file-level source maps, incidents, and routine change history. Never infer a
+reference source from the current workspace alone.
+
+If a user says only "related services" and no system is registered, search for
+candidate projects and ask for a source project or system before expanding the
+read scope. Follow [cross-project reading rules](references/cross-project-reading-rules.md).
 
 Follow [reading rules](references/reading-rules.md) for selection and length
 limits. Load these references only when their rule applies:
@@ -76,6 +107,7 @@ limits. Load these references only when their rule applies:
 - [knowledge lifecycle rules](references/knowledge-lifecycle-rules.md)
 - [synthesis rules](references/synthesis-rules.md)
 - [health check rules](references/health-check-rules.md)
+- [cross-project reading rules](references/cross-project-reading-rules.md)
 
 ## Evaluate the Write Gate After the Task
 

@@ -11,6 +11,7 @@
 - [Projects](01-projects/index.md)
 - [Domain knowledge](02-domain/index.md)
 - [Engineering patterns](03-patterns/index.md)
+- [Systems](04-systems/index.md)
 - [Raw material](raw/index.md)
 - [Archive](99-archive/index.md)
 

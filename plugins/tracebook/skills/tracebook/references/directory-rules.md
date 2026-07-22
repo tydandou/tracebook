@@ -13,3 +13,8 @@ references under `02-domain`. Put cross-project technical patterns under
 `03-patterns`. Use `raw` only for original material awaiting organization and
 `99-archive` for historical material. Do not create an `AGENTS.md` in a
 project knowledge directory.
+
+Use `04-systems` only for explicit system membership and directed service
+relationships. A system is not a replacement for project identity: one project
+may belong to several systems, and the relation graph selects read scope rather
+than merging project knowledge.

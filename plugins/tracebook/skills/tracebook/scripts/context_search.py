@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 import unicodedata
 
+from .project_registry import ProjectRecord
+
 
 FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 CURRENT = re.compile(r"(?ms)^## Current\n\n(.*?)(?=\n## History\n|\Z)")
@@ -54,34 +56,50 @@ class Candidate:
     section: str
     version: int
     updated: str
+    source_project_id: str | None = None
+    source_project_name: str | None = None
     historical: bool = False
 
     def payload(self, root: Path, score: int) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "knowledge_id": self.fields["knowledge_id"], "version": self.version,
             "kind": self.fields["type"], "title": self.fields["title"],
             "status": self.fields["status"], "score": score,
             "path": self.path.relative_to(root).as_posix(), "evidence": _evidence(self.section),
             "updated": self.updated, "excerpt": _excerpt(self.section),
         }
+        if self.source_project_id is not None:
+            payload["source_project"] = {
+                "project_id": self.source_project_id,
+                "name": self.source_project_name or self.source_project_id,
+            }
+        return payload
 
 
-def _pages(root: Path, project: Path, scope: str) -> list[Path]:
-    selected: list[Path] = []
+def _pages(
+    root: Path,
+    projects: tuple[ProjectRecord, ...],
+    scope: str,
+) -> list[tuple[Path, ProjectRecord | None]]:
+    selected: list[tuple[Path, ProjectRecord | None]] = []
     if scope in {"project", "all"}:
-        selected.extend((project / "knowledge").rglob("*.md") if (project / "knowledge").exists() else [])
+        for project in projects:
+            directory = root / project.relative_path / "knowledge"
+            selected.extend((path, project) for path in directory.rglob("*.md") if directory.exists())
     if scope in {"domain", "all"}:
-        selected.extend((root / "02-domain" / "knowledge").glob("*.md") if (root / "02-domain" / "knowledge").exists() else [])
+        directory = root / "02-domain" / "knowledge"
+        selected.extend((path, None) for path in directory.glob("*.md") if directory.exists())
     if scope in {"pattern", "all"}:
-        selected.extend((root / "03-patterns" / "knowledge").glob("*.md") if (root / "03-patterns" / "knowledge").exists() else [])
-    return sorted(selected)
+        directory = root / "03-patterns" / "knowledge"
+        selected.extend((path, None) for path in directory.glob("*.md") if directory.exists())
+    return sorted(selected, key=lambda item: item[0].as_posix())
 
 
-def _candidates(root: Path, project: Path, scope: str, include_history: bool, as_of: date | None) -> tuple[list[Candidate], list[Candidate], list[str]]:
+def _candidates(root: Path, projects: tuple[ProjectRecord, ...], scope: str, include_history: bool, as_of: date | None) -> tuple[list[Candidate], list[Candidate], list[str]]:
     current: list[Candidate] = []
     history: list[Candidate] = []
     warnings: list[str] = []
-    for path in _pages(root, project, scope):
+    for path, source in _pages(root, projects, scope):
         content = path.read_text(encoding="utf-8")
         fields = _front(content)
         required = {"schema_version", "knowledge_id", "type", "title", "status", "version", "updated"}
@@ -92,9 +110,9 @@ def _candidates(root: Path, project: Path, scope: str, include_history: bool, as
         if section is None:
             warnings.append(f"{path.relative_to(root).as_posix()}: missing Current section")
             continue
-        versions = [Candidate(fields, path, section.group(1).strip(), int(fields["version"]), fields["updated"])]
+        versions = [Candidate(fields, path, section.group(1).strip(), int(fields["version"]), fields["updated"], source_project_id=source.project_id if source else None, source_project_name=source.name if source else None)]
         for version, updated, body in HISTORY.findall(content):
-            versions.append(Candidate(fields, path, body.strip(), int(version), updated, True))
+            versions.append(Candidate(fields, path, body.strip(), int(version), updated, True, source.project_id if source else None, source.name if source else None))
         if as_of is not None:
             eligible = [item for item in versions if date.fromisoformat(item.updated) <= as_of]
             if not eligible:
@@ -123,14 +141,23 @@ def _score(candidate: Candidate, query: str) -> int:
     return score
 
 
-def context(root: Path, project: Path, project_id: str, name: str, slug: str, query: str, *, include_history: bool = False, as_of: date | None = None, status: str = "current", kind: str | None = None, scope: str = "project", max_results: int = 10, max_chars: int = 20000) -> dict[str, object]:
+def context(root: Path, project: Path, project_id: str, name: str, slug: str, query: str, *, projects: tuple[ProjectRecord, ...] | None = None, include_history: bool = False, as_of: date | None = None, status: str = "current", kind: str | None = None, allowed_kinds: tuple[str, ...] | None = None, scope: str = "project", max_results: int = 10, max_chars: int = 20000) -> dict[str, object]:
     if not query.strip():
         raise ValueError("INVALID_REQUEST: query is required")
     if max_results < 1 or max_chars < 1:
         raise ValueError("INVALID_REQUEST: result limits must be positive")
-    candidates, available_history, warnings = _candidates(root, project, scope, include_history, as_of)
-    selected = [item for item in candidates if (status == "all" or item.fields["status"] == status) and (kind is None or item.fields["type"] == kind)]
-    ranked = sorted(((item, _score(item, query)) for item in selected), key=lambda pair: (-pair[1], pair[0].updated, pair[0].fields["knowledge_id"]))
+    selected_projects = projects or (ProjectRecord(project_id, name, str(project.relative_to(root).as_posix())),)
+    candidates, available_history, warnings = _candidates(root, selected_projects, scope, include_history, as_of)
+    selected = [item for item in candidates if (status == "all" or item.fields["status"] == status) and (kind is None or item.fields["type"] == kind) and (allowed_kinds is None or item.fields["type"] in allowed_kinds)]
+    ranked = sorted(
+        (
+            (item, score)
+            for item in selected
+            for score in (_score(item, query),)
+            if score > (10 if item.fields.get("status") == "current" else 0)
+        ),
+        key=lambda pair: (-pair[1], pair[0].updated, pair[0].fields["knowledge_id"]),
+    )
     payload: list[dict[str, object]] = []
     used = 0
     for item, score in ranked[:max_results]:
@@ -144,4 +171,4 @@ def context(root: Path, project: Path, project_id: str, name: str, slug: str, qu
         for item in available_history:
             if item.historical and item.fields["knowledge_id"] in ids:
                 historical.append(item.payload(root, _score(item, query)))
-    return {"schema_version": 1, "project": {"project_id": project_id, "name": name, "identity": project_id, "slug": slug}, "query": query, "current_context": payload, "historical_context": historical, "warnings": sorted(set(warnings)), "truncated": len(payload) < min(len(ranked), max_results)}
+    return {"schema_version": 1, "project": {"project_id": project_id, "name": name, "identity": project_id, "slug": slug}, "queried_projects": [{"project_id": item.project_id, "name": item.name, "slug": item.slug} for item in selected_projects], "query": query, "current_context": payload, "historical_context": historical, "warnings": sorted(set(warnings)), "truncated": len(payload) < min(len(ranked), max_results)}
