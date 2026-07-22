@@ -57,7 +57,7 @@ installing files, hooks, or services into those repositories.
 
 ## Install
 
-The `1.2.0` release is published under the `v1.2.0` tag. Use the tagged
+The `1.2.1` release is published under the `v1.2.1` tag. Use the tagged
 installation commands for the stable release, or the local development loading
 instructions when working from a clone.
 
@@ -66,7 +66,7 @@ instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v1.2.0
+codex plugin marketplace add tydandou/tracebook --ref v1.2.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -83,9 +83,11 @@ Start a new Codex session after installation.
 
 Codex requires a separate trust review before non-managed plugin Hooks run.
 Open `/hooks`, review the Tracebook `UserPromptSubmit` and `Stop` commands, and
-trust them if you want lifecycle reminders. If they remain untrusted or are
-disabled, the broader Skill metadata and manual `$tracebook` invocation still
-work.
+trust them if you want lifecycle reminders. Version `1.2.1` changes the Windows
+Hook command, so users upgrading from an earlier release must review and trust
+the two commands again. The Windows lifecycle reminders no longer depend on a
+Python entry in the user PATH. If Hooks remain untrusted or are disabled, the
+broader Skill metadata and manual `$tracebook` invocation still work.
 
 ### Update or recover a Codex installation
 
@@ -101,7 +103,7 @@ codex plugin marketplace list
 If `tracebook` is absent, add the intended source before installing again:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v1.2.0
+codex plugin marketplace add tydandou/tracebook --ref v1.2.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -493,7 +495,7 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v1.2.0` release.
+resolves the published `v1.2.1` release.
 
 ## Current Limitations
 
