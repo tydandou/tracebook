@@ -3,6 +3,23 @@
 This project follows semantic versioning. Releases are created only after the
 matching Git tag is published.
 
+## [2.1.0] - 2026-07-22
+
+### Changed
+
+- Removed the optional Codex lifecycle Hook implementation. Tracebook is now a
+  pure Skill plugin with no Hook commands, stdin protocol handling, or Hook
+  trust-review requirement.
+- Strengthened the Skill description to instruct supported hosts to invoke it
+  before repository work and evaluate the durable-knowledge write gate after
+  task completion.
+
+### Compatibility
+
+- External knowledge-root formats, Runner behavior, and Skill workflow rules
+  are unchanged. Automatic Skill selection remains host-dependent; users can
+  invoke `$tracebook` explicitly at any time.
+
 ## [2.0.3] - 2026-07-22
 
 ### Fixed

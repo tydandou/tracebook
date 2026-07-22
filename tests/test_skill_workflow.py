@@ -86,19 +86,21 @@ class SkillWorkflowTest(unittest.TestCase):
         )
 
         for term in (
+            "must invoke before",
             "software-repository",
             "analysis",
             "debugging",
             "review",
-            "configuration changes",
+            "code changes",
             "tests",
             "builds",
-            "deployments",
+            "deploys",
             "ci/cd",
-            "incident diagnosis",
+            "incidents",
+            "after task completion",
+            "write gate",
             "general q&a",
-            "raw-log summaries",
-            "unverified inference",
+            "non-project conversations",
         ):
             self.assertIn(term, description)
         self.assertGreaterEqual(len(cases["positive"]), 6)
