@@ -56,6 +56,14 @@ def validate_request(request: object) -> None:
         raise _error("scope", "is unsupported")
     if SLUG.fullmatch(getattr(request, "kind")) is None:
         raise _error("kind", "is unsupported")
+    title = getattr(request, "title")
+    if "\n" in title or "\r" in title:
+        raise _error("title", "must be a single line")
+    body = getattr(request, "body")
+    if re.search(r"(?m)^##[ \t]+(History|Current)[ \t]*$", body):
+        raise _error("body", "must not contain reserved section headers")
+    if "<!-- tracebook:event:" in body or "<!-- tracebook:last-event:" in body:
+        raise _error("body", "must not contain reserved event markers")
     status = _status(getattr(request, "status", "current"))
     evidence = getattr(request, "evidence", ())
     if isinstance(evidence, str) or not isinstance(evidence, (list, tuple)):

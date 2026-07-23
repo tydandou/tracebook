@@ -23,6 +23,16 @@ The knowledge root stays separate from business code. That separation lets
 multiple business repositories use one local knowledge system without
 installing files or services into those repositories.
 
+### Measured leverage
+
+Because capture is evidence-gated, each stored conclusion declares the source
+an agent would otherwise re-read to re-derive it. Reusing that conclusion is
+typically cheaper than re-exploring its cited source — the more scattered
+source a conclusion condenses, the larger the saving.
+
+This is per-hit leverage, not a guaranteed whole-project win: net savings also
+depend on how often knowledge is reused versus the one-time capture cost.
+
 ## Features
 
 - Project, domain, and pattern scopes for repository-specific facts, reusable
@@ -62,7 +72,7 @@ installing files or services into those repositories.
 
 ## Install
 
-The `3.2.0` release is prepared for the `v3.2.0` tag. After that tag is
+The `3.3.0` release is prepared for the `v3.3.0` tag. After that tag is
 published, use the tagged installation commands for the stable release, or use
 the local development loading instructions when working from a clone.
 
@@ -71,7 +81,7 @@ the local development loading instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.2.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -93,40 +103,27 @@ task completion. You can always invoke `$tracebook` explicitly.
 
 ### Update or recover a Codex installation
 
-`codex plugin remove` removes the installed plugin, not its knowledge root. If
-`codex plugin add tracebook@tracebook` reports that the plugin was not found,
-the `tracebook` marketplace source is absent from the active Codex profile.
-Check it first:
+Removing a plugin never touches its knowledge root. If
+`codex plugin add tracebook@tracebook` reports the plugin was not found, the
+`tracebook` marketplace source is absent from the active profile —
+`codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace list
-```
-
-If `tracebook` is absent, add the intended source before installing again:
-
-```text
-codex plugin marketplace add tydandou/tracebook --ref v3.2.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.0
 codex plugin add tracebook@tracebook
 ```
 
-If `tracebook` is already configured but must move to a different tagged
-source, Codex requires replacing the marketplace before adding it again:
+To move to a different tagged source, replace the marketplace first:
 
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v3.2.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.0
 codex plugin add tracebook@tracebook
 ```
 
-For a local clone, update that clone and re-add it only when `tracebook` is
-absent from the marketplace list:
-
-```text
-git pull --ff-only
-codex plugin marketplace add .
-codex plugin add tracebook@tracebook
-```
+For a local clone, `git pull --ff-only` then re-run the two local commands
+above.
 
 ### Claude Code
 
@@ -144,6 +141,33 @@ claude --plugin-dir ./plugins/tracebook
 ```
 
 Start a new session or run `/reload-plugins` after a marketplace installation.
+
+### Update or recover a Claude Code installation
+
+Refresh the marketplace source, then update the installed plugin (a restart
+applies the update):
+
+```text
+claude plugin marketplace update tracebook
+claude plugin update tracebook@tracebook
+```
+
+If the plugin or marketplace is missing, diagnose with `claude plugin list` and
+`claude plugin marketplace list`, then re-add the source and reinstall:
+
+```text
+claude plugin marketplace add tydandou/tracebook
+claude plugin install tracebook@tracebook
+```
+
+To move to a different source, remove both first:
+
+```text
+claude plugin uninstall tracebook@tracebook
+claude plugin marketplace remove tracebook
+claude plugin marketplace add tydandou/tracebook
+claude plugin install tracebook@tracebook
+```
 
 ### Open Agent Skills
 
@@ -640,11 +664,11 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v3.2.0` release.
+resolves the published `v3.3.0` release.
 
 ## Current Limitations
 
-- `3.2.0` retains schema-v2 authority pages and registry v2. Existing registry-v1
+- `3.3.0` retains schema-v2 authority pages and registry v2. Existing registry-v1
   knowledge roots are intentionally not migrated, imported, or mixed with the
   new format; point `TRACEBOOK_ROOT` at a new empty root for v3 work.
 

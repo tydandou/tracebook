@@ -118,12 +118,27 @@ def _valid_evidence(item: object) -> bool:
     return "/" in source or "." in filename
 
 
-def validate_capture(request: CaptureRequest) -> None:
-    """Validate capture structure and lexical evidence without filesystem I/O."""
+def _enforce_write_intent_and_evidence(request: CaptureRequest) -> None:
+    """Intent + evidence gate shared by legacy and schema-v2 write paths."""
     if request.write_intent != "durable":
         raise _invalid_request("write intent", "is unsupported")
     if request.content_kind != "knowledge":
         raise _invalid_request("content kind", "is unsupported")
+    if isinstance(request.evidence, str) or not isinstance(
+        request.evidence, (tuple, list)
+    ):
+        raise _invalid_request("evidence", "must be a sequence")
+    if isinstance(request.status, str) and request.status.strip().casefold() == "current":
+        if not request.evidence:
+            raise _invalid_request("evidence", "is required for Current knowledge")
+    for item in request.evidence:
+        if not _valid_evidence(item):
+            raise _invalid_request("evidence", f"is unclassified: {item!r}")
+
+
+def validate_capture(request: CaptureRequest) -> None:
+    """Validate capture structure and lexical evidence without filesystem I/O."""
+    _enforce_write_intent_and_evidence(request)
     if request.status not in {
         "Current",
         "Pending",
@@ -136,15 +151,6 @@ def validate_capture(request: CaptureRequest) -> None:
         raise _invalid_request("title", "must not be empty")
     if not isinstance(request.body, str) or not request.body.strip():
         raise _invalid_request("body", "must not be empty")
-    if isinstance(request.evidence, str) or not isinstance(
-        request.evidence, (tuple, list)
-    ):
-        raise _invalid_request("evidence", "must be a sequence")
-    if request.status == "Current" and not request.evidence:
-        raise _invalid_request("evidence", "is required for Current knowledge")
-    for item in request.evidence:
-        if not _valid_evidence(item):
-            raise _invalid_request("evidence", f"is unclassified: {item!r}")
 
     category = _safe_category(request.category)
     if request.scope == "project":
@@ -711,6 +717,7 @@ def capture_knowledge(
         )
 
     if request.operation is not None:
+        _enforce_write_intent_and_evidence(request)
         from .knowledge_entity import capture_entity
 
         result = capture_entity(root.expanduser().resolve(), record, request, today)

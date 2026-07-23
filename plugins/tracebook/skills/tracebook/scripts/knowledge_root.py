@@ -160,10 +160,3 @@ def repair_knowledge_root(
             atomic_write_text(schema, json.dumps({"version": _SCHEMA_VERSION}) + "\n", operation="initialize")
             created.append(schema)
     return tuple(created)
-
-
-def ensure_knowledge_root(
-    target: Path, template: Path | None = None
-) -> list[Path]:
-    """Compatibility wrapper returning the historical list result."""
-    return list(repair_knowledge_root(target, template))

@@ -23,6 +23,51 @@ def confined_path(root: Path, path: Path, *, operation: str) -> Path:
     return resolved_path
 
 
+def read_bytes_shared(path: Path) -> bytes:
+    """Read a file while allowing a concurrent writer to os.replace it.
+
+    On Windows the default open() omits FILE_SHARE_DELETE, so a reader blocks a
+    writer's MoveFileEx-based os.replace with PermissionError. Opening with the
+    full share mode lets snapshot pointer swaps proceed while readers hold a
+    handle. On POSIX this behaviour is already the default.
+    """
+    if os.name != "nt":
+        return path.read_bytes()
+    import ctypes
+    import msvcrt
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    GENERIC_READ = 0x80000000
+    SHARE_ALL = 0x1 | 0x2 | 0x4  # READ | WRITE | DELETE
+    OPEN_EXISTING = 3
+    FLAG_BACKUP_SEMANTICS = 0x02000000
+    ERROR_ACCESS_DENIED = 5
+    ERROR_SHARING_VIOLATION = 32
+    # A concurrent os.replace briefly puts the target in a delete-pending state;
+    # a CreateFileW landing in that window returns ACCESS_DENIED even with full
+    # share mode. Retry the transient window, mirroring the writer-side retry.
+    last_error = 0
+    for attempt in range(5):
+        handle = kernel32.CreateFileW(
+            str(path),
+            GENERIC_READ,
+            SHARE_ALL,
+            None,
+            OPEN_EXISTING,
+            FLAG_BACKUP_SEMANTICS,
+            None,
+        )
+        if handle != -1:
+            descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY)
+            with os.fdopen(descriptor, "rb", closefd=True) as stream:
+                return stream.read()
+        last_error = ctypes.get_last_error()
+        if last_error not in (ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION) or attempt == 4:
+            break
+        time.sleep(0.02 * (attempt + 1))
+    raise OSError(last_error, f"cannot open {path}")
+
+
 def sha256_bytes(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 

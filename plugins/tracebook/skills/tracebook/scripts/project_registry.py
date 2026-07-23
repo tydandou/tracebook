@@ -66,10 +66,13 @@ def normalize_remote(remote: str) -> str:
         raise ValueError(f"Unsupported Git remote: {remote}")
 
     normalized_path = path.strip("/")
-    if normalized_path.endswith(".git"):
-        normalized_path = normalized_path[:-4]
+    if normalized_path.lower().endswith(".git"):
+        normalized_path = normalized_path[: -len(".git")]
     if not normalized_path:
         raise ValueError(f"Unsupported Git remote: {remote}")
+    # Host is case-insensitive; the path is not (server-defined), so only the
+    # host is lowercased. Casefolding the path could merge distinct repos on a
+    # case-sensitive server.
     return f"{host.lower()}/{normalized_path}"
 
 
@@ -91,25 +94,45 @@ def repository_root(cwd: Path) -> Path:
     return resolved
 
 
-def _origin_remote(repo: Path) -> str | None:
+def _origin_remote_raw(repo: Path) -> str:
     result = subprocess.run(
         ["git", "-C", str(repo), "config", "--get", "remote.origin.url"],
         capture_output=True,
         check=False,
         text=True,
     )
-    value = result.stdout.strip()
-    return normalize_remote(value) if value else None
+    return result.stdout.strip()
 
 
-def project_identity(repo: Path) -> str:
-    """Return the legacy diagnostic identity; project_id is the actual key."""
-    root = repository_root(repo)
-    remote = _origin_remote(root)
-    if remote:
-        return remote
-    digest = hashlib.sha256(str(root).casefold().encode("utf-8")).hexdigest()[:12]
-    return f"local/{digest}"
+def _origin_remote(repo: Path) -> str | None:
+    """Return the normalized origin remote, or None when absent/unsupported.
+
+    An unsupported-but-present remote is treated as "no remote identity" so
+    that read-only inspection never crashes; callers may surface a warning via
+    origin_remote_warning.
+    """
+    value = _origin_remote_raw(repo)
+    if not value:
+        return None
+    try:
+        return normalize_remote(value)
+    except ValueError:
+        return None
+
+
+def origin_remote_warning(repo: Path) -> tuple[str | None, str | None]:
+    """Return (warning, raw_remote) when a present origin is unsupported."""
+    value = _origin_remote_raw(repo)
+    if not value:
+        return None, None
+    try:
+        normalize_remote(value)
+    except ValueError:
+        return (
+            "Unsupported origin remote; project identity falls back to local path",
+            value,
+        )
+    return None, value
 
 
 def project_lock_name(record: ProjectRecord) -> str:
@@ -358,6 +381,24 @@ def load_projects(knowledge_root: Path) -> tuple[ProjectRecord, ...]:
     return tuple(sorted(records.values(), key=lambda item: (item.name.casefold(), item.project_id)))
 
 
+def identity_advisory(record: ProjectRecord) -> str | None:
+    """State the objective fact that a project's identity is not portable.
+
+    Identity is decided deterministically by location + remote; migrating a
+    project is a manual project-update step by design. A local-path project
+    (no Git remote) re-registers as a separate project when its directory
+    moves or is renamed. This surfaces that fact without guessing intent; it
+    names the project by its unique slug so the reader knows which one.
+    """
+    if record.remotes:
+        return None
+    return (
+        f"Project {record.slug} has a local-path identity with no Git remote; "
+        "moving or renaming its directory registers a separate project unless "
+        "you update its location with project-update."
+    )
+
+
 def registered_project(knowledge_root: Path, repo: Path) -> ProjectRecord | None:
     """Resolve an already registered project without changing the knowledge root."""
     location = repository_root(repo)
@@ -438,11 +479,6 @@ def _persist_records(
             operation=operation,
         )
     atomic_write_text(path, _registry_content(records), operation=operation)
-
-
-def _save_registry(path: Path, records: dict[str, ProjectRecord]) -> None:
-    """Compatibility helper for tests and maintenance code with v2 records."""
-    atomic_write_text(path, _registry_content(records), operation="resolve")
 
 
 def _new_project_id(records: dict[str, ProjectRecord]) -> str:

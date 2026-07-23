@@ -3,6 +3,25 @@
 This project follows semantic versioning. Release entries are tagged locally
 before the matching Git tag is published.
 
+## [3.3.0] - 2026-07-23
+
+### Added
+
+- Non-blocking identity advisory: `resolve` and `preflight` surface an
+  `identity_advisory` when a project has a local-path identity with no Git
+  remote, naming the project so its location can be updated if the directory
+  moves. It never blocks and never guesses.
+
+### Fixed
+
+- The evidence gate now also covers the schema-v2 durable write path, so a
+  `current` capture cannot bypass the source-evidence requirement.
+- Context search scoring no longer matches on bare substrings; layered scoring
+  plus a meaningful-overlap gate remove spurious low-relevance results.
+- Windows reads snapshot pages with shared access and a bounded retry, so a
+  concurrent writer no longer causes transient read failures.
+- Transaction recovery cleans orphaned staged directories that have no manifest.
+
 ## [3.2.0] - 2026-07-23
 
 ### Added

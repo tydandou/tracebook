@@ -11,3 +11,4 @@ __pycache__/
 
 # Internal planning and design notes; retained locally, not published.
 /docs/
+eval/

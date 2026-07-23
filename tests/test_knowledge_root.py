@@ -60,7 +60,7 @@ class KnowledgeRootTest(unittest.TestCase):
         with TemporaryDirectory() as temp:
             root = (Path(temp) / "tracebook").resolve()
 
-            created = knowledge_root.ensure_knowledge_root(root)
+            created = list(knowledge_root.repair_knowledge_root(root))
 
             self.assertIn(root / "AGENTS.md", created)
             self.assertIn(root / "index.md", created)
@@ -71,7 +71,7 @@ class KnowledgeRootTest(unittest.TestCase):
                 (root / "00-global" / "health" / "health-status.md").is_file()
             )
             self.assertTrue((root / "03-patterns" / "index.md").is_file())
-            self.assertEqual(knowledge_root.ensure_knowledge_root(root), [])
+            self.assertEqual(list(knowledge_root.repair_knowledge_root(root)), [])
 
     def test_repair_restores_missing_templates_without_overwriting_content(self) -> None:
         with TemporaryDirectory() as temp:

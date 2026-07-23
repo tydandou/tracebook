@@ -513,6 +513,15 @@ def recover_transactions(root: Path) -> tuple[Path, ...]:
         if not transactions_dir.exists():
             return ()
 
+        # A directory without a manifest never reached the commit-intent point
+        # (commit_updates writes staged files, then the manifest, only then
+        # replaces targets). Such staged leftovers are safe to discard and
+        # would otherwise leak permanently, since recovery only inspects dirs
+        # that have a manifest.
+        for entry in transactions_dir.iterdir():
+            if entry.is_dir() and not (entry / _MANIFEST_NAME).is_file():
+                shutil.rmtree(entry, ignore_errors=True)
+
         transaction_dirs = sorted(
             (
                 path
