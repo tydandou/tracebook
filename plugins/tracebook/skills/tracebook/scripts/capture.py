@@ -12,6 +12,7 @@ import re
 
 from .locking import file_lock
 from .project_registry import ProjectRecord, project_lock_name
+from .snapshots import prepare_project_snapshot_updates
 from .transaction import commit_updates
 
 
@@ -865,7 +866,24 @@ def capture_knowledge(
 
         for target in updates:
             target.parent.mkdir(parents=True, exist_ok=True)
-        commit_updates(root, scope, "capture", updates)
+        transaction_updates = dict(updates)
+        final_targets: tuple[Path, ...] = ()
+        if request.scope == "project":
+            snapshot_updates, pointer = prepare_project_snapshot_updates(
+                root,
+                record,
+                updates,
+                operation="capture",
+            )
+            transaction_updates.update(snapshot_updates)
+            final_targets = (pointer,)
+        commit_updates(
+            root,
+            scope,
+            "capture",
+            transaction_updates,
+            final_targets=final_targets,
+        )
         return CaptureResult(
             changed_paths=tuple(updates),
             new_paths=(document,) if document_is_new else (),

@@ -29,26 +29,33 @@ business code and long-lived project analysis separate.
    --cwd <intended-target>` before creating files. `preflight` is read-only:
    it must not initialize a root or register a project.
 2. Set the external root to `TRACEBOOK_ROOT` when configured, otherwise
-   `~/.tracebook`. Run `$SKILL_DIR/scripts/tracebook_runner.py resolve --root
-   <external-root> --cwd <project-root>` with the current Python interpreter. Translate the
-   command syntax for the active shell. Consume the JSON response rather than
-   reimplementing root initialization or project registration.
-3. New roots are initialized as schema version 2. A pre-existing root without
+   `~/.tracebook`. Run `$SKILL_DIR/scripts/tracebook_runner.py preflight --root
+   <external-root> --cwd <project-root>` first. For an already registered
+   project, load task context with `context-read-path --root <external-root>
+   --cwd <project-root> --query <task text>`. This is the normal lock-free read
+   path: it does not initialize, register, repair health, recover transactions,
+   or create lock files.
+3. Run `$SKILL_DIR/scripts/tracebook_runner.py resolve --root <external-root>
+   --cwd <project-root>` only to activate an unregistered project, repair a
+   root, seed a legacy project's first snapshot, or before a write/health
+   operation that requires maintenance permission. `resolve` may acquire locks
+   and modify the external knowledge root; do not present it as a read command.
+4. New roots are initialized as schema version 2. A pre-existing root without
    the schema-v2 marker is rejected explicitly: never migrate, infer IDs for,
    or mix legacy knowledge pages with schema-v2 authority pages.
-4. The runner creates or repairs only missing external-root template files,
+5. The runner creates or repairs only missing external-root template files,
    resolves the project from its registered location and optional normalized
    Git remote, and returns the required `read_paths` plus `knowledge_language`.
-5. Do not initialize a project directory beyond `index.md` and
+6. Do not initialize a project directory beyond `index.md` and
    `project-status.md` until there is durable knowledge to write.
-6. If `resolve` refuses transaction recovery, do not edit
+7. If `resolve` refuses transaction recovery, do not edit
    `.tracebook-state` manually. Run
    `$SKILL_DIR/scripts/tracebook_runner.py transactions --root <external-root>`
    first. This diagnostic command is read-only and reports whether each
    transaction is recoverable or blocked. Run `recover-transactions` only for
    an explicit safe roll-forward; it never discards, quarantines, or overwrites
    a changed target.
-7. Use the returned `knowledge_language` for future human-readable knowledge
+8. Use the returned `knowledge_language` for future human-readable knowledge
    content. `zh` means write new explanatory prose in Chinese; `en` means
    English. Do not translate or rewrite existing entries merely because the
    root preference changed. Keep paths, Markdown links, lifecycle values,
@@ -66,10 +73,13 @@ the user did not explicitly request Tracebook. Read the external root
 project status in this order. Then select only documents relevant to the task.
 Do not load complete logs, raw material, archive directories, or `99-archive`
 without a tracing, audit, deep-health, or explicit-user reason. After the
-minimal read set, call `tracebook_runner.py context --query <task text>` and
-read only the returned schema-v2 authority pages. Context failure must be
-reported and may fall back to index navigation; do not pretend a structured
-search succeeded.
+minimal read set, call `tracebook_runner.py context-read-path --cwd
+<project-root> --query <task text>` and read only the returned schema-v2
+authority pages. It returns the last committed project snapshot without
+blocking on a same-project writer. A `PROJECT_ACTIVATION_REQUIRED` response
+means the target has not been registered and must be activated with `resolve`
+before project context can be read. Context failure must be reported and may
+fall back to index navigation; do not pretend a structured search succeeded.
 
 ## Read Related Projects Deliberately
 

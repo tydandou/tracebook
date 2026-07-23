@@ -83,8 +83,16 @@ class CaptureTest(unittest.TestCase):
             self.assertEqual(context.root, root)
             self.assertEqual(expected_scope, scope)
             self.assertEqual("capture", operation)
-            self.assertEqual(expected, set(updates))
+            pointer = (
+                context.root
+                / ".tracebook-state"
+                / "snapshots"
+                / context.record.project_id
+                / "current.json"
+            )
+            self.assertEqual(expected | {pointer}, set(updates))
             self.assertEqual(expected, set(result.changed_paths))
+            self.assertEqual((pointer,), committed.call_args.kwargs["final_targets"])
             self.assertFalse(
                 any(call.args[1] == "global-health" for call in locked.call_args_list)
             )

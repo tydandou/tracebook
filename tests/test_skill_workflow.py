@@ -129,6 +129,13 @@ class SkillWorkflowTest(unittest.TestCase):
         self.assertIn("recover-transactions", skill)
         self.assertIn("never discards, quarantines, or overwrites", skill)
 
+    def test_skill_uses_lock_free_snapshot_reads_for_registered_projects(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("context-read-path", skill)
+        self.assertIn("normal lock-free read", skill)
+        self.assertIn("PROJECT_ACTIVATION_REQUIRED", skill)
+
 
 if __name__ == "__main__":
     unittest.main()

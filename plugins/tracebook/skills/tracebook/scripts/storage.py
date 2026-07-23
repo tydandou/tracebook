@@ -4,6 +4,7 @@ import hashlib
 import os
 from pathlib import Path
 import tempfile
+import time
 
 from .errors import TracebookError
 
@@ -50,8 +51,15 @@ def atomic_write_bytes(path: Path, content: bytes, *, operation: str) -> None:
             handle.flush()
             os.fsync(handle.fileno())
 
-        os.replace(temporary_path, path)
-        temporary_path = None
+        for attempt in range(5):
+            try:
+                os.replace(temporary_path, path)
+                temporary_path = None
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
 
         if os.name == "posix":
             directory_descriptor = os.open(path.parent, os.O_RDONLY)

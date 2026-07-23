@@ -11,6 +11,7 @@ import re
 
 from .locking import file_lock
 from .project_registry import ProjectRecord, project_lock_name
+from .snapshots import prepare_project_snapshot_updates
 from .transaction import commit_updates
 
 
@@ -195,5 +196,22 @@ def capture_entity(root: Path, record: ProjectRecord, request: object, today: da
             updates[log] = _log(log.read_text(encoding="utf-8") if log.exists() else "# Project Log\n", request, event_id, today)
         for target in updates:
             target.parent.mkdir(parents=True, exist_ok=True)
-        changed = tuple(commit_updates(root, lock, "capture", updates))
-        return EntityResult(changed, (path,) if not exists else (), False, event_id)
+        transaction_updates = dict(updates)
+        final_targets: tuple[Path, ...] = ()
+        if getattr(request, "scope") == "project":
+            snapshot_updates, pointer = prepare_project_snapshot_updates(
+                root,
+                record,
+                updates,
+                operation="capture",
+            )
+            transaction_updates.update(snapshot_updates)
+            final_targets = (pointer,)
+        commit_updates(
+            root,
+            lock,
+            "capture",
+            transaction_updates,
+            final_targets=final_targets,
+        )
+        return EntityResult(tuple(updates), (path,) if not exists else (), False, event_id)
