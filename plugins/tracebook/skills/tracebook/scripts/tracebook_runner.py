@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from datetime import date
 import json
 import os
@@ -47,7 +47,9 @@ if __package__ in (None, ""):
         bind_remote,
         ensure_project,
         find_projects,
+        identity_advisory,
         load_projects,
+        origin_remote_warning,
         project_lock_name,
         registered_project,
         repository_root,
@@ -92,7 +94,9 @@ else:
         bind_remote,
         ensure_project,
         find_projects,
+        identity_advisory,
         load_projects,
+        origin_remote_warning,
         project_lock_name,
         registered_project,
         repository_root,
@@ -120,6 +124,8 @@ class ResolvedContext:
     record: ProjectRecord
     knowledge_language: str
     read_paths: tuple[Path, ...]
+    remote_warning: str | None = None
+    identity_advisory: str | None = None
 
 
 def initialize(root: Path, template: Path | None = None) -> InitializeResult:
@@ -138,6 +144,7 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
     recover_transactions(resolved_root)
     initialized = initialize(resolved_root)
     record = ensure_project(initialized.root, repository)
+    remote_warning, _ = origin_remote_warning(repository)
     ensure_health_layout(initialized.root)
     with file_lock(
         initialized.root,
@@ -159,6 +166,8 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
             project / "project-status.md",
             project / "health-status.md",
         ),
+        remote_warning=remote_warning,
+        identity_advisory=identity_advisory(record),
     )
 
 
@@ -176,7 +185,7 @@ def preflight(root: Path, cwd: Path) -> dict[str, object]:
         read_paths.extend(
             (project / "index.md", project / "project-status.md", project / "health-status.md")
         )
-    return {
+    payload: dict[str, object] = {
         "root": str(resolved_root),
         "target": str(target),
         "target_exists": target.exists(),
@@ -184,6 +193,16 @@ def preflight(root: Path, cwd: Path) -> dict[str, object]:
         "project": _project_payload(record) if record is not None else None,
         "read_paths": [str(path) for path in read_paths if path.is_file()],
     }
+    remote_warning, raw_remote = origin_remote_warning(target)
+    if remote_warning is not None:
+        payload["remote_warning"] = remote_warning
+        payload["raw_remote"] = raw_remote
+        payload["identity_source"] = "local-path"
+    if record is not None:
+        advisory = identity_advisory(record)
+        if advisory is not None:
+            payload["identity_advisory"] = advisory
+    return payload
 
 
 def capture(
@@ -492,7 +511,7 @@ def _parse_date(value: str | None) -> date:
 
 
 def _context_payload(context: ResolvedContext) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "root": str(context.root),
         "knowledge_language": context.knowledge_language,
         "project": {
@@ -506,6 +525,12 @@ def _context_payload(context: ResolvedContext) -> dict[str, object]:
         },
         "read_paths": [str(path) for path in context.read_paths],
     }
+    if context.remote_warning is not None:
+        payload["remote_warning"] = context.remote_warning
+        payload["identity_source"] = "local-path"
+    if context.identity_advisory is not None:
+        payload["identity_advisory"] = context.identity_advisory
+    return payload
 
 
 def _project_payload(record: ProjectRecord) -> dict[str, object]:
@@ -539,6 +564,15 @@ def _system_payload(record: object) -> dict[str, object]:
 
 def _write_payload(payload: dict[str, object]) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def _write_error(error: Exception) -> int:
+    """Emit a structured business error as JSON and return exit code 2."""
+    if isinstance(error, TracebookError):
+        _write_payload(error_payload(error))
+    else:
+        _write_payload({"error": f"INVALID_REQUEST: {error}"})
+    return 2
 
 
 def _user_summary(
@@ -868,12 +902,15 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     if args.command == "audit":
-        result = audit(
-            context,
-            _parse_date(args.today),
-            Path(args.source_root) if args.source_root else None,
-            args.scope,
-        )
+        try:
+            result = audit(
+                context,
+                _parse_date(args.today),
+                Path(args.source_root) if args.source_root else None,
+                args.scope,
+            )
+        except (TracebookError, ValueError) as error:
+            return _write_error(error)
         _write_payload(
             {
                 "changed_paths": [str(path) for path in result.changed_paths],
@@ -903,12 +940,18 @@ def main(argv: list[str] | None = None) -> int:
                 {"error": "INVALID_REQUEST: schema-v2 capture requires a non-empty operation"}
             )
             return 2
+        known = {field.name for field in fields(CaptureRequest)}
+        unknown = sorted(set(request_payload) - known)
+        if unknown:
+            _write_payload(
+                {"error": f"INVALID_REQUEST: unknown fields: {', '.join(unknown)}"}
+            )
+            return 2
         try:
             request = CaptureRequest(**request_payload)
             result = capture(context, request, _parse_date(args.today))
-        except ValueError as error:
-            _write_payload({"error": str(error)})
-            return 2
+        except (ValueError, TypeError) as error:
+            return _write_error(error)
         response = {
             "changed_paths": [str(path) for path in result.changed_paths],
             "new_paths": [str(path) for path in result.new_paths],
@@ -922,14 +965,17 @@ def main(argv: list[str] | None = None) -> int:
         _write_payload(response)
         return 0
 
-    result = check(
-        context,
-        [Path(path) for path in args.changed],
-        _parse_date(args.today),
-        Path(args.source_root) if args.source_root else None,
-        [Path(path) for path in args.new_path],
-        args.scope,
-    )
+    try:
+        result = check(
+            context,
+            [Path(path) for path in args.changed],
+            _parse_date(args.today),
+            Path(args.source_root) if args.source_root else None,
+            [Path(path) for path in args.new_path],
+            args.scope,
+        )
+    except (TracebookError, ValueError) as error:
+        return _write_error(error)
     _write_payload(
         {
             "check_type": result.report.check_type,

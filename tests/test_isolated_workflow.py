@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from plugins.tracebook.skills.tracebook.scripts.check_knowledge import run_check
-from plugins.tracebook.skills.tracebook.scripts.knowledge_root import ensure_knowledge_root
+from plugins.tracebook.skills.tracebook.scripts.knowledge_root import repair_knowledge_root
 from plugins.tracebook.skills.tracebook.scripts.project_registry import ensure_project
 
 
@@ -17,7 +17,7 @@ class IsolatedWorkflowTest(unittest.TestCase):
             (business / ".git").mkdir()
             root = base / "external"
 
-            ensure_knowledge_root(root)
+            repair_knowledge_root(root)
             record = ensure_project(root, business)
             project = root / record.relative_path
             report = run_check(root, project, [], date(2026, 7, 13))

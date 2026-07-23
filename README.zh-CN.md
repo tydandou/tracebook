@@ -18,6 +18,15 @@ runner 则用于集成、诊断和高级工作流。
 知识根目录与业务代码相互分离。因此，多个业务仓库可以共用一个本地知识系统，无需向
 这些业务仓库安装文件或服务。
 
+### 可量化的杠杆比
+
+由于捕获必须通过证据门禁，每条已保存的结论都声明了 Agent 若要重新推导它所需重读
+的源文件。复用这条结论通常比重新探索其引用来源更省 token——结论浓缩的分散源码
+越多，节省越明显。
+
+这是单次命中的杠杆，而非整个项目一定节省 token：净收益还取决于知识被复用的频率
+与一次性捕获成本。
+
 ## 核心能力
 
 - 使用项目、领域和模式三种范围，分别保存仓库专属事实、可复用业务知识和可复用工程实践。
@@ -45,7 +54,7 @@ runner 则用于集成、诊断和高级工作流。
 
 ## 安装
 
-`3.2.0` 已准备发布，对应 `v3.2.0` tag。该 tag 发布后，稳定版本请使用下面带 tag 的安装命令；
+`3.3.0` 已准备发布，对应 `v3.3.0` tag。该 tag 发布后，稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -53,7 +62,7 @@ runner 则用于集成、诊断和高级工作流。
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.2.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -74,38 +83,25 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 
 ### 更新或恢复 Codex 安装
 
-`codex plugin remove` 只会移除已安装的插件，不会删除知识根。如果
-`codex plugin add tracebook@tracebook` 提示找不到插件，说明当前 Codex 配置中缺少
-`tracebook` Marketplace 来源。先检查：
+移除插件不会删除知识根。如果 `codex plugin add tracebook@tracebook` 提示找不到
+插件，说明当前配置缺少 `tracebook` Marketplace 来源（用
+`codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace list
-```
-
-如果列表中没有 `tracebook`，先添加目标版本来源，再重新安装：
-
-```text
-codex plugin marketplace add tydandou/tracebook --ref v3.2.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.0
 codex plugin add tracebook@tracebook
 ```
 
-如果已配置的 `tracebook` 需要切换到新的 tag 来源，Codex 要求先替换 marketplace：
+如需切换到新的 tag 来源，先替换 marketplace：
 
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v3.2.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.0
 codex plugin add tracebook@tracebook
 ```
 
-本地 clone 更新时，先更新该 clone；仅当列表中没有 `tracebook` 时才重新添加本地
-Marketplace：
-
-```text
-git pull --ff-only
-codex plugin marketplace add .
-codex plugin add tracebook@tracebook
-```
+本地 clone 更新时，先 `git pull --ff-only`，再重新执行上面两条本地命令。
 
 ### Claude Code
 
@@ -123,6 +119,32 @@ claude --plugin-dir ./plugins/tracebook
 ```
 
 通过 marketplace 安装后，启动新会话或运行 `/reload-plugins`。
+
+### 更新或恢复 Claude Code 安装
+
+先刷新 marketplace 来源，再更新已安装的插件（重启后生效）：
+
+```text
+claude plugin marketplace update tracebook
+claude plugin update tracebook@tracebook
+```
+
+如果插件或 marketplace 缺失，用 `claude plugin list` 和
+`claude plugin marketplace list` 诊断，然后重新添加来源并安装：
+
+```text
+claude plugin marketplace add tydandou/tracebook
+claude plugin install tracebook@tracebook
+```
+
+如需切换到其他来源，先移除两者：
+
+```text
+claude plugin uninstall tracebook@tracebook
+claude plugin marketplace remove tracebook
+claude plugin marketplace add tydandou/tracebook
+claude plugin install tracebook@tracebook
+```
 
 ### Open Agent Skills
 
@@ -525,11 +547,11 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v3.2.0` 版本。
+`v3.3.0` 版本。
 
 ## 当前限制
 
-- `3.2.0` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
+- `3.3.0` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
   导入或与新格式混写；使用 v3 时请将 `TRACEBOOK_ROOT` 指向新的空知识根。
 
 - 项目 registry v1 不会被自动升级或与 project-id registry 混写；`resolve` 会返回明确的

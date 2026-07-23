@@ -10,6 +10,7 @@ import unicodedata
 from collections.abc import Mapping
 
 from .project_registry import ProjectRecord
+from .storage import read_bytes_shared
 
 
 FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
@@ -17,6 +18,10 @@ CURRENT = re.compile(r"(?ms)^## Current\n\n(.*?)(?=\n## History\n|\Z)")
 HISTORY = re.compile(r"(?ms)^### Version (\d+) — (\d{4}-\d{2}-\d{2})\n\n(.*?)(?=^### Version |\Z)")
 WORD = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 CJK = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
+STOPWORDS = {
+    "the", "a", "an", "is", "are", "of", "to", "and", "or", "in", "on", "for",
+    "with", "this", "that", "it", "as", "at", "by", "be", "was", "were", "will",
+}
 
 
 def _front(content: str) -> dict[str, str]:
@@ -113,7 +118,7 @@ def _candidates(root: Path, projects: tuple[ProjectRecord, ...], scope: str, inc
     history: list[Candidate] = []
     warnings: list[str] = []
     for source_path, path, source in _pages(root, projects, scope, project_knowledge_roots):
-        content = source_path.read_text(encoding="utf-8")
+        content = read_bytes_shared(source_path).decode("utf-8")
         fields = _front(content)
         required = {"schema_version", "knowledge_id", "type", "title", "status", "version", "updated"}
         if fields.get("schema_version") != "2" or not required <= fields.keys():
@@ -144,14 +149,30 @@ def _candidates(root: Path, projects: tuple[ProjectRecord, ...], scope: str, inc
 def _score(candidate: Candidate, query: str) -> int:
     normalized = _norm(query)
     query_tokens = _tokens(query)
+    title_tokens = _tokens(candidate.fields["title"])
+    evidence_tokens = _tokens(" ".join(_evidence(candidate.section)))
     score = 10 if candidate.fields.get("status") == "current" else 0
     if normalized == _norm(candidate.fields["knowledge_id"]): score += 100
-    title = _norm(candidate.fields["title"])
-    if normalized and normalized in title: score += 40
-    score += 12 * len(query_tokens & _tokens(candidate.fields["title"]))
-    score += 10 * len(query_tokens & _tokens(" ".join(_evidence(candidate.section))))
+    score += 12 * len(query_tokens & title_tokens)
+    score += 10 * len(query_tokens & evidence_tokens)
     score += 4 * len(query_tokens & _tokens(candidate.section))
     return score
+
+
+def _has_meaningful_overlap(candidate: Candidate, query: str) -> bool:
+    """Require real query overlap; lifecycle base score alone never returns."""
+    if _norm(query) == _norm(candidate.fields["knowledge_id"]):
+        return True
+    query_tokens = _tokens(query)
+    latin = query_tokens - STOPWORDS
+    effective = latin if latin else query_tokens
+    strong = (
+        _tokens(candidate.fields["title"])
+        | _tokens(" ".join(_evidence(candidate.section)))
+        | _tokens(candidate.fields["knowledge_id"])
+    )
+    body = _tokens(candidate.section)
+    return bool(effective & strong) or bool(effective & body)
 
 
 def context(root: Path, project: Path, project_id: str, name: str, slug: str, query: str, *, projects: tuple[ProjectRecord, ...] | None = None, include_history: bool = False, as_of: date | None = None, status: str = "current", kind: str | None = None, allowed_kinds: tuple[str, ...] | None = None, scope: str = "project", max_results: int = 10, max_chars: int = 20000, project_knowledge_roots: Mapping[str, Path] | None = None) -> dict[str, object]:
@@ -171,10 +192,9 @@ def context(root: Path, project: Path, project_id: str, name: str, slug: str, qu
     selected = [item for item in candidates if (status == "all" or item.fields["status"] == status) and (kind is None or item.fields["type"] == kind) and (allowed_kinds is None or item.fields["type"] in allowed_kinds)]
     ranked = sorted(
         (
-            (item, score)
+            (item, _score(item, query))
             for item in selected
-            for score in (_score(item, query),)
-            if score > (10 if item.fields.get("status") == "current" else 0)
+            if _has_meaningful_overlap(item, query)
         ),
         key=lambda pair: (-pair[1], pair[0].updated, pair[0].fields["knowledge_id"]),
     )

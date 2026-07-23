@@ -12,7 +12,7 @@ from uuid import uuid4
 from .errors import TracebookError
 from .locking import file_lock
 from .project_registry import ProjectRecord, project_lock_name
-from .storage import confined_path
+from .storage import confined_path, read_bytes_shared
 from .transaction import commit_updates
 
 
@@ -52,8 +52,8 @@ def _pointer_snapshot_id(root: Path, record: ProjectRecord, *, operation: str) -
     if not path.exists():
         return None
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        payload = json.loads(read_bytes_shared(path).decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise _error("INVALID_SNAPSHOT_POINTER", f"Invalid snapshot pointer at {path}: {error}", operation) from None
     snapshot_id = payload.get("snapshot_id") if isinstance(payload, dict) else None
     if (
