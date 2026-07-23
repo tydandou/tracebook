@@ -351,5 +351,107 @@ class InjectionGuardTest(unittest.TestCase):
                         date(2026, 7, 22))
 
 
+class PreflightBlockedTest(unittest.TestCase):
+    """A7: preflight returns blocked/required_action for unregistered targets."""
+
+    def test_unregistered_target_returns_blocked_with_argv(self) -> None:
+        from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import (
+            preflight,
+        )
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            repo = base / "repo"
+            repo.mkdir()
+            (repo / ".git").mkdir()
+
+            result = preflight(root, repo)
+
+            self.assertTrue(result["blocked"])
+            self.assertEqual("resolve_required", result["blocked_reason"])
+            action = result["required_action"]
+            self.assertEqual("resolve", action["name"])
+            self.assertEqual("context-read-path", action["then"])
+            argv = action["argv"]
+            self.assertIsInstance(argv, list)
+            self.assertEqual(sys.executable, argv[0])
+            self.assertTrue(argv[1].endswith("tracebook_runner.py"))
+            self.assertEqual("resolve", argv[2])
+            self.assertEqual("--root", argv[3])
+            self.assertEqual(str(root), argv[4])
+            self.assertEqual("--cwd", argv[5])
+            self.assertEqual(str(repo), argv[6])
+            # Read-only contract: root not created
+            self.assertFalse(root.exists())
+
+    def test_registered_target_returns_not_blocked(self) -> None:
+        from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import (
+            preflight,
+            resolve,
+        )
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            repo = base / "repo"
+            repo.mkdir()
+            (repo / ".git").mkdir()
+            resolve(root, repo)
+
+            result = preflight(root, repo)
+
+            self.assertTrue(result["registered"])
+            self.assertFalse(result["blocked"])
+            self.assertNotIn("blocked_reason", result)
+            self.assertNotIn("required_action", result)
+
+    def test_paths_with_spaces_preserve_argv_integrity(self) -> None:
+        from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import (
+            preflight,
+        )
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "my knowledge root"
+            repo = base / "my business repo"
+            repo.mkdir()
+            (repo / ".git").mkdir()
+
+            result = preflight(root, repo)
+
+            action = result["required_action"]
+            argv = action["argv"]
+            # Each path element must be exactly one complete string
+            self.assertEqual(str(root), argv[4])
+            self.assertEqual(str(repo), argv[6])
+            # exe, script, resolve, --root, root, --cwd, cwd
+            self.assertEqual(7, len(argv))
+
+    def test_execute_resolve_action_then_preflight_returns_unblocked(self) -> None:
+        from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import (
+            preflight,
+        )
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            repo = base / "repo"
+            repo.mkdir()
+            (repo / ".git").mkdir()
+
+            result1 = preflight(root, repo)
+            self.assertTrue(result1["blocked"])
+
+            subprocess.run(
+                result1["required_action"]["argv"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            result2 = preflight(root, repo)
+            self.assertTrue(result2["registered"])
+            self.assertFalse(result2["blocked"])
+            self.assertIsNotNone(result2["project"])
+            self.assertNotIn("required_action", result2)
+
+
 if __name__ == "__main__":
     unittest.main()

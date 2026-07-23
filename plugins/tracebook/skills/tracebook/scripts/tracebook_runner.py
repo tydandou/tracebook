@@ -190,9 +190,25 @@ def preflight(root: Path, cwd: Path) -> dict[str, object]:
         "target": str(target),
         "target_exists": target.exists(),
         "registered": record is not None,
+        "blocked": record is None,
         "project": _project_payload(record) if record is not None else None,
         "read_paths": [str(path) for path in read_paths if path.is_file()],
     }
+    if record is None:
+        payload["blocked_reason"] = "resolve_required"
+        payload["required_action"] = {
+            "name": "resolve",
+            "argv": [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "resolve",
+                "--root",
+                str(resolved_root),
+                "--cwd",
+                str(target),
+            ],
+            "then": "context-read-path",
+        }
     remote_warning, raw_remote = origin_remote_warning(target)
     if remote_warning is not None:
         payload["remote_warning"] = remote_warning
