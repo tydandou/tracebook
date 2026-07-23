@@ -7,6 +7,7 @@ from datetime import date
 from pathlib import Path
 import re
 import unicodedata
+from collections.abc import Mapping
 
 from .project_registry import ProjectRecord
 
@@ -80,27 +81,39 @@ def _pages(
     root: Path,
     projects: tuple[ProjectRecord, ...],
     scope: str,
-) -> list[tuple[Path, ProjectRecord | None]]:
-    selected: list[tuple[Path, ProjectRecord | None]] = []
+    project_knowledge_roots: Mapping[str, Path] | None = None,
+) -> list[tuple[Path, Path, ProjectRecord | None]]:
+    selected: list[tuple[Path, Path, ProjectRecord | None]] = []
     if scope in {"project", "all"}:
         for project in projects:
-            directory = root / project.relative_path / "knowledge"
-            selected.extend((path, project) for path in directory.rglob("*.md") if directory.exists())
+            directory = (project_knowledge_roots or {}).get(
+                project.project_id,
+                root / project.relative_path / "knowledge",
+            )
+            if directory.exists():
+                selected.extend(
+                    (
+                        path,
+                        root / project.relative_path / "knowledge" / path.relative_to(directory),
+                        project,
+                    )
+                    for path in directory.rglob("*.md")
+                )
     if scope in {"domain", "all"}:
         directory = root / "02-domain" / "knowledge"
-        selected.extend((path, None) for path in directory.glob("*.md") if directory.exists())
+        selected.extend((path, path, None) for path in directory.glob("*.md") if directory.exists())
     if scope in {"pattern", "all"}:
         directory = root / "03-patterns" / "knowledge"
-        selected.extend((path, None) for path in directory.glob("*.md") if directory.exists())
-    return sorted(selected, key=lambda item: item[0].as_posix())
+        selected.extend((path, path, None) for path in directory.glob("*.md") if directory.exists())
+    return sorted(selected, key=lambda item: item[1].as_posix())
 
 
-def _candidates(root: Path, projects: tuple[ProjectRecord, ...], scope: str, include_history: bool, as_of: date | None) -> tuple[list[Candidate], list[Candidate], list[str]]:
+def _candidates(root: Path, projects: tuple[ProjectRecord, ...], scope: str, include_history: bool, as_of: date | None, project_knowledge_roots: Mapping[str, Path] | None = None) -> tuple[list[Candidate], list[Candidate], list[str]]:
     current: list[Candidate] = []
     history: list[Candidate] = []
     warnings: list[str] = []
-    for path, source in _pages(root, projects, scope):
-        content = path.read_text(encoding="utf-8")
+    for source_path, path, source in _pages(root, projects, scope, project_knowledge_roots):
+        content = source_path.read_text(encoding="utf-8")
         fields = _front(content)
         required = {"schema_version", "knowledge_id", "type", "title", "status", "version", "updated"}
         if fields.get("schema_version") != "2" or not required <= fields.keys():
@@ -141,13 +154,20 @@ def _score(candidate: Candidate, query: str) -> int:
     return score
 
 
-def context(root: Path, project: Path, project_id: str, name: str, slug: str, query: str, *, projects: tuple[ProjectRecord, ...] | None = None, include_history: bool = False, as_of: date | None = None, status: str = "current", kind: str | None = None, allowed_kinds: tuple[str, ...] | None = None, scope: str = "project", max_results: int = 10, max_chars: int = 20000) -> dict[str, object]:
+def context(root: Path, project: Path, project_id: str, name: str, slug: str, query: str, *, projects: tuple[ProjectRecord, ...] | None = None, include_history: bool = False, as_of: date | None = None, status: str = "current", kind: str | None = None, allowed_kinds: tuple[str, ...] | None = None, scope: str = "project", max_results: int = 10, max_chars: int = 20000, project_knowledge_roots: Mapping[str, Path] | None = None) -> dict[str, object]:
     if not query.strip():
         raise ValueError("INVALID_REQUEST: query is required")
     if max_results < 1 or max_chars < 1:
         raise ValueError("INVALID_REQUEST: result limits must be positive")
     selected_projects = projects or (ProjectRecord(project_id, name, str(project.relative_to(root).as_posix())),)
-    candidates, available_history, warnings = _candidates(root, selected_projects, scope, include_history, as_of)
+    candidates, available_history, warnings = _candidates(
+        root,
+        selected_projects,
+        scope,
+        include_history,
+        as_of,
+        project_knowledge_roots,
+    )
     selected = [item for item in candidates if (status == "all" or item.fields["status"] == status) and (kind is None or item.fields["type"] == kind) and (allowed_kinds is None or item.fields["type"] in allowed_kinds)]
     ranked = sorted(
         (

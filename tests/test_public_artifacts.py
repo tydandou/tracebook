@@ -45,7 +45,7 @@ class PublicArtifactsTest(unittest.TestCase):
         )
 
         self.assertEqual("tracebook", manifest["name"])
-        self.assertEqual("3.1.0", manifest["version"])
+        self.assertEqual("3.2.0", manifest["version"])
         self.assertFalse((ROOT / "plugins" / "tracebook" / "hooks").exists())
         self.assertEqual("./skills/", manifest["skills"])
         self.assertEqual(
@@ -75,11 +75,11 @@ class PublicArtifactsTest(unittest.TestCase):
         )
 
         self.assertEqual("tracebook", manifest["name"])
-        self.assertEqual("3.1.0", manifest["version"])
+        self.assertEqual("3.2.0", manifest["version"])
         self.assertEqual("tracebook", marketplace["name"])
         self.assertIn("Durable external project knowledge", marketplace["description"])
         self.assertEqual("./plugins/tracebook", marketplace["plugins"][0]["source"])
-        self.assertEqual("3.1.0", marketplace["plugins"][0]["version"])
+        self.assertEqual("3.2.0", marketplace["plugins"][0]["version"])
 
     def test_readme_declares_canonical_markdown_link_policy(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -97,6 +97,7 @@ class PublicArtifactsTest(unittest.TestCase):
         self.assertIn("capture", readme)
         self.assertIn("check", readme)
         self.assertIn("audit", readme)
+        self.assertIn("## [3.2.0] - 2026-07-23", changelog)
         self.assertIn("## [3.1.0] - 2026-07-23", changelog)
         self.assertIn("## [3.0.0] - 2026-07-22", changelog)
         self.assertIn("## [2.1.0] - 2026-07-22", changelog)
@@ -146,17 +147,17 @@ class PublicArtifactsTest(unittest.TestCase):
         normalized_chinese = " ".join(chinese.split())
 
         self.assertNotIn("release candidate", english)
-        self.assertIn("The `3.1.0` release is published", english)
+        self.assertIn("The `3.2.0` release is prepared", english)
         self.assertIn("marketplace source is absent", english)
         self.assertIn("codex plugin marketplace remove tracebook", english)
         self.assertNotIn("optimized for project core-page", english)
         self.assertIn("every active durable Markdown page", english)
         self.assertIn("each level-two knowledge entry", english)
         self.assertIn("version mismatch is an explicit conflict", english)
-        self.assertIn("deterministic `context` retrieval", english)
+        self.assertIn("lock-free snapshot reader", english)
 
         self.assertNotIn("发布候选", chinese)
-        self.assertIn("`3.1.0` 已正式发布", chinese)
+        self.assertIn("`3.2.0` 已准备发布", chinese)
         self.assertIn("codex plugin marketplace list", chinese)
         self.assertNotIn("针对 project 核心页面的命名方式优化", chinese)
         self.assertIn("每个活跃的持久 Markdown 页面", normalized_chinese)

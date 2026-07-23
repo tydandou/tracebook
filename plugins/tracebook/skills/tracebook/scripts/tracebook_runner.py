@@ -53,6 +53,7 @@ if __package__ in (None, ""):
         repository_root,
         update_project,
     )
+    from scripts.snapshots import ensure_project_snapshot, project_knowledge_root
     from scripts.system_registry import add_relation, bind_project as bind_system_project, create_system, get_system
     from scripts.transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 else:
@@ -97,6 +98,7 @@ else:
         repository_root,
         update_project,
     )
+    from .snapshots import ensure_project_snapshot, project_knowledge_root
     from .system_registry import add_relation, bind_project as bind_system_project, create_system, get_system
     from .transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 
@@ -143,6 +145,7 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
         operation="resolve",
     ):
         ensure_health_layout(initialized.root, record)
+    ensure_project_snapshot(initialized.root, record)
     rebuild_global_health(initialized.root)
     project = initialized.root / record.relative_path
     return ResolvedContext(
@@ -231,7 +234,14 @@ def retrieve_context(
                 selected.append(record)
                 selected_ids.add(record.project_id)
     allowed_kinds = ("architecture", "module", "decision") if profile == "reference" else None
-    return build_context(
+    knowledge_roots: dict[str, Path] = {}
+    legacy_projects: list[str] = []
+    for project in selected:
+        knowledge_root, mode = project_knowledge_root(resolved.root, project, operation="context")
+        knowledge_roots[project.project_id] = knowledge_root
+        if mode == "legacy":
+            legacy_projects.append(project.project_id)
+    payload = build_context(
         resolved.root,
         resolved.root / resolved.record.relative_path,
         resolved.record.project_id,
@@ -247,7 +257,13 @@ def retrieve_context(
         scope=scope,
         max_results=max_results,
         max_chars=max_chars,
+        project_knowledge_roots=knowledge_roots,
     )
+    if legacy_projects:
+        payload["warnings"].append(
+            "legacy snapshot fallback: " + ", ".join(sorted(legacy_projects))
+        )
+    return payload
 
 
 def read_context(
@@ -280,7 +296,14 @@ def read_context(
             selected.append(record)
     primary = selected[0]
     allowed_kinds = ("architecture", "module", "decision") if profile == "reference" else None
-    return build_context(
+    knowledge_roots: dict[str, Path] = {}
+    legacy_projects: list[str] = []
+    for project in selected:
+        knowledge_root, mode = project_knowledge_root(resolved_root, project, operation="context-read")
+        knowledge_roots[project.project_id] = knowledge_root
+        if mode == "legacy":
+            legacy_projects.append(project.project_id)
+    payload = build_context(
         resolved_root,
         resolved_root / primary.relative_path,
         primary.project_id,
@@ -296,7 +319,32 @@ def read_context(
         scope=scope,
         max_results=max_results,
         max_chars=max_chars,
+        project_knowledge_roots=knowledge_roots,
     )
+    if legacy_projects:
+        payload["warnings"].append(
+            "legacy snapshot fallback: " + ", ".join(sorted(legacy_projects))
+        )
+    return payload
+
+
+def read_context_for_path(
+    root: Path,
+    cwd: Path,
+    query: str,
+    **options: object,
+) -> dict[str, object]:
+    """Read an already activated target without locks or maintenance writes."""
+    target = repository_root(cwd)
+    resolved_root, target = validate_external_root(root, target)
+    record = registered_project(resolved_root, target)
+    if record is None:
+        raise TracebookError(
+            "PROJECT_ACTIVATION_REQUIRED",
+            f"Target {target} is not registered; run resolve with write permission first",
+            "context-read-path",
+        )
+    return read_context(resolved_root, (record.project_id,), query, **options)
 
 
 @dataclass(frozen=True)
@@ -587,6 +635,19 @@ def main(argv: list[str] | None = None) -> int:
     context_read_parser.add_argument("--max-results", type=int, default=10)
     context_read_parser.add_argument("--max-chars", type=int, default=20000)
 
+    context_read_path_parser = commands.add_parser("context-read-path")
+    context_read_path_parser.add_argument("--root")
+    context_read_path_parser.add_argument("--cwd", required=True)
+    context_read_path_parser.add_argument("--query", required=True)
+    context_read_path_parser.add_argument("--include-history", action="store_true")
+    context_read_path_parser.add_argument("--as-of")
+    context_read_path_parser.add_argument("--status", default="current")
+    context_read_path_parser.add_argument("--kind")
+    context_read_path_parser.add_argument("--profile", choices=("default", "reference"), default="default")
+    context_read_path_parser.add_argument("--scope", choices=("project", "domain", "pattern", "all"), default="project")
+    context_read_path_parser.add_argument("--max-results", type=int, default=10)
+    context_read_path_parser.add_argument("--max-chars", type=int, default=20000)
+
     for name in ("resolve", "capture", "check", "audit", "context"):
         command = commands.add_parser(name)
         command.add_argument("--root")
@@ -718,6 +779,26 @@ def main(argv: list[str] | None = None) -> int:
             _write_payload(read_context(
                 root,
                 tuple(args.project_id),
+                args.query,
+                include_history=args.include_history,
+                as_of=_parse_date(args.as_of) if args.as_of else None,
+                status=args.status,
+                kind=args.kind,
+                profile=args.profile,
+                scope=args.scope,
+                max_results=args.max_results,
+                max_chars=args.max_chars,
+            ))
+            return 0
+        except (TracebookError, ValueError) as error:
+            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
+            return 2
+
+    if args.command == "context-read-path":
+        try:
+            _write_payload(read_context_for_path(
+                root,
+                Path(args.cwd),
                 args.query,
                 include_history=args.include_history,
                 as_of=_parse_date(args.as_of) if args.as_of else None,

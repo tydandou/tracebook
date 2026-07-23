@@ -1,7 +1,27 @@
 # Changelog
 
-This project follows semantic versioning. Releases are created only after the
-matching Git tag is published.
+This project follows semantic versioning. Release entries are tagged locally
+before the matching Git tag is published.
+
+## [3.2.0] - 2026-07-23
+
+### Added
+
+- Immutable per-project knowledge snapshots and atomic snapshot pointers for
+  lock-free, complete context reads.
+- `context-read-path` for reading an already activated target without root
+  initialization, project registration, health maintenance, transaction
+  recovery, or lock-file writes.
+
+### Changed
+
+- Project captures now commit materialized authority pages, snapshot pages, and
+  the snapshot pointer in one recoverable project-scoped transaction. The
+  pointer is replaced last, so readers observe the prior or next complete
+  snapshot rather than a partial multi-file update.
+- `resolve` seeds a snapshot for an existing activated project; the Skill now
+  uses `preflight` plus `context-read-path` as its normal read path and reserves
+  `resolve` for activation and maintenance.
 
 ## [3.1.0] - 2026-07-23
 

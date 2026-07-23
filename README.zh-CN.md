@@ -45,7 +45,7 @@ runner 则用于集成、诊断和高级工作流。
 
 ## 安装
 
-`3.1.0` 已正式发布，对应 `v3.1.0` tag。稳定版本请使用下面带 tag 的安装命令；
+`3.2.0` 已准备发布，对应 `v3.2.0` tag。该 tag 发布后，稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -53,7 +53,7 @@ runner 则用于集成、诊断和高级工作流。
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.1.0
+codex plugin marketplace add tydandou/tracebook --ref v3.2.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -85,7 +85,7 @@ codex plugin marketplace list
 如果列表中没有 `tracebook`，先添加目标版本来源，再重新安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.1.0
+codex plugin marketplace add tydandou/tracebook --ref v3.2.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -94,7 +94,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v3.1.0
+codex plugin marketplace add tydandou/tracebook --ref v3.2.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -239,6 +239,19 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" resolve \
 `resolve` 只在已配置的外部根目录中初始化或修复缺失的模板文件。每个项目拥有不可变的
 `project_id`；当前项目路径和可选的标准化 Git remote 都会解析到该 ID。它返回 `root`、
 `project` 和有序的 `read_paths`，不会搜索或导入另一个现有知识根目录。
+
+`resolve` 是项目激活与维护命令，可能获得写锁。日常读取已激活项目的知识时，应使用下方无锁快照读取命令。
+
+### 无阻塞读取已激活项目
+
+已登记项目的日常开发读取使用 `context-read-path`。它不会初始化知识根、注册项目、修复健康状态、恢复事务或创建锁文件：
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
+  --root "$TRACEBOOK_ROOT" --cwd . --query "订单重试规则"
+```
+
+如果返回 `PROJECT_ACTIVATION_REQUIRED`，先在具有写权限的环境执行一次 `resolve`，再重试读取。项目知识写入会生成完整的不可变快照；只有全部页面准备完成后才原子切换指针。因此读取方只能看到旧完整快照或新完整快照，不会看到部分写入。
 
 ### 更新项目位置或 remote
 
@@ -396,6 +409,7 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" audit \
 | `preflight` | `target`、`registered`、`project`、`read_paths` | 只读检查目标；不初始化、不注册 |
 | `project-search` | `projects` | 按名称、ID 或已登记信号查找项目候选项 |
 | `context-read` | `current_context`、`historical_context`、`warnings`、`truncated` | 不激活目标项目，仅读取选定的已登记项目 |
+| `context-read-path` | `current_context`、`historical_context`、`warnings`、`truncated` | 无锁读取已激活目标的最近一次完整项目快照 |
 | `project-update` | `project` | 显式更新项目名称或完整 location 列表 |
 | `project-bind-remote` | `project` | 将一个规范化 remote 绑定到既有项目 |
 | `system-create` | `system` | 创建显式的多项目系统 |
@@ -511,11 +525,11 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v3.1.0` 版本。
+`v3.2.0` 版本。
 
 ## 当前限制
 
-- `3.1.0` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
+- `3.2.0` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
   导入或与新格式混写；使用 v3 时请将 `TRACEBOOK_ROOT` 指向新的空知识根。
 
 - 项目 registry v1 不会被自动升级或与 project-id registry 混写；`resolve` 会返回明确的

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
@@ -8,6 +8,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import time
 from typing import Any
 import uuid
 
@@ -256,7 +257,14 @@ def _sync_directory(path: Path) -> None:
 
 def _replace_target(target: Path, staged: Path, *, operation: str) -> None:
     del operation
-    os.replace(staged, target)
+    for attempt in range(5):
+        try:
+            os.replace(staged, target)
+            break
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
     _sync_directory(target.parent)
     if staged.parent != target.parent:
         _sync_directory(staged.parent)
@@ -291,6 +299,7 @@ def commit_updates(
     updates: Mapping[Path, str],
     *,
     transaction_id: str | None = None,
+    final_targets: Iterable[Path] = (),
 ) -> tuple[Path, ...]:
     if not updates:
         return ()
@@ -305,7 +314,18 @@ def commit_updates(
             raise _failure(operation, f"Duplicate transaction target {confined_target}")
         seen_targets.add(confined_target)
         ordered.append((confined_target, content))
-    ordered.sort(key=lambda item: item[0].relative_to(resolved_root).as_posix())
+    final_paths = {
+        confined_path(resolved_root, target, operation=operation)
+        for target in final_targets
+    }
+    if not final_paths <= seen_targets:
+        raise _failure(operation, "Final transaction target is not part of updates")
+    ordered.sort(
+        key=lambda item: (
+            item[0] in final_paths,
+            item[0].relative_to(resolved_root).as_posix(),
+        )
+    )
 
     transactions_dir = _transactions_directory(resolved_root, operation=operation)
     selected_id = transaction_id if transaction_id is not None else str(uuid.uuid4())

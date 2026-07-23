@@ -31,6 +31,9 @@ installing files or services into those repositories.
   `Superseded`, and `Historical` lifecycle states.
 - Deterministic project resolution, governed writes, index/status/log updates,
   and structured JSON results.
+- Immutable per-project knowledge snapshots with atomic pointers, so normal
+  context reads do not acquire locks and concurrent work on different projects
+  remains isolated.
 - Immutable project IDs with local paths and normalized Git remotes resolving to
   the same project, so clones of one remote share knowledge while unrelated
   projects remain isolated.
@@ -59,16 +62,16 @@ installing files or services into those repositories.
 
 ## Install
 
-The `3.1.0` release is published under the `v3.1.0` tag. Use the tagged
-installation commands for the stable release, or the local development loading
-instructions when working from a clone.
+The `3.2.0` release is prepared for the `v3.2.0` tag. After that tag is
+published, use the tagged installation commands for the stable release, or use
+the local development loading instructions when working from a clone.
 
 ### Codex
 
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.1.0
+codex plugin marketplace add tydandou/tracebook --ref v3.2.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -102,7 +105,7 @@ codex plugin marketplace list
 If `tracebook` is absent, add the intended source before installing again:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.1.0
+codex plugin marketplace add tydandou/tracebook --ref v3.2.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -112,7 +115,7 @@ source, Codex requires replacing the marketplace before adding it again:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v3.1.0
+codex plugin marketplace add tydandou/tracebook --ref v3.2.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -199,9 +202,9 @@ health machine fields remain stable English protocol values.
 3. Ask for normal repository work, such as: `Diagnose this issue and verify the
    root cause.` The broader Skill metadata lets Codex select Tracebook without
    requiring its name in every prompt.
-4. Work normally. Tracebook resolves the external root and project identity,
-   then uses deterministic `context` retrieval to select task-relevant Current
-   authority pages.
+4. Work normally. Tracebook preflights the target and, for an activated project,
+   reads the latest committed project snapshot without taking a lock. It uses
+   `resolve` only when activation or maintenance requires write permission.
 5. At task end, it captures and checks only a new, verified durable conclusion.
    Routine work with no such conclusion needs no extra skip report.
 
@@ -275,7 +278,25 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" resolve \
 external root. Every project has an immutable `project_id`; the current local
 path and optional normalized Git remote resolve to that ID. It returns `root`,
 `project`, and the ordered `read_paths`. It does not search for or import a
-different existing knowledge root.
+different existing knowledge root. It is an activation/maintenance command and
+may acquire write locks.
+
+### Read an activated project without blocking
+
+For ordinary development work on an already registered project, use the
+lock-free snapshot reader. It does not initialize the root, register a project,
+repair health, recover transactions, or create lock files:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
+  --root "$TRACEBOOK_ROOT" --cwd . --query "order retry behavior"
+```
+
+If it returns `PROJECT_ACTIVATION_REQUIRED`, run `resolve` once with write
+permission, then retry the read. A project capture builds a complete immutable
+knowledge snapshot and atomically switches its pointer only after all snapshot
+pages are ready. Readers therefore see the previous or the next complete
+snapshot, never a partial write.
 
 ### Update a project location or remote
 
@@ -482,6 +503,7 @@ evidence before any finding becomes a durable conclusion.
 | `preflight` | `target`, `registered`, `project`, `read_paths` | Read-only target inspection; does not initialize or register |
 | `project-search` | `projects` | Deterministic registered-project candidates |
 | `context-read` | `current_context`, `historical_context`, `warnings`, `truncated` | Read selected registered projects without activating a target |
+| `context-read-path` | `current_context`, `historical_context`, `warnings`, `truncated` | Lock-free read of an already activated target's committed project snapshot |
 | `project-update` | `project` | Explicitly update a project name or complete location list |
 | `project-bind-remote` | `project` | Bind a normalized remote to an existing project |
 | `system-create` | `system` | Create an explicit multi-project system |
@@ -618,11 +640,11 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v3.1.0` release.
+resolves the published `v3.2.0` release.
 
 ## Current Limitations
 
-- `3.1.0` retains schema-v2 authority pages and registry v2. Existing registry-v1
+- `3.2.0` retains schema-v2 authority pages and registry v2. Existing registry-v1
   knowledge roots are intentionally not migrated, imported, or mixed with the
   new format; point `TRACEBOOK_ROOT` at a new empty root for v3 work.
 
