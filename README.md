@@ -72,16 +72,16 @@ depend on how often knowledge is reused versus the one-time capture cost.
 
 ## Install
 
-The `3.3.0` release is prepared for the `v3.3.0` tag. After that tag is
-published, use the tagged installation commands for the stable release, or use
-the local development loading instructions when working from a clone.
+The `3.3.1` release is available as the `v3.3.1` tag. Use the tagged
+installation commands for the stable release, or use the local development
+loading instructions when working from a clone.
 
 ### Codex
 
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.3.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -109,7 +109,7 @@ Removing a plugin never touches its knowledge root. If
 `codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.3.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -118,7 +118,7 @@ To move to a different tagged source, replace the marketplace first:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v3.3.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -664,11 +664,11 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v3.3.0` release.
+resolves the published `v3.3.1` release.
 
 ## Current Limitations
 
-- `3.3.0` retains schema-v2 authority pages and registry v2. Existing registry-v1
+- `3.3.1` retains schema-v2 authority pages and registry v2. Existing registry-v1
   knowledge roots are intentionally not migrated, imported, or mixed with the
   new format; point `TRACEBOOK_ROOT` at a new empty root for v3 work.
 

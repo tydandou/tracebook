@@ -54,7 +54,7 @@ runner 则用于集成、诊断和高级工作流。
 
 ## 安装
 
-`3.3.0` 已准备发布，对应 `v3.3.0` tag。该 tag 发布后，稳定版本请使用下面带 tag 的安装命令；
+`3.3.1` 已发布，对应 `v3.3.1` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -62,7 +62,7 @@ runner 则用于集成、诊断和高级工作流。
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.3.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -88,7 +88,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.3.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -97,7 +97,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v3.3.0
+codex plugin marketplace add tydandou/tracebook --ref v3.3.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -547,11 +547,11 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v3.3.0` 版本。
+`v3.3.1` 版本。
 
 ## 当前限制
 
-- `3.3.0` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
+- `3.3.1` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
   导入或与新格式混写；使用 v3 时请将 `TRACEBOOK_ROOT` 指向新的空知识根。
 
 - 项目 registry v1 不会被自动升级或与 project-id registry 混写；`resolve` 会返回明确的

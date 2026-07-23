@@ -1,7 +1,7 @@
 """End-to-end test: preflight → resolve → capture → context-read-path.
 
 Covers the complete Tracebook workflow from an unregistered target through
-durable knowledge write and read-back, verifying the v3.3.0 blocked/required_action
+durable knowledge write and read-back, verifying the v3.3.1 blocked/required_action
 protocol at the preflight stage.
 """
 
