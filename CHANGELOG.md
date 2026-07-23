@@ -3,6 +3,16 @@
 This project follows semantic versioning. Release entries are tagged locally
 before the matching Git tag is published.
 
+## [3.3.1] - 2026-07-23
+
+### Added
+
+- `preflight` now returns `blocked`/`blocked_reason`/`required_action` so
+  that unregistered targets carry a machine-readable next step instead of a
+  silent empty result. The `required_action.argv` array lets the agent execute
+  `resolve` without guessing the Python executable, runner location, or root
+  path.
+
 ## [3.3.0] - 2026-07-23
 
 ### Added

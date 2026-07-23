@@ -35,6 +35,9 @@ business code and long-lived project analysis separate.
    --cwd <project-root> --query <task text>`. This is the normal lock-free read
    path: it does not initialize, register, repair health, recover transactions,
    or create lock files.
+   If `preflight` returns `blocked: true`, execute the command in
+   `required_action.argv`, then run `context-read-path` before beginning
+   software-development work.
 3. Run `$SKILL_DIR/scripts/tracebook_runner.py resolve --root <external-root>
    --cwd <project-root>` only to activate an unregistered project, repair a
    root, seed a legacy project's first snapshot, or before a write/health
