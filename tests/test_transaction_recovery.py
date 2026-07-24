@@ -679,13 +679,15 @@ class TransactionRecoveryTest(unittest.TestCase):
             (repository / ".git").mkdir(parents=True)
             context = resolve(root, repository)
             request = CaptureRequest(
+                operation="create",
+                knowledge_id="recovered-capture-rule",
                 scope="project",
                 kind="business-rule",
                 category="business-rules",
                 title="Recovered capture rule",
                 body="Every managed capture target must roll forward together.",
                 evidence=("src/recovery.py:L1-L12",),
-                status="Current",
+                status="current",
                 write_intent="durable",
                 content_kind="knowledge",
             )
@@ -721,15 +723,18 @@ class TransactionRecoveryTest(unittest.TestCase):
             recovered_context = resolve(root, repository)
 
             project = recovered_context.root / recovered_context.record.relative_path
-            document = project / "business-rules.md"
+            document = project / "knowledge" / "business-rule" / "recovered-capture-rule.md"
             index = project / "index.md"
             status = project / "project-status.md"
             log = project / "logs" / "2026-07.md"
-            marker = "<!-- tracebook:event:"
             self.assertIn("Recovered capture rule", document.read_text(encoding="utf-8"))
-            self.assertIn("business-rules.md", index.read_text(encoding="utf-8"))
-            self.assertIn("Recovered capture rule", status.read_text(encoding="utf-8"))
-            self.assertEqual(1, log.read_text(encoding="utf-8").count(marker))
+            self.assertEqual(
+                1,
+                document.read_text(encoding="utf-8").count("<!-- tracebook:event:"),
+            )
+            self.assertIn("recovered-capture-rule.md", index.read_text(encoding="utf-8"))
+            self.assertIn("recovered-capture-rule", status.read_text(encoding="utf-8"))
+            self.assertEqual(1, log.read_text(encoding="utf-8").count("recovered-capture-rule"))
             self.assertEqual([], list(transactions.iterdir()))
 
     def test_resolve_recovers_crashed_entity_lifecycle_transition(self) -> None:
@@ -740,25 +745,30 @@ class TransactionRecoveryTest(unittest.TestCase):
             (repository / ".git").mkdir(parents=True)
             context = resolve(root, repository)
             current = CaptureRequest(
+                operation="create",
+                knowledge_id="keep-one-lifecycle-authority",
                 scope="project",
                 kind="decision",
                 category="adr-0001",
                 title="Keep one lifecycle authority",
                 body="The original current history must survive recovery.",
                 evidence=("src/recovery.py:L20-L32",),
-                status="Current",
+                status="current",
                 write_intent="durable",
                 content_kind="knowledge",
             )
             capture(context, current, date(2026, 7, 13))
             retired = CaptureRequest(
+                operation="change-status",
+                knowledge_id="keep-one-lifecycle-authority",
+                expected_version=1,
                 scope="project",
                 kind="decision",
                 category="adr-0001",
                 title="Keep one lifecycle authority",
                 body="The retired event must roll forward with every target.",
                 evidence=("src/recovery.py:L34-L42",),
-                status="Historical",
+                status="deprecated",
                 write_intent="durable",
                 content_kind="knowledge",
             )
@@ -797,32 +807,24 @@ class TransactionRecoveryTest(unittest.TestCase):
             marker = f"<!-- tracebook:event:{retry.event_id} -->"
 
             project = recovered.root / recovered.record.relative_path
-            active = project / "decisions" / "adr-0001.md"
-            archived = project / "archive" / "decisions" / "adr-0001.md"
+            authority_page = project / "knowledge" / "decision" / "keep-one-lifecycle-authority.md"
             index = project / "index.md"
             status = project / "project-status.md"
             log = project / "logs" / "2026-07.md"
-            active_content = active.read_text(encoding="utf-8")
-            authority = archived.read_text(encoding="utf-8")
-            self.assertIn("<!-- tracebook:managed-pointer -->", active_content)
-            self.assertNotIn("type: decision", active_content)
+            authority = authority_page.read_text(encoding="utf-8")
             self.assertIn("type: decision", authority)
-            self.assertIn("status: historical", authority)
-            self.assertIn(current.body, authority)
+            self.assertIn("status: deprecated", authority)
+            self.assertIn("version: 2", authority.split("---", 2)[1])
+            # Current section carries the retired event; History preserves the original.
             self.assertIn(retired.body, authority)
-            self.assertEqual(1, index.read_text(encoding="utf-8").count("- [adr-0001]("))
-            self.assertIn(
-                "archive/decisions/adr-0001.md",
-                index.read_text(encoding="utf-8"),
-            )
-            self.assertIn(retired.title, status.read_text(encoding="utf-8"))
+            self.assertIn(current.body, authority)
+            self.assertIn("### Version 1 — 2026-07-13", authority)
+            self.assertEqual(1, authority.count(marker))
+            self.assertEqual(1, index.read_text(encoding="utf-8").count("keep-one-lifecycle-authority.md"))
+            self.assertIn("keep-one-lifecycle-authority", status.read_text(encoding="utf-8"))
             self.assertEqual(
                 1,
-                log.read_text(encoding="utf-8").count(marker),
-            )
-            self.assertIn(
-                f"<!-- tracebook:last-event:{retry.event_id} -->",
-                status.read_text(encoding="utf-8"),
+                log.read_text(encoding="utf-8").count(retry.event_id),
             )
             self.assertEqual([], list(transactions.iterdir()))
 

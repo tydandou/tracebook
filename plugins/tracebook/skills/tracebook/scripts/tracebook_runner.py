@@ -16,8 +16,6 @@ if __package__ in (None, ""):
         CaptureRequest,
         CaptureResult,
         capture_knowledge,
-        capture_lock_name,
-        validate_capture,
     )
     from scripts.check_knowledge import (
         CheckReport,
@@ -63,8 +61,6 @@ else:
         CaptureRequest,
         CaptureResult,
         capture_knowledge,
-        capture_lock_name,
-        validate_capture,
     )
     from .check_knowledge import (
         CheckReport,

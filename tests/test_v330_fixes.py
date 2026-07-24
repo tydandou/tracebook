@@ -60,6 +60,46 @@ class EvidenceGateTest(unittest.TestCase):
             self._v2_request(status="pending", evidence=())
         )
 
+    def test_current_capture_rejects_blank_or_unclassified_evidence(self) -> None:
+        for evidence in (
+            ("  ",),
+            ("observed during investigation",),
+            ("test:  ",),
+            ("command:\t",),
+            ("human:",),
+            ("README",),
+            ("ftp://host/file",),
+            ("HTTP://host/file",),
+            ("ssh://host/file.py",),
+            ("/absolute/source.py:L2",),
+            (r"C:\absolute\source.py:L2",),
+            ("C:relative/file.py",),
+            ("src/../secret.py:L2",),
+        ):
+            with self.subTest(evidence=evidence):
+                with self.assertRaisesRegex(ValueError, "evidence"):
+                    _enforce_write_intent_and_evidence(
+                        self._v2_request(evidence=evidence)
+                    )
+
+    def test_capture_accepts_every_approved_evidence_form(self) -> None:
+        approved = (
+            "http://example.test/incidents/42",
+            "https://example.test/incidents/42",
+            "test: python -m unittest tests.test_capture",
+            "command: git show --stat HEAD",
+            "human: confirmed by the service owner",
+            "src/order/status.ts:L20-L38",
+            r"src\order\status.ts:L20",
+            "README.md",
+            "generated/schema",
+        )
+        for evidence in approved:
+            with self.subTest(evidence=evidence):
+                _enforce_write_intent_and_evidence(
+                    self._v2_request(evidence=(evidence,))
+                )
+
 
 class RemoteWarningTest(unittest.TestCase):
     """A3: unsupported origin remote must warn, not crash."""
