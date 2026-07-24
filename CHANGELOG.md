@@ -3,6 +3,15 @@
 This project follows semantic versioning. Release entries are tagged locally
 before the matching Git tag is published.
 
+## [3.3.2] - 2026-07-24
+
+### Removed
+
+- Legacy aggregate-document capture path: the schema-v2 entity path
+  (`knowledge_entity.py`) is now the only write path. The CLI already required
+  `operation` and `knowledge_id` since v3.3.0, so the legacy path was
+  unreachable through normal usage.
+
 ## [3.3.1] - 2026-07-23
 
 ### Added
