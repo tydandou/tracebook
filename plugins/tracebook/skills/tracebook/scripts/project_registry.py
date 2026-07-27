@@ -37,12 +37,12 @@ class ProjectRecord:
 
     @property
     def identity(self) -> str:
-        """Compatibility name for callers that need the project owner key."""
+        """The stable project identity key, i.e. the project_id."""
         return self.project_id
 
     @property
     def slug(self) -> str:
-        """Compatibility name for the stable, human-readable project directory."""
+        """The project's directory basename under its knowledge root."""
         return PurePosixPath(self.relative_path).name
 
 

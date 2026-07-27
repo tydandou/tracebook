@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from plugins.tracebook.skills.tracebook.scripts.check_knowledge import run_check
+from plugins.tracebook.skills.tracebook.scripts.check_knowledge import CheckReport, run_check
 
 
 class KnowledgeCheckTest(unittest.TestCase):
@@ -143,6 +143,105 @@ class KnowledgeCheckTest(unittest.TestCase):
                 run_check(root, project, [page], date(2026, 7, 14))
 
             self.assertEqual(reads, 1)
+
+    def test_manual_authority_page_cannot_probe_evidence_outside_source_root(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            project = root / "01-projects" / "sample"
+            page = project / "knowledge" / "decision" / "unsafe-evidence.md"
+            page.parent.mkdir(parents=True)
+            self._health_status(root)
+            page.write_text(
+                "---\n"
+                "schema_version: 2\n"
+                "type: decision\n"
+                "scope: project\n"
+                "project: prj-test\n"
+                "knowledge_id: unsafe-evidence\n"
+                "title: Unsafe evidence\n"
+                "status: current\n"
+                "version: 1\n"
+                "created: 2026-07-01\n"
+                "updated: 2026-07-01\n"
+                "replacement_knowledge_id: null\n"
+                "---\n\n"
+                "# Unsafe evidence\n\n"
+                "## Current\n\nConclusion.\n\n"
+                "Evidence:\n- `../../outside.txt:L1`\n\n"
+                "<!-- tracebook:event:0123456789abcdef -->\n\n"
+                "## History\n",
+                encoding="utf-8",
+            )
+            source_root = root / "business"
+            source_root.mkdir()
+
+            report = run_check(
+                root,
+                project,
+                [page],
+                date(2026, 7, 14),
+                source_root,
+            )
+
+            self.assertTrue(
+                any("invalid Current file evidence" in issue for issue in report.entity_issues)
+            )
+            self.assertFalse(
+                any("outside.txt" in candidate.detail for candidate in report.review_candidates)
+            )
+
+    def test_symlinked_evidence_outside_source_root_is_a_strong_candidate(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            project = root / "01-projects" / "sample"
+            page = project / "knowledge" / "decision" / "linked-evidence.md"
+            page.parent.mkdir(parents=True)
+            self._health_status(root)
+            source_root = root / "business"
+            outside = root / "outside"
+            source_root.mkdir()
+            outside.mkdir()
+            (outside / "evidence.txt").write_text("evidence", encoding="utf-8")
+            try:
+                (source_root / "linked").symlink_to(outside, target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"directory symlinks unavailable: {error}")
+            page.write_text(
+                "---\n"
+                "schema_version: 2\n"
+                "type: decision\n"
+                "scope: project\n"
+                "project: prj-test\n"
+                "knowledge_id: linked-evidence\n"
+                "title: Linked evidence\n"
+                "status: current\n"
+                "version: 1\n"
+                "created: 2026-07-01\n"
+                "updated: 2026-07-01\n"
+                "replacement_knowledge_id: null\n"
+                "---\n\n"
+                "# Linked evidence\n\n"
+                "## Current\n\nConclusion.\n\n"
+                "Evidence:\n- `linked/evidence.txt:L1`\n\n"
+                "<!-- tracebook:event:0123456789abcdef -->\n\n"
+                "## History\n",
+                encoding="utf-8",
+            )
+
+            report = run_check(
+                root,
+                project,
+                [page],
+                date(2026, 7, 14),
+                source_root,
+            )
+
+            candidate = next(
+                item
+                for item in report.review_candidates
+                if item.reason == "source_outside_root"
+            )
+            self.assertEqual("strong", candidate.severity)
     def test_regular_check_reads_log_page_once(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp)
@@ -279,6 +378,26 @@ class KnowledgeCheckTest(unittest.TestCase):
             deep = run_check(root, project, [page], date(2026, 7, 13))
             self.assertEqual(deep.check_type, "Deep")
             self.assertIn("business-rules.md exceeds 300 lines", deep.trigger_reasons)
+
+    def test_to_markdown_renders_duplicate_pages_and_log_growth(self) -> None:
+        report = CheckReport(
+            check_type="Regular",
+            trigger_reasons=[],
+            broken_links=[],
+            ambiguous_wikilinks=[],
+            orphan_pages=[],
+            missing_sources=[],
+            outdated_paths=[],
+            pending_confirmations=[],
+            duplicate_pages=["a.md == b.md"],
+            log_growth=["logs/2026-07.md exceeds budget"],
+            entity_issues=[],
+        )
+        rendered = report.to_markdown()
+        self.assertIn("### Duplicate Pages", rendered)
+        self.assertIn("- a.md == b.md", rendered)
+        self.assertIn("### Log Growth", rendered)
+        self.assertIn("- logs/2026-07.md exceeds budget", rendered)
 
 
 if __name__ == "__main__":

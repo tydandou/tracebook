@@ -128,6 +128,78 @@ def prepare_project_snapshot_updates(
     return snapshot_updates, pointer
 
 
+SNAPSHOT_RETENTION = 10
+
+
+def prune_project_snapshots(root: Path, record: ProjectRecord, *, keep: int = SNAPSHOT_RETENTION) -> list[str]:
+    """Retire and delete superseded snapshots, keeping ``keep`` valid versions.
+
+    Must run under the project lock, after the new pointer has committed, so the
+    live version is known. A pruned version is first atomically renamed to a
+    non-snapshot tombstone and only then deleted. Lock-free readers can therefore
+    detect that their previously resolved root disappeared and retry the whole
+    read; they never observe an in-place, partially deleted valid snapshot tree.
+
+    Never raises. The capture it follows is already durably committed, so a
+    failure here must not turn a successful write into an error: every step —
+    reading the pointer, listing and stat-ing versions, deleting a tree — is
+    contained, and any failure is returned as a description. The returned list
+    is diagnostic only; the capture path deliberately ignores it, because an
+    orphaned version directory wastes disk but never corrupts state.
+    """
+    try:
+        resolved_root = root.resolve()
+        current = _pointer_snapshot_id(resolved_root, record, operation="snapshot-prune")
+        versions_dir = _base(resolved_root, record) / "versions"
+        if current is None or not versions_dir.is_dir():
+            return []
+        tombstones = [
+            directory for directory in versions_dir.iterdir()
+            if directory.is_dir() and directory.name.startswith(".pruning-")
+        ]
+        entries = [
+            directory for directory in versions_dir.iterdir()
+            if directory.is_dir() and _SNAPSHOT_ID.fullmatch(directory.name)
+        ]
+        # Newest first by directory mtime; the live pointer is always retained.
+        entries.sort(key=lambda directory: directory.stat().st_mtime, reverse=True)
+    except (OSError, TracebookError) as error:
+        return [f"prune skipped: {error}"]
+    failures: list[str] = []
+    for tombstone in tombstones:
+        try:
+            _remove_tree(tombstone)
+        except OSError as error:
+            failures.append(f"{tombstone.name}: {error}")
+
+    retained: set[str] = {current}
+    for directory in entries:
+        if len(retained) >= keep:
+            break
+        retained.add(directory.name)
+    for directory in entries:
+        if directory.name in retained:
+            continue
+        tombstone = directory.with_name(
+            f".pruning-{directory.name}-{uuid4().hex}"
+        )
+        try:
+            directory.replace(tombstone)
+            _remove_tree(tombstone)
+        except OSError as error:
+            failures.append(f"{directory.name}: {error}")
+    return failures
+
+
+def _remove_tree(directory: Path) -> None:
+    for child in sorted(directory.rglob("*"), key=lambda path: len(path.parts), reverse=True):
+        if child.is_dir():
+            child.rmdir()
+        else:
+            child.unlink()
+    directory.rmdir()
+
+
 def has_snapshot(root: Path, record: ProjectRecord) -> bool:
     return _pointer_snapshot_id(root.resolve(), record, operation="snapshot") is not None
 

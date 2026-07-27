@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, fields
 from datetime import date
 import json
 import os
@@ -20,9 +20,6 @@ if __package__ in (None, ""):
     from scripts.check_knowledge import (
         CheckReport,
         DeepAuditReport,
-        _duplicate_pages,
-        _load_page_contents,
-        _log_growth,
         _trigger,
         run_check,
         run_deep_audit,
@@ -30,14 +27,15 @@ if __package__ in (None, ""):
     from scripts.context_search import context as build_context
     from scripts.errors import TracebookError, error_payload
     from scripts.health_state import (
-        _finish_health_persistence,
-        _load_scope_state,
-        _persist_audit_under_lock,
-        _persist_check_under_lock,
-        _scope_lock_name,
+        finish_health_persistence,
+        load_scope_state,
+        persist_audit_under_lock,
+        persist_check_under_lock,
+        scope_lock_name,
         ensure_health_layout,
         rebuild_global_health,
     )
+    from scripts.knowledge_parse import is_absolute_evidence_path, parse_query_evidence
     from scripts.knowledge_root import language_for_root, repair_knowledge_root, validate_external_root
     from scripts.locking import file_lock
     from scripts.project_registry import (
@@ -65,9 +63,6 @@ else:
     from .check_knowledge import (
         CheckReport,
         DeepAuditReport,
-        _duplicate_pages,
-        _load_page_contents,
-        _log_growth,
         _trigger,
         run_check,
         run_deep_audit,
@@ -75,14 +70,15 @@ else:
     from .context_search import context as build_context
     from .errors import TracebookError, error_payload
     from .health_state import (
-        _finish_health_persistence,
-        _load_scope_state,
-        _persist_audit_under_lock,
-        _persist_check_under_lock,
-        _scope_lock_name,
+        finish_health_persistence,
+        load_scope_state,
+        persist_audit_under_lock,
+        persist_check_under_lock,
+        scope_lock_name,
         ensure_health_layout,
         rebuild_global_health,
     )
+    from .knowledge_parse import is_absolute_evidence_path, parse_query_evidence
     from .knowledge_root import language_for_root, repair_knowledge_root, validate_external_root
     from .locking import file_lock
     from .project_registry import (
@@ -310,12 +306,21 @@ def read_context(
     scope: str = "project",
     max_results: int = 10,
     max_chars: int = 20000,
+    evidence_paths: tuple[str, ...] = (),
+    evidence_source_root: Path | None = None,
 ) -> dict[str, object]:
     """Read explicitly registered project knowledge without activating a target."""
     if not project_ids:
         raise ValueError("INVALID_REQUEST: at least one project_id is required")
     if profile not in {"default", "reference"}:
         raise ValueError("INVALID_REQUEST: profile is unsupported")
+    selected_evidence_paths = tuple(
+        value for value in evidence_paths if value.strip()
+    )
+    if not query.strip() and not selected_evidence_paths:
+        raise ValueError("INVALID_REQUEST: query or evidence-path is required")
+    if selected_evidence_paths and (scope != "project" or as_of is not None):
+        raise ValueError("INVALID_REQUEST: evidence-path supports only project scope at the current snapshot")
     resolved_root = root.expanduser().resolve()
     known = {record.project_id: record for record in load_projects(resolved_root)}
     selected: list[ProjectRecord] = []
@@ -325,37 +330,105 @@ def read_context(
             raise TracebookError("UNKNOWN_PROJECT", f"Unknown project {project_id}", "context-read")
         if record.project_id not in {item.project_id for item in selected}:
             selected.append(record)
+    if selected_evidence_paths and len(selected) != 1:
+        raise ValueError("INVALID_REQUEST: evidence-path requires exactly one project_id")
     primary = selected[0]
     allowed_kinds = ("architecture", "module", "decision") if profile == "reference" else None
-    knowledge_roots: dict[str, Path] = {}
+    evidence_keys: list[str] = []
+    evidence_warnings: list[str] = []
+    for raw in selected_evidence_paths:
+        if evidence_source_root is not None or not is_absolute_evidence_path(raw):
+            key, warning = parse_query_evidence(raw, source_root=evidence_source_root)
+        else:
+            matched_keys = {
+                key
+                for location in primary.locations
+                for key, _ in [
+                    parse_query_evidence(raw, source_root=Path(location))
+                ]
+                if key is not None
+            }
+            if len(matched_keys) == 1:
+                key, warning = next(iter(matched_keys)), None
+            elif len(matched_keys) > 1:
+                key, warning = None, (
+                    f"absolute evidence-path is ambiguous across registered project locations: {raw}"
+                )
+            else:
+                key, warning = None, (
+                    f"absolute evidence-path is outside registered project locations: {raw}"
+                )
+        if key is not None:
+            evidence_keys.append(key)
+        if warning is not None:
+            evidence_warnings.append(warning)
+    if selected_evidence_paths and not evidence_keys and not query.strip():
+        # Every evidence-path failed to parse and no query remains; return the
+        # warnings without a full-corpus scan rather than raising.
+        return {
+            "schema_version": 1,
+            "project": {"project_id": primary.project_id, "name": primary.name, "identity": primary.project_id, "slug": primary.slug},
+            "queried_projects": [{"project_id": item.project_id, "name": item.name, "slug": item.slug} for item in selected],
+            "query": query,
+            "current_context": [],
+            "historical_context": [],
+            "warnings": sorted(set(evidence_warnings)),
+            "truncated": False,
+        }
+    payload: dict[str, object] | None = None
     legacy_projects: list[str] = []
-    for project in selected:
-        knowledge_root, mode = project_knowledge_root(resolved_root, project, operation="context-read")
-        knowledge_roots[project.project_id] = knowledge_root
-        if mode == "legacy":
-            legacy_projects.append(project.project_id)
-    payload = build_context(
-        resolved_root,
-        resolved_root / primary.relative_path,
-        primary.project_id,
-        primary.name,
-        primary.slug,
-        query,
-        projects=tuple(selected),
-        include_history=include_history,
-        as_of=as_of,
-        status=status,
-        kind=kind,
-        allowed_kinds=allowed_kinds,
-        scope=scope,
-        max_results=max_results,
-        max_chars=max_chars,
-        project_knowledge_roots=knowledge_roots,
-    )
+    for attempt in range(3):
+        knowledge_roots: dict[str, Path] = {}
+        snapshot_roots: list[Path] = []
+        legacy_projects = []
+        for project in selected:
+            knowledge_root, mode = project_knowledge_root(
+                resolved_root, project, operation="context-read"
+            )
+            knowledge_roots[project.project_id] = knowledge_root
+            if mode == "legacy":
+                legacy_projects.append(project.project_id)
+            else:
+                snapshot_roots.append(knowledge_root)
+        try:
+            candidate_payload = build_context(
+                resolved_root,
+                resolved_root / primary.relative_path,
+                primary.project_id,
+                primary.name,
+                primary.slug,
+                query,
+                projects=tuple(selected),
+                include_history=include_history,
+                as_of=as_of,
+                status=status,
+                kind=kind,
+                allowed_kinds=allowed_kinds,
+                scope=scope,
+                max_results=max_results,
+                max_chars=max_chars,
+                project_knowledge_roots=knowledge_roots,
+                evidence_keys=tuple(evidence_keys),
+            )
+        except OSError:
+            if attempt < 2 and any(not root.is_dir() for root in snapshot_roots):
+                continue
+            raise
+        if all(root.is_dir() for root in snapshot_roots):
+            payload = candidate_payload
+            break
+    if payload is None:
+        raise TracebookError(
+            "SNAPSHOT_CHANGED_DURING_READ",
+            "Project snapshot changed repeatedly while context was being read; retry the command",
+            "context-read",
+        )
     if legacy_projects:
         payload["warnings"].append(
             "legacy snapshot fallback: " + ", ".join(sorted(legacy_projects))
         )
+    if evidence_warnings:
+        payload["warnings"] = sorted(set(payload["warnings"]) | set(evidence_warnings))
     return payload
 
 
@@ -375,6 +448,7 @@ def read_context_for_path(
             f"Target {target} is not registered; run resolve with write permission first",
             "context-read-path",
         )
+    options.setdefault("evidence_source_root", target)
     return read_context(resolved_root, (record.project_id,), query, **options)
 
 
@@ -407,7 +481,7 @@ def _scope_trigger_values(
     scope: str,
     today: date,
 ) -> dict[str, str]:
-    state = _load_scope_state(context.root, context.record, scope, today)
+    state = load_scope_state(context.root, context.record, scope, today)
     return {
         "Last Regular Check": (
             state.last_regular.isoformat() if state.last_regular else "Not run"
@@ -426,32 +500,22 @@ def _run_scoped_check(
     changed_paths: list[Path],
     today: date,
     source_root: Path | None,
+    review_after_days: int | None = None,
 ) -> CheckReport:
     scan_root = _scope_scan_root(context, scope)
-    check_type, trigger_reasons = _trigger(
+    trigger = _trigger(
         _scope_trigger_values(context, scope, today),
         changed_paths,
         today,
     )
-    report = run_check(
+    return run_check(
         context.root,
         scan_root,
         changed_paths,
         today,
         source_root,
-    )
-    duplicate_pages: list[str] = []
-    log_growth: list[str] = []
-    if check_type == "Regular":
-        pages = _load_page_contents(scan_root.resolve())
-        duplicate_pages = _duplicate_pages(context.root.resolve(), pages)
-        log_growth = _log_growth(context.root.resolve(), pages)
-    return replace(
-        report,
-        check_type=check_type,
-        trigger_reasons=trigger_reasons,
-        duplicate_pages=duplicate_pages,
-        log_growth=log_growth,
+        trigger=trigger,
+        review_after_days=review_after_days,
     )
 
 def check(
@@ -461,12 +525,13 @@ def check(
     source_root: Path | None = None,
     new_paths: list[Path] | None = None,
     scope: str = "project",
+    review_after_days: int | None = None,
 ) -> CheckResult:
     """Run and persist actual health checks without touching business code."""
     selected_new_paths = new_paths or []
     with file_lock(
         context.root,
-        _scope_lock_name(context.record, scope),
+        scope_lock_name(context.record, scope),
         operation="check",
     ):
         report = _run_scoped_check(
@@ -475,8 +540,9 @@ def check(
             changed_paths,
             today,
             source_root,
+            review_after_days,
         )
-        committed = _persist_check_under_lock(
+        committed = persist_check_under_lock(
             context.root,
             context.record,
             scope,
@@ -485,7 +551,7 @@ def check(
             selected_new_paths,
             today,
         )
-    persisted = _finish_health_persistence(context.root, committed)
+    persisted = finish_health_persistence(context.root, committed)
     return CheckResult(
         report=report,
         changed_paths=persisted,
@@ -501,7 +567,7 @@ def audit(
     """Persist an explicit Deep Audit without changing business repositories."""
     with file_lock(
         context.root,
-        _scope_lock_name(context.record, scope),
+        scope_lock_name(context.record, scope),
         operation="audit",
     ):
         report = run_deep_audit(
@@ -509,14 +575,14 @@ def audit(
             _scope_scan_root(context, scope),
             source_root,
         )
-        committed = _persist_audit_under_lock(
+        committed = persist_audit_under_lock(
             context.root,
             context.record,
             scope,
             report,
             today,
         )
-    persisted = _finish_health_persistence(context.root, committed)
+    persisted = finish_health_persistence(context.root, committed)
     return DeepAuditResult(report=report, changed_paths=persisted)
 def _parse_date(value: str | None) -> date:
     return date.fromisoformat(value) if value else date.today()
@@ -575,16 +641,77 @@ def _system_payload(record: object) -> dict[str, object]:
 
 
 def _write_payload(payload: dict[str, object]) -> None:
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    """Emit the response as UTF-8 JSON regardless of the console's codepage.
+
+    `print` would encode with `sys.stdout.encoding`, which is the locale
+    codepage on Windows (e.g. `gbk`); a CJK title would then reach the caller as
+    non-UTF-8 bytes. RFC 8259 requires UTF-8 for JSON exchanged between systems,
+    so the bytes are written explicitly with `\n` endings.
+    """
+    encoded = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    stream = getattr(sys.stdout, "buffer", None)
+    if stream is None:  # a text-only stream (e.g. a test's StringIO)
+        sys.stdout.write(encoded.decode("utf-8") + "\n")
+        return
+    sys.stdout.flush()
+    stream.write(encoded + b"\n")
+    stream.flush()
 
 
 def _write_error(error: Exception) -> int:
-    """Emit a structured business error as JSON and return exit code 2."""
+    """Emit a structured business error as JSON and return exit code 2.
+
+    Prefixes bare validation errors with ``INVALID_REQUEST:``. Use for commands
+    that raise plain ValueErrors; use `_write_command_error` where the raised
+    message already carries its own error code.
+
+    A message that already starts with the prefix is passed through unchanged:
+    the capture path mixes both kinds — `capture.py` raises pre-coded messages
+    while ``CaptureRequest(**payload)`` raises a bare TypeError — so callers
+    cannot pick per-command, and a doubled code would break message parsing.
+    """
     if isinstance(error, TracebookError):
         _write_payload(error_payload(error))
     else:
-        _write_payload({"error": f"INVALID_REQUEST: {error}"})
+        message = str(error)
+        prefix = "INVALID_REQUEST: "
+        _write_payload({"error": message if message.startswith(prefix) else prefix + message})
     return 2
+
+
+def _write_command_error(error: Exception) -> int:
+    """Emit an error whose message is already fully formed (no added prefix)."""
+    _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
+    return 2
+
+
+def _confined_request_conflict(
+    request: str, knowledge_root: Path, business_repo: Path
+) -> tuple[str, Path, Path] | None:
+    """Locate a request file that sits inside a governed area.
+
+    A capture request file must not sit inside the knowledge root or the business
+    repository: that is a placement the protocol does not govern and leaks scratch
+    JSON into a governed tree. stdin (`--request -`) is unaffected. Returns
+    ``(label, resolved_request_path, governed_root)`` for the offending area, or
+    None when the path is safe or cannot be resolved (a plain read error is then
+    reported by the normal unreadable-request path).
+    """
+    try:
+        resolved = Path(request).resolve()
+    except OSError:
+        return None
+    for label, root in (
+        ("knowledge root", knowledge_root),
+        ("business repository", business_repo),
+    ):
+        try:
+            root_resolved = root.resolve()
+            resolved.relative_to(root_resolved)
+        except (ValueError, OSError):
+            continue
+        return label, resolved, root_resolved
+    return None
 
 
 def _user_summary(
@@ -671,7 +798,8 @@ def main(argv: list[str] | None = None) -> int:
     context_read_parser = commands.add_parser("context-read")
     context_read_parser.add_argument("--root")
     context_read_parser.add_argument("--project-id", action="append", required=True)
-    context_read_parser.add_argument("--query", required=True)
+    context_read_parser.add_argument("--query", default="")
+    context_read_parser.add_argument("--evidence-path", action="append", default=[])
     context_read_parser.add_argument("--include-history", action="store_true")
     context_read_parser.add_argument("--as-of")
     context_read_parser.add_argument("--status", default="current")
@@ -684,7 +812,8 @@ def main(argv: list[str] | None = None) -> int:
     context_read_path_parser = commands.add_parser("context-read-path")
     context_read_path_parser.add_argument("--root")
     context_read_path_parser.add_argument("--cwd", required=True)
-    context_read_path_parser.add_argument("--query", required=True)
+    context_read_path_parser.add_argument("--query", default="")
+    context_read_path_parser.add_argument("--evidence-path", action="append", default=[])
     context_read_path_parser.add_argument("--include-history", action="store_true")
     context_read_path_parser.add_argument("--as-of")
     context_read_path_parser.add_argument("--status", default="current")
@@ -716,7 +845,11 @@ def main(argv: list[str] | None = None) -> int:
     project_bind_remote_parser.add_argument("--remote", required=True)
 
     capture_parser = commands.choices["capture"]
-    capture_parser.add_argument("--request", required=True)
+    capture_parser.add_argument(
+        "--request",
+        required=True,
+        help="Path to the JSON capture request, or '-' to read it from stdin.",
+    )
     capture_parser.add_argument("--today")
 
     context_parser = commands.choices["context"]
@@ -737,6 +870,7 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument("--new-path", action="append", default=[])
     check_parser.add_argument("--source-root")
     check_parser.add_argument("--today")
+    check_parser.add_argument("--review-after-days", type=int, default=None)
     check_parser.add_argument(
         "--scope", choices=("project", "domain", "pattern"), default="project"
     )
@@ -793,32 +927,28 @@ def main(argv: list[str] | None = None) -> int:
             _write_payload({"projects": [_project_payload(record) for record in find_projects(root, args.query)]})
             return 0
         except (TracebookError, ValueError) as error:
-            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
-            return 2
+            return _write_command_error(error)
 
     if args.command == "system-create":
         try:
             _write_payload({"system": _system_payload(create_system(root, args.name))})
             return 0
         except (TracebookError, ValueError) as error:
-            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
-            return 2
+            return _write_command_error(error)
 
     if args.command == "system-bind-project":
         try:
             _write_payload({"system": _system_payload(bind_system_project(root, args.system_id, args.project_id))})
             return 0
         except (TracebookError, ValueError) as error:
-            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
-            return 2
+            return _write_command_error(error)
 
     if args.command == "system-relate":
         try:
             _write_payload({"system": _system_payload(add_relation(root, args.system_id, args.source_project_id, args.target_project_id, args.kind))})
             return 0
         except (TracebookError, ValueError) as error:
-            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
-            return 2
+            return _write_command_error(error)
 
     if args.command == "context-read":
         try:
@@ -834,11 +964,11 @@ def main(argv: list[str] | None = None) -> int:
                 scope=args.scope,
                 max_results=args.max_results,
                 max_chars=args.max_chars,
+                evidence_paths=tuple(args.evidence_path),
             ))
             return 0
         except (TracebookError, ValueError) as error:
-            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
-            return 2
+            return _write_command_error(error)
 
     if args.command == "context-read-path":
         try:
@@ -854,11 +984,11 @@ def main(argv: list[str] | None = None) -> int:
                 scope=args.scope,
                 max_results=args.max_results,
                 max_chars=args.max_chars,
+                evidence_paths=tuple(args.evidence_path),
             ))
             return 0
         except (TracebookError, ValueError) as error:
-            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
-            return 2
+            return _write_command_error(error)
 
     if args.command == "project-update":
         try:
@@ -910,8 +1040,7 @@ def main(argv: list[str] | None = None) -> int:
             ))
             return 0
         except (TracebookError, ValueError) as error:
-            _write_payload(error_payload(error) if isinstance(error, TracebookError) else {"error": str(error)})
-            return 2
+            return _write_command_error(error)
 
     if args.command == "audit":
         try:
@@ -931,12 +1060,37 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if args.command == "capture":
+        if args.request != "-":
+            conflict = _confined_request_conflict(args.request, context.root, Path(args.cwd))
+            if conflict is not None:
+                label, resolved_request, governed_root = conflict
+                _write_payload({
+                    "error": (
+                        f"INVALID_REQUEST: request file is inside the {label}, which is a "
+                        "governed area that must not hold scratch files"
+                    ),
+                    "problem": {
+                        "request_path": str(resolved_request),
+                        "governed_area": label,
+                        "governed_root": str(governed_root),
+                    },
+                    "required_action": (
+                        "Do not write a request file into the knowledge root or the "
+                        "business repository. Pipe the same JSON on stdin with "
+                        "'--request -' (no file needed), or, if you must use a file, "
+                        "place it outside both governed areas (for example a system "
+                        "temp directory) and delete it after capture."
+                    ),
+                })
+                return 2
         try:
-            request_payload = json.loads(
-                Path(args.request).read_text(encoding="utf-8-sig")
-            )
+            if args.request == "-":
+                raw_request = sys.stdin.buffer.read().decode("utf-8-sig")
+            else:
+                raw_request = Path(args.request).read_text(encoding="utf-8-sig")
+            request_payload = json.loads(raw_request)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-            _write_payload({"error": f"INVALID_REQUEST: request file is unreadable: {error}"})
+            _write_payload({"error": f"INVALID_REQUEST: request is unreadable: {error}"})
             return 2
         if not isinstance(request_payload, dict):
             _write_payload({"error": "INVALID_REQUEST: request must be a JSON object"})
@@ -955,9 +1109,13 @@ def main(argv: list[str] | None = None) -> int:
         known = {field.name for field in fields(CaptureRequest)}
         unknown = sorted(set(request_payload) - known)
         if unknown:
-            _write_payload(
-                {"error": f"INVALID_REQUEST: unknown fields: {', '.join(unknown)}"}
-            )
+            message = f"INVALID_REQUEST: unknown fields: {', '.join(unknown)}"
+            if "event_id" in unknown:
+                message += (
+                    "; event_id is generated by the runner (content-idempotence "
+                    "marker) and must not be sent in a capture request"
+                )
+            _write_payload({"error": message})
             return 2
         try:
             request = CaptureRequest(**request_payload)
@@ -985,6 +1143,7 @@ def main(argv: list[str] | None = None) -> int:
             Path(args.source_root) if args.source_root else None,
             [Path(path) for path in args.new_path],
             args.scope,
+            args.review_after_days,
         )
     except (TracebookError, ValueError) as error:
         return _write_error(error)

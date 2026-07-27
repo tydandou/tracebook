@@ -561,7 +561,7 @@ def rebuild_global_health(root: Path) -> Path:
         return target
 
 
-def _scope_lock_name(record: ProjectRecord, scope: str) -> str:
+def scope_lock_name(record: ProjectRecord, scope: str) -> str:
     if scope == "project":
         return project_lock_name(record)
     if scope in {"domain", "pattern"}:
@@ -641,12 +641,14 @@ def _check_state(
         *report.missing_sources,
         *report.outdated_paths,
         *report.entity_issues,
+        *(c.render() for c in report.review_candidates if c.severity == "strong"),
     )
     medium_findings = (
         *report.pending_confirmations,
         *report.duplicate_pages,
         *report.log_growth,
         *report.ambiguous_wikilinks,
+        *(c.render() for c in report.review_candidates if c.severity != "strong"),
     )
     risk_level = "High" if high_findings else "Medium" if medium_findings else "Low"
     return replace(
@@ -741,14 +743,14 @@ def _commit_scope_health(
     _ensure_parent_directories(tuple(updates))
     commit_updates(
         root,
-        _scope_lock_name(record, scope),
+        scope_lock_name(record, scope),
         kind.casefold().replace(" ", "-"),
         updates,
     )
     return tuple(path for path in (status_path, log_path) if path in updates)
 
 
-def _load_scope_state(
+def load_scope_state(
     root: Path,
     record: ProjectRecord,
     scope: str,
@@ -760,7 +762,7 @@ def _load_scope_state(
     return HealthState(scope=scope, identity=_scope_identity(record, scope))
 
 
-def _persist_check_under_lock(
+def persist_check_under_lock(
     root: Path,
     record: ProjectRecord,
     scope: str,
@@ -772,7 +774,7 @@ def _persist_check_under_lock(
     if report.check_type in {"Local", "Deep"}:
         return None
     state = _check_state(
-        _load_scope_state(root, record, scope, today),
+        load_scope_state(root, record, scope, today),
         report,
         changed_paths,
         new_paths,
@@ -789,7 +791,7 @@ def _persist_check_under_lock(
     )
 
 
-def _persist_audit_under_lock(
+def persist_audit_under_lock(
     root: Path,
     record: ProjectRecord,
     scope: str,
@@ -797,7 +799,7 @@ def _persist_audit_under_lock(
     today: date,
 ) -> tuple[Path, ...]:
     state = _audit_state(
-        _load_scope_state(root, record, scope, today),
+        load_scope_state(root, record, scope, today),
         report,
         today,
     )
@@ -812,7 +814,7 @@ def _persist_audit_under_lock(
     )
 
 
-def _finish_health_persistence(
+def finish_health_persistence(
     root: Path,
     committed_paths: tuple[Path, ...] | None,
 ) -> tuple[Path, ...]:
@@ -844,10 +846,10 @@ def persist_check(
     resolved_root = root.resolve()
     with file_lock(
         resolved_root,
-        _scope_lock_name(record, scope),
+        scope_lock_name(record, scope),
         operation="check",
     ):
-        committed = _persist_check_under_lock(
+        committed = persist_check_under_lock(
             resolved_root,
             record,
             scope,
@@ -856,7 +858,7 @@ def persist_check(
             new_paths,
             today,
         )
-    return _finish_health_persistence(resolved_root, committed)
+    return finish_health_persistence(resolved_root, committed)
 
 
 def persist_audit(
@@ -870,17 +872,17 @@ def persist_audit(
     resolved_root = root.resolve()
     with file_lock(
         resolved_root,
-        _scope_lock_name(record, scope),
+        scope_lock_name(record, scope),
         operation="audit",
     ):
-        committed = _persist_audit_under_lock(
+        committed = persist_audit_under_lock(
             resolved_root,
             record,
             scope,
             report,
             today,
         )
-    return _finish_health_persistence(resolved_root, committed)
+    return finish_health_persistence(resolved_root, committed)
 
 
 def _validated_manifest(root: Path, path: Path) -> tuple[Path, Path, tuple[tuple[Path, str], ...]]:

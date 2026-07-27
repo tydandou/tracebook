@@ -11,7 +11,7 @@ import re
 
 from .locking import file_lock
 from .project_registry import ProjectRecord, project_lock_name
-from .snapshots import prepare_project_snapshot_updates
+from .snapshots import prepare_project_snapshot_updates, prune_project_snapshots
 from .transaction import commit_updates
 
 
@@ -150,8 +150,8 @@ def _index_content(root: Path, index: Path, page: Path, title: str) -> str:
     return current if entry in current else current.rstrip() + "\n" + entry + "\n"
 
 
-def _project_status(current: str, request: object, today: date) -> str:
-    entry = f"- {today.isoformat()}: {getattr(request, 'operation')} `{getattr(request, 'knowledge_id')}` v{getattr(request, 'title').strip()}"
+def _project_status(current: str, request: object, today: date, version: int) -> str:
+    entry = f"- {today.isoformat()}: {getattr(request, 'operation')} `{getattr(request, 'knowledge_id')}` v{version}"
     return current.rstrip() + "\n" + entry + "\n"
 
 
@@ -200,7 +200,7 @@ def capture_entity(root: Path, record: ProjectRecord, request: object, today: da
             project = root / record.relative_path
             status = project / "project-status.md"
             log = project / "logs" / f"{today:%Y-%m}.md"
-            updates[status] = _project_status(status.read_text(encoding="utf-8") if status.exists() else "# Project Status\n", request, today)
+            updates[status] = _project_status(status.read_text(encoding="utf-8") if status.exists() else "# Project Status\n", request, today, version)
             updates[log] = _log(log.read_text(encoding="utf-8") if log.exists() else "# Project Log\n", request, event_id, today)
         for target in updates:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -222,4 +222,10 @@ def capture_entity(root: Path, record: ProjectRecord, request: object, today: da
             transaction_updates,
             final_targets=final_targets,
         )
+        if getattr(request, "scope") == "project":
+            # Best-effort GC of superseded snapshots, still under the project lock
+            # and after the pointer committed. Its failure list is intentionally
+            # dropped: the capture is already durable, and an orphaned version
+            # directory only costs disk. prune_project_snapshots never raises.
+            prune_project_snapshots(root, record)
         return EntityResult(tuple(updates), (path,) if not exists else (), False, event_id)

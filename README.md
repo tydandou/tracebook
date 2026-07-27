@@ -72,7 +72,7 @@ depend on how often knowledge is reused versus the one-time capture cost.
 
 ## Install
 
-The `3.3.2` release is available as the `v3.3.2` tag. Use the tagged
+The `4.0.0` release is available as the `v4.0.0` tag. Use the tagged
 installation commands for the stable release, or use the local development
 loading instructions when working from a clone.
 
@@ -81,7 +81,7 @@ loading instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.3.2
+codex plugin marketplace add tydandou/tracebook --ref v4.0.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -109,7 +109,7 @@ Removing a plugin never touches its knowledge root. If
 `codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.3.2
+codex plugin marketplace add tydandou/tracebook --ref v4.0.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -118,7 +118,7 @@ To move to a different tagged source, replace the marketplace first:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v3.3.2
+codex plugin marketplace add tydandou/tracebook --ref v4.0.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -375,8 +375,8 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" recover-transactions \
 
 ### Capture
 
-Save a request outside the business repository, for example in the system
-temporary directory:
+Pass a schema-v2 request to the Runner through stdin (`--request -`), so no
+scratch request file needs a placement or cleanup decision. Example request body:
 
 ```json
 {
@@ -393,14 +393,18 @@ temporary directory:
 }
 ```
 
-Then run:
+Then send that JSON on the process stdin while running:
 
 ```sh
 python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
   --root "$TRACEBOOK_ROOT" \
   --cwd . \
-  --request "$REQUEST_FILE"
+  --request -
 ```
+
+`--request <path>` remains available for a pre-existing file outside both the
+knowledge root and business repository. Files inside either governed tree are
+rejected; do not create a temporary request there.
 
 `current` knowledge requires an evidence list. A durable, explicitly unresolved
 item may use `pending` with an empty evidence list; `pending` must not be
@@ -628,7 +632,7 @@ may modify business code.
 - **Knowledge is in an unexpected location:** inspect `TRACEBOOK_ROOT` in the
   environment that launched the agent. If unset, the root is `~/.tracebook`.
 - **Capture is rejected:** verify `write_intent: durable`,
-  `content_kind: knowledge`, an allowed scope/kind/category combination, and
+  `content_kind: knowledge`, an allowed scope/kind combination, and
   evidence for `Current` knowledge. Use `Pending` only for a durable unresolved
   item.
 - **A post-capture check has no scope:** treat a missing or invalid
@@ -664,13 +668,13 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v3.3.2` release.
+resolves the published `v4.0.0` release.
 
 ## Current Limitations
 
-- `3.3.2` retains schema-v2 authority pages and registry v2. Existing registry-v1
+- `4.0.0` retains schema-v2 authority pages and registry v2. Existing registry-v1
   knowledge roots are intentionally not migrated, imported, or mixed with the
-  new format; point `TRACEBOOK_ROOT` at a new empty root for v3 work.
+  new format; point `TRACEBOOK_ROOT` at a new empty root for v4 work.
 
 - Registry v1 is not upgraded automatically or mixed with the project-id
   registry. `resolve` reports an explicit upgrade requirement; existing

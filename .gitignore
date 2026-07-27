@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .coverage
+.pytest_cache/
 .tracebook-test/
 # Local Tracebook knowledge roots and per-user overrides.
 .tracebook/
@@ -12,3 +13,4 @@ __pycache__/
 # Internal planning and design notes; retained locally, not published.
 /docs/
 eval/
+.tmp/

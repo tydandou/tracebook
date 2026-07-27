@@ -2,16 +2,31 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 import re
+
+from .knowledge_parse import current_evidence_paths, invalid_current_file_evidence
 
 
 MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 WIKILINK = re.compile(r"(!)?\[\[([^\]\n]+)\]\]")
 SOURCE_PATH = re.compile(r"`([^`\n:]+):L\d+(?:-L\d+)?`")
 STATUS_LINE = re.compile(r"^- ([^:]+):\s*(.+)$", re.MULTILINE)
+
+
+@dataclass(frozen=True)
+class ReviewCandidate:
+    path: str
+    knowledge_id: str
+    title: str
+    reason: str
+    severity: str
+    detail: str
+
+    def render(self) -> str:
+        return f"[{self.severity}] {self.path} ({self.knowledge_id}): {self.reason} - {self.detail}"
 
 
 @dataclass
@@ -27,6 +42,7 @@ class CheckReport:
     duplicate_pages: list[str]
     log_growth: list[str]
     entity_issues: list[str]
+    review_candidates: list[ReviewCandidate] = field(default_factory=list)
 
     def to_markdown(self) -> str:
         sections = [
@@ -38,7 +54,10 @@ class CheckReport:
             ("Missing Sources", self.missing_sources),
             ("Outdated Source Map Paths", self.outdated_paths),
             ("Pending Confirmations", self.pending_confirmations),
+            ("Duplicate Pages", self.duplicate_pages),
+            ("Log Growth", self.log_growth),
             ("Schema-v2 Entity Integrity", self.entity_issues),
+            ("Review Candidates", [candidate.render() for candidate in self.review_candidates]),
         ]
         lines = ["## Knowledge Health Check", ""]
         for heading, values in sections:
@@ -348,6 +367,12 @@ def _schema_v2_entity_issues(root: Path, pages: PageContents) -> list[str]:
             issues.append(f"{relative}: entity has no event marker")
         if fields.get("status") == "current" and not _has_evidence(content):
             issues.append(f"{relative}: Current entity has no evidence")
+        invalid_evidence = invalid_current_file_evidence(content)
+        if invalid_evidence:
+            issues.append(
+                f"{relative}: invalid Current file evidence: "
+                + ", ".join(sorted(invalid_evidence))
+            )
         key = (fields["scope"], fields["project"], fields["type"], knowledge_id)
         if key in authorities:
             issues.append(f"{_relative(root, authorities[key])} <-> {relative}: duplicate authority")
@@ -364,6 +389,66 @@ def _schema_v2_entity_issues(root: Path, pages: PageContents) -> list[str]:
             elif replacement_entity[1].get("status") in {"deprecated", "superseded"}:
                 issues.append(f"{_relative(root, page)}: replacement is inactive")
     return sorted(set(issues))
+
+def _review_candidates(
+    root: Path,
+    pages: PageContents,
+    now: date,
+    source_root: Path | None,
+    review_after_days: int | None,
+) -> list[ReviewCandidate]:
+    if review_after_days is not None and review_after_days <= 0:
+        raise ValueError("INVALID_REQUEST: review_after_days must be positive")
+    candidates: list[ReviewCandidate] = []
+    for page, content in pages.items():
+        fields = _entity_fields(content)
+        if fields is None or fields.get("status") != "current":
+            continue
+        relative = _relative(root, page)
+        knowledge_id = fields.get("knowledge_id", "")
+        title = fields.get("title", knowledge_id)
+        updated = _last_date(fields, "updated")
+        if source_root is not None:
+            resolved_source_root = source_root.resolve()
+            missing: list[str] = []
+            newer: list[str] = []
+            outside: list[str] = []
+            for source_path in current_evidence_paths(content):
+                target = (resolved_source_root / source_path).resolve()
+                try:
+                    target.relative_to(resolved_source_root)
+                except ValueError:
+                    outside.append(source_path)
+                    continue
+                if not target.is_file():
+                    missing.append(source_path)
+                    continue
+                if updated is not None and date.fromtimestamp(target.stat().st_mtime) > updated:
+                    newer.append(source_path)
+            if missing:
+                candidates.append(ReviewCandidate(
+                    relative, knowledge_id, title, "source_missing", "strong",
+                    "evidence file(s) not found: " + ", ".join(sorted(missing)),
+                ))
+            if newer:
+                candidates.append(ReviewCandidate(
+                    relative, knowledge_id, title, "source_mtime_newer", "advisory",
+                    "evidence file mtime later than knowledge updated: " + ", ".join(sorted(newer)),
+                ))
+            if outside:
+                candidates.append(ReviewCandidate(
+                    relative, knowledge_id, title, "source_outside_root", "strong",
+                    "evidence path resolves outside source root: " + ", ".join(sorted(outside)),
+                ))
+        if review_after_days is not None and updated is not None:
+            age = (now - updated).days
+            if age > review_after_days:
+                candidates.append(ReviewCandidate(
+                    relative, knowledge_id, title, "review_age_exceeded", "advisory",
+                    f"{age} days since last update (threshold {review_after_days})",
+                ))
+    return sorted(candidates, key=lambda item: (item.path, item.reason))
+
 
 def _log_growth(root: Path, pages: PageContents) -> list[str]:
     growth: list[str] = []
@@ -503,12 +588,22 @@ def run_check(
     changed_paths: list[Path],
     now: date,
     source_root: Path | None = None,
+    *,
+    trigger: tuple[str, list[str]] | None = None,
+    review_after_days: int | None = None,
 ) -> CheckReport:
-    """Inspect external knowledge without writing to the knowledge root."""
+    """Inspect external knowledge without writing to the knowledge root.
+
+    When ``trigger`` is provided the caller has already resolved the check
+    type from the authoritative (scoped) state; otherwise it is derived from
+    the global aggregate page. Either way the type is computed once and gates
+    the Regular-only checks in a single page-tree pass.
+    """
     root = root.resolve()
     project_dir = project_dir.resolve()
     changed = [path.resolve() for path in changed_paths]
-    check_type, trigger_reasons = _trigger(_status_values(root), changed, now)
+    source = source_root.resolve() if source_root is not None else None
+    check_type, trigger_reasons = trigger if trigger is not None else _trigger(_status_values(root), changed, now)
     pages = _load_page_contents(project_dir)
     broken_wikilinks, ambiguous_wikilinks = _broken_wikilinks(
         root, project_dir, pages
@@ -520,9 +615,10 @@ def run_check(
         ambiguous_wikilinks=ambiguous_wikilinks,
         orphan_pages=_orphan_pages(root, project_dir, changed, pages),
         missing_sources=_missing_sources(root, project_dir, changed, pages),
-        outdated_paths=_outdated_paths(root, pages, source_root),
+        outdated_paths=_outdated_paths(root, pages, source),
         pending_confirmations=_pending_confirmations(root, pages),
         duplicate_pages=_duplicate_pages(root, pages) if check_type == "Regular" else [],
         log_growth=_log_growth(root, pages) if check_type == "Regular" else [],
         entity_issues=_schema_v2_entity_issues(root, pages),
+        review_candidates=_review_candidates(root, pages, now, source, review_after_days),
     )

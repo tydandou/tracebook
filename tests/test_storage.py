@@ -6,12 +6,20 @@ from unittest.mock import patch
 from plugins.tracebook.skills.tracebook.scripts.storage import (
     atomic_write_bytes,
     atomic_write_text,
+    read_bytes_shared,
     sha256_bytes,
     sha256_file,
 )
 
 
 class StorageTest(unittest.TestCase):
+    def test_shared_read_reports_missing_path_as_file_not_found(self) -> None:
+        with TemporaryDirectory() as temp:
+            missing = Path(temp) / "missing.bin"
+
+            with self.assertRaises(FileNotFoundError):
+                read_bytes_shared(missing)
+
     def test_sha256_bytes_returns_known_digest(self) -> None:
         self.assertEqual(
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",

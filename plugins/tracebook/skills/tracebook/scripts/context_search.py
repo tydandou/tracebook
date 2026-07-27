@@ -9,15 +9,21 @@ import re
 import unicodedata
 from collections.abc import Mapping
 
+from .knowledge_parse import (
+    CURRENT_SECTION as CURRENT,
+    evidence_items,
+    evidence_lookup_key,
+    is_file_evidence,
+)
 from .project_registry import ProjectRecord
 from .storage import read_bytes_shared
 
 
 FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
-CURRENT = re.compile(r"(?ms)^## Current\n\n(.*?)(?=\n## History\n|\Z)")
 HISTORY = re.compile(r"(?ms)^### Version (\d+) — (\d{4}-\d{2}-\d{2})\n\n(.*?)(?=^### Version |\Z)")
 WORD = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 CJK = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
+CJK_RUN = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]+")
 STOPWORDS = {
     "the", "a", "an", "is", "are", "of", "to", "and", "or", "in", "on", "for",
     "with", "this", "that", "it", "as", "at", "by", "be", "was", "were", "will",
@@ -35,19 +41,32 @@ def _norm(value: str) -> str:
     return unicodedata.normalize("NFKC", value).casefold().replace("\\", "/")
 
 
+def _recency_key(updated: str) -> tuple[int, ...]:
+    """Descending-by-date sort key: newer `updated` sorts first on score ties."""
+    try:
+        return tuple(-int(part) for part in updated.split("-"))
+    except ValueError:
+        return (0,)
+
+
 def _tokens(value: str) -> set[str]:
     normalized = _norm(value)
     words = set(WORD.findall(normalized))
-    chars = "".join(CJK.findall(normalized))
-    words.update(chars[index:index + 2] for index in range(max(0, len(chars) - 1)))
-    if chars:
-        words.add(chars)
+    for run in CJK_RUN.findall(normalized):
+        if len(run) == 1:
+            words.add(run)
+        else:
+            words.update(run[index:index + 2] for index in range(len(run) - 1))
     return words
 
 
 def _evidence(section: str) -> list[str]:
-    match = re.search(r"(?ms)^Evidence:\n((?:- `[^`]+`\n?)+)", section)
-    return re.findall(r"`([^`]+)`", match.group(1)) if match else []
+    return evidence_items(section)
+
+
+def _evidence_keys(section: str) -> set[str]:
+    """Lookup keys for local-file evidence in this section (URLs/test:/etc. skipped)."""
+    return {evidence_lookup_key(item) for item in _evidence(section) if is_file_evidence(item)}
 
 
 def _excerpt(section: str) -> str:
@@ -118,7 +137,7 @@ def _candidates(root: Path, projects: tuple[ProjectRecord, ...], scope: str, inc
     history: list[Candidate] = []
     warnings: list[str] = []
     for source_path, path, source in _pages(root, projects, scope, project_knowledge_roots):
-        content = read_bytes_shared(source_path).decode("utf-8")
+        content = read_bytes_shared(source_path).decode("utf-8").replace("\r\n", "\n")
         fields = _front(content)
         required = {"schema_version", "knowledge_id", "type", "title", "status", "version", "updated"}
         if fields.get("schema_version") != "2" or not required <= fields.keys():
@@ -164,8 +183,7 @@ def _has_meaningful_overlap(candidate: Candidate, query: str) -> bool:
     if _norm(query) == _norm(candidate.fields["knowledge_id"]):
         return True
     query_tokens = _tokens(query)
-    latin = query_tokens - STOPWORDS
-    effective = latin if latin else query_tokens
+    effective = query_tokens - STOPWORDS
     strong = (
         _tokens(candidate.fields["title"])
         | _tokens(" ".join(_evidence(candidate.section)))
@@ -175,9 +193,12 @@ def _has_meaningful_overlap(candidate: Candidate, query: str) -> bool:
     return bool(effective & strong) or bool(effective & body)
 
 
-def context(root: Path, project: Path, project_id: str, name: str, slug: str, query: str, *, projects: tuple[ProjectRecord, ...] | None = None, include_history: bool = False, as_of: date | None = None, status: str = "current", kind: str | None = None, allowed_kinds: tuple[str, ...] | None = None, scope: str = "project", max_results: int = 10, max_chars: int = 20000, project_knowledge_roots: Mapping[str, Path] | None = None) -> dict[str, object]:
-    if not query.strip():
-        raise ValueError("INVALID_REQUEST: query is required")
+def context(root: Path, project: Path, project_id: str, name: str, slug: str, query: str, *, projects: tuple[ProjectRecord, ...] | None = None, include_history: bool = False, as_of: date | None = None, status: str = "current", kind: str | None = None, allowed_kinds: tuple[str, ...] | None = None, scope: str = "project", max_results: int = 10, max_chars: int = 20000, project_knowledge_roots: Mapping[str, Path] | None = None, evidence_keys: tuple[str, ...] = ()) -> dict[str, object]:
+    has_query = bool(query.strip())
+    if not has_query and not evidence_keys:
+        raise ValueError("INVALID_REQUEST: query or evidence-path is required")
+    if evidence_keys and (scope != "project" or as_of is not None):
+        raise ValueError("INVALID_REQUEST: evidence-path supports only project scope at the current snapshot")
     if max_results < 1 or max_chars < 1:
         raise ValueError("INVALID_REQUEST: result limits must be positive")
     selected_projects = projects or (ProjectRecord(project_id, name, str(project.relative_to(root).as_posix())),)
@@ -189,19 +210,25 @@ def context(root: Path, project: Path, project_id: str, name: str, slug: str, qu
         as_of,
         project_knowledge_roots,
     )
+    wanted = set(evidence_keys)
     selected = [item for item in candidates if (status == "all" or item.fields["status"] == status) and (kind is None or item.fields["type"] == kind) and (allowed_kinds is None or item.fields["type"] in allowed_kinds)]
+    scored: list[tuple[Candidate, int, bool]] = []
+    for item in selected:
+        evidence_hit = bool(wanted & _evidence_keys(item.section)) if wanted else False
+        eligible = evidence_hit or (has_query and _has_meaningful_overlap(item, query))
+        if not eligible:
+            continue
+        scored.append((item, _score(item, query) if has_query else 0, evidence_hit))
     ranked = sorted(
-        (
-            (item, _score(item, query))
-            for item in selected
-            if _has_meaningful_overlap(item, query)
-        ),
-        key=lambda pair: (-pair[1], pair[0].updated, pair[0].fields["knowledge_id"]),
+        scored,
+        key=lambda triple: (-int(triple[2]), -triple[1], _recency_key(triple[0].updated), triple[0].fields["knowledge_id"]),
     )
     payload: list[dict[str, object]] = []
     used = 0
-    for item, score in ranked[:max_results]:
+    for item, score, evidence_hit in ranked[:max_results]:
         value = item.payload(root, score)
+        if wanted:
+            value["evidence_match"] = evidence_hit
         size = len(str(value))
         if payload and used + size > max_chars: break
         payload.append(value); used += size
