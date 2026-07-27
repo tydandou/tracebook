@@ -54,7 +54,7 @@ runner 则用于集成、诊断和高级工作流。
 
 ## 安装
 
-`3.3.2` 已发布，对应 `v3.3.2` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.0` 已发布，对应 `v4.0.0` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -62,7 +62,7 @@ runner 则用于集成、诊断和高级工作流。
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.3.2
+codex plugin marketplace add tydandou/tracebook --ref v4.0.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -88,7 +88,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v3.3.2
+codex plugin marketplace add tydandou/tracebook --ref v4.0.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -97,7 +97,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v3.3.2
+codex plugin marketplace add tydandou/tracebook --ref v4.0.0
 codex plugin add tracebook@tracebook
 ```
 
@@ -322,32 +322,37 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" recover-transactions \
 
 ### 捕获
 
-把请求保存在业务仓库之外，例如系统临时目录：
+通过 stdin（`--request -`）把 schema-v2 请求交给 Runner，避免为临时请求文件选择位置或清理。
+请求体示例：
 
 ```json
 {
+  "operation": "create",
+  "knowledge_id": "order-retry-eligibility",
   "scope": "project",
   "kind": "business-rule",
-  "category": "business-rules",
   "title": "Order retry eligibility",
   "body": "Only orders in the retryable state may re-enter fulfillment.",
   "evidence": [
     "src/order.py:L20-L38"
   ],
-  "status": "Current",
+  "status": "current",
   "write_intent": "durable",
   "content_kind": "knowledge"
 }
 ```
 
-然后运行：
+然后在运行下列命令时把该 JSON 写入进程 stdin：
 
 ```sh
 python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
   --root "$TRACEBOOK_ROOT" \
   --cwd . \
-  --request "$REQUEST_FILE"
+  --request -
 ```
+
+`--request <path>` 仍可读取知识根和业务仓库之外的既有文件；位于任一受治理目录内的请求
+文件都会被拒绝，不要在这些目录中创建临时请求。
 
 `Current` 知识必须包含证据列表。持久但明确尚未解决的条目可以使用 `Pending` 并提供
 空证据列表；不能把 `Pending` 表述为已确认事实。证据格式 `src/order.py:L20-L38`
@@ -355,7 +360,7 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
 
 普通 capture 是内容事件幂等的：重复同一内容事件会被跳过；正文、证据或生命周期状态发生
 变化时会创建新事件，并保留先前条目。重复标题不表示隐式覆盖；结论被替代时，应使用
-`Superseded` 及其 `replacement` 路径明确记录。
+`Superseded` 及其 `replacement_knowledge_id` 明确记录。
 
 ### 有边界地读取关联微服务
 
@@ -517,7 +522,7 @@ Wikilink 作为兼容输入，用于手工编辑的 Obsidian 知识。健康检�
 - **知识出现在意外位置：** 检查启动 Agent 的环境中的 `TRACEBOOK_ROOT`。若未设置，
   根目录为 `~/.tracebook`。
 - **Capture 被拒绝：** 检查 `write_intent: durable`、`content_kind: knowledge`、允许的
-  scope/kind/category 组合，以及 `Current` 知识的证据。`Pending` 只用于持久但未解决的条目。
+  scope/kind 组合，以及 `Current` 知识的证据。`Pending` 只用于持久但未解决的条目。
 - **Capture 后的检查没有范围：** 将缺失或无效的 `health_scope` 视为不完整 runner
   响应，不能使用默认 project 范围重试。
 - **现有笔记没有出现：** Tracebook 不会发现或导入现有知识根目录。除非另有明确批准的
@@ -547,12 +552,12 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v3.3.2` 版本。
+`v4.0.0` 版本。
 
 ## 当前限制
 
-- `3.3.2` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
-  导入或与新格式混写；使用 v3 时请将 `TRACEBOOK_ROOT` 指向新的空知识根。
+- `4.0.0` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
+  导入或与新格式混写；使用 v4 时请将 `TRACEBOOK_ROOT` 指向新的空知识根。
 
 - 项目 registry v1 不会被自动升级或与 project-id registry 混写；`resolve` 会返回明确的
   升级要求。既有知识页面不会被自动移动或合并。

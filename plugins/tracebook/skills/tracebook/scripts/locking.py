@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import tempfile
 import time
 from typing import Iterator
 
@@ -84,7 +85,7 @@ def _validate_lock_file(
 
 def _open_lock_file(path: Path, *, operation: str) -> object:
     _validate_lock_file(path, operation=operation)
-    flags = os.O_RDWR | os.O_CREAT | os.O_APPEND
+    flags = os.O_RDWR | os.O_APPEND
     flags |= getattr(os, "O_BINARY", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -116,6 +117,39 @@ def _open_lock_file(path: Path, *, operation: str) -> object:
         os.close(descriptor)
         raise
     return handle
+
+
+def _ensure_lock_file(path: Path, *, operation: str) -> None:
+    existing = _validate_lock_file(path, operation=operation)
+    if existing is not None:
+        if existing.st_size < 1:
+            raise _invalid_lock_state(path, operation, "lock file is empty")
+        return
+
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(b"\0")
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            # Hard-link publication is atomic and never replaces another
+            # process's lock inode. Other processes therefore see either no
+            # lock file or a fully initialized one-byte file.
+            os.link(temporary_path, path)
+        except FileExistsError:
+            pass
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+    published = _validate_lock_file(path, operation=operation)
+    if published is None or published.st_size < 1:
+        raise _invalid_lock_state(path, operation, "lock file initialization did not persist")
 
 
 def _acquire(handle: object) -> None:
@@ -160,14 +194,10 @@ def file_lock(
     locks_dir = state_dir / "locks"
     _ensure_directory(locks_dir, operation=operation)
     lock_path = locks_dir / f"{name}.lock"
+    _ensure_lock_file(lock_path, operation=operation)
     deadline = time.monotonic() + timeout
 
     with _open_lock_file(lock_path, operation=operation) as handle:
-        handle.seek(0, os.SEEK_END)
-        if handle.tell() == 0:
-            handle.write(b"\0")
-            handle.flush()
-
         while True:
             try:
                 _acquire(handle)

@@ -16,13 +16,10 @@ class CaptureRequest:
     kind: str
     title: str
     body: str
-    category: str = "knowledge"
     evidence: tuple[str, ...] = ()
     status: str = "Current"
     write_intent: str = "durable"
     content_kind: str = "knowledge"
-    replacement: str | None = None
-    topic: str | None = None
     user_prohibits_write: bool = False
     operation: str | None = None
     knowledge_id: str | None = None

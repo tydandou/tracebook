@@ -189,7 +189,6 @@ class ConcurrentWritesTest(unittest.TestCase):
                             "knowledge_id": f"concurrent-rule-{index}",
                             "scope": "project",
                             "kind": "business-rule",
-                            "category": "business-rules",
                             "title": f"Concurrent rule {index}",
                             "body": f"Concurrent body {index} must be retained.",
                             "evidence": [f"src/rule-{index}.py:L1-L3"],
@@ -264,7 +263,7 @@ class ConcurrentWritesTest(unittest.TestCase):
                     project / "knowledge" / "business-rule" / f"concurrent-rule-{index}.md"
                 ).read_text(encoding="utf-8")
                 self.assertIn(f"Concurrent rule {index}", document)
-                self.assertIn(f"Concurrent rule {index}", status)
+                self.assertIn(f"`concurrent-rule-{index}` v1", status)
                 marker = f"<!-- tracebook:event:{payloads[index]['event_id']} -->"
                 self.assertEqual(1, document.count(marker))
             self.assertEqual(2, index_content.count("knowledge/business-rule/"))
@@ -311,7 +310,6 @@ class ConcurrentWritesTest(unittest.TestCase):
                             "knowledge_id": "concurrent-lifecycle-authority",
                             "scope": "project",
                             "kind": "decision",
-                            "category": "adr-0001",
                             "title": "Concurrent lifecycle authority",
                             "body": body,
                             "evidence": [f"src/lifecycle-{index}.py:L1-L8"],

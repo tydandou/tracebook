@@ -23,22 +23,21 @@ RUNNER = (
 )
 
 
-def _run(*args: str) -> subprocess.CompletedProcess:
+def _run(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
     cmd = [sys.executable, str(RUNNER), *args]
-    return subprocess.run(cmd, capture_output=True, text=True)
+    return subprocess.run(cmd, capture_output=True, text=True, input=stdin)
 
 
 def _capture(
     root: Path, repo: Path, request: dict, *, expect_success: bool = True
 ) -> dict:
-    """Write request to a temp file and run the capture command."""
-    req_file = repo / ".capture-request.json"
-    req_file.write_text(json.dumps(request), encoding="utf-8")
+    """Pipe the request in on stdin and run the capture command."""
     result = _run(
         "capture",
         "--root", str(root),
         "--cwd", str(repo),
-        "--request", str(req_file),
+        "--request", "-",
+        stdin=json.dumps(request),
     )
     if expect_success:
         assert result.returncode == 0, f"capture failed: {result.stderr}\nstdout: {result.stdout}"

@@ -115,6 +115,33 @@ class TransactionRecoveryTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _write_intent(
+        self,
+        root: Path,
+        transaction_id: str,
+        *,
+        operation: str = "capture",
+        scope: str = "project-demo",
+    ) -> Path:
+        intents = root / ".tracebook-state" / "transaction-intents"
+        intents.mkdir(parents=True, exist_ok=True)
+        path = intents / f"{transaction_id}.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "transaction_id": transaction_id,
+                    "operation": operation,
+                    "scope": scope,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return path
+
     def _assert_duplicate_stage_rejected_without_writes(
         self,
         root: Path,
@@ -201,6 +228,163 @@ class TransactionRecoveryTest(unittest.TestCase):
             self.assertFalse(
                 (root / ".tracebook-state" / "transactions" / "success").exists()
             )
+            self.assertFalse(
+                (root / ".tracebook-state" / "transaction-intents" / "success.json").exists()
+            )
+
+    def test_recovery_waits_for_manifestless_active_writer_before_cleanup(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            transaction_dir = (
+                root / ".tracebook-state" / "transactions" / "active-writer"
+            )
+            (transaction_dir / "staged").mkdir(parents=True)
+            (transaction_dir / "staged" / "00000000.stage").write_bytes(b"new\n")
+            intent_path = self._write_intent(root, "active-writer")
+            events: list[str] = []
+
+            @contextmanager
+            def completing_writer_lock(
+                lock_root: Path,
+                name: str,
+                *,
+                operation: str,
+                **_: object,
+            ):
+                self.assertEqual(root, lock_root.resolve())
+                self.assertEqual("recover", operation)
+                events.append(f"enter:{name}")
+                if name == "project-demo":
+                    # The active writer still owns both paths when recovery
+                    # starts waiting. It completes before recovery obtains the
+                    # scope lock, so the recheck must observe their removal.
+                    self.assertTrue(transaction_dir.is_dir())
+                    self.assertTrue(intent_path.is_file())
+                    shutil.rmtree(transaction_dir)
+                    intent_path.unlink()
+                try:
+                    yield
+                finally:
+                    events.append(f"exit:{name}")
+
+            with patch.object(transaction, "file_lock", completing_writer_lock):
+                recovered = transaction.recover_transactions(root)
+
+            self.assertEqual((), recovered)
+            self.assertEqual(
+                [
+                    "enter:maintenance",
+                    "enter:project-demo",
+                    "exit:project-demo",
+                    "exit:maintenance",
+                ],
+                events,
+            )
+            self.assertFalse(transaction_dir.exists())
+            self.assertFalse(intent_path.exists())
+
+    def test_manifestless_intent_rejects_reserved_scope_before_nested_lock(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            transaction_dir = (
+                root / ".tracebook-state" / "transactions" / "invalid-intent"
+            )
+            (transaction_dir / "staged").mkdir(parents=True)
+            intent_path = self._write_intent(
+                root,
+                "invalid-intent",
+                scope="maintenance",
+            )
+            lock_events: list[str] = []
+
+            @contextmanager
+            def recording_lock(
+                lock_root: Path,
+                name: str,
+                *,
+                operation: str,
+                **_: object,
+            ):
+                self.assertEqual(root, lock_root.resolve())
+                lock_events.append(name)
+                if len(lock_events) > 1:
+                    raise AssertionError("invalid intent requested a nested lock")
+                yield
+
+            with patch.object(transaction, "file_lock", recording_lock):
+                with self.assertRaises(TracebookError) as raised:
+                    transaction.recover_transactions(root)
+
+            self.assertEqual("TRANSACTION_RECOVERY_FAILED", raised.exception.code)
+            self.assertEqual("capture", raised.exception.operation)
+            self.assertEqual(["maintenance"], lock_events)
+            self.assertTrue(transaction_dir.is_dir())
+            self.assertTrue(intent_path.is_file())
+
+    def test_recovery_cleans_stale_intent_without_transaction_directory(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            intent_path = self._write_intent(root, "intent-only")
+
+            self.assertEqual((), transaction.recover_transactions(root))
+
+            self.assertFalse(intent_path.exists())
+
+    def test_recovery_cleans_crash_after_intent_before_manifest(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            target = root / "entry.md"
+            target.write_text("old\n", encoding="utf-8")
+            original_write = transaction.atomic_write_bytes
+            staged_written = False
+
+            def crash_after_staged_write(
+                path: Path,
+                content: bytes,
+                *,
+                operation: str,
+            ) -> None:
+                nonlocal staged_written
+                original_write(path, content, operation=operation)
+                staged_written = True
+                raise OSError("crash before manifest")
+
+            with patch.object(
+                transaction,
+                "atomic_write_bytes",
+                side_effect=crash_after_staged_write,
+            ):
+                with self.assertRaisesRegex(OSError, "crash before manifest"):
+                    transaction.commit_updates(
+                        root,
+                        "project-demo",
+                        "capture",
+                        {target: "new\n"},
+                        transaction_id="pre-manifest-crash",
+                    )
+
+            transaction_dir = (
+                root
+                / ".tracebook-state"
+                / "transactions"
+                / "pre-manifest-crash"
+            )
+            intent_path = (
+                root
+                / ".tracebook-state"
+                / "transaction-intents"
+                / "pre-manifest-crash.json"
+            )
+            self.assertTrue(staged_written)
+            self.assertTrue(transaction_dir.is_dir())
+            self.assertFalse((transaction_dir / "manifest.json").exists())
+            self.assertTrue(intent_path.is_file())
+
+            self.assertEqual((), transaction.recover_transactions(root))
+
+            self.assertEqual("old\n", target.read_text(encoding="utf-8"))
+            self.assertFalse(transaction_dir.exists())
+            self.assertFalse(intent_path.exists())
 
     def test_commit_rejects_duplicate_resolved_targets_before_transaction_write(
         self,
@@ -683,7 +867,6 @@ class TransactionRecoveryTest(unittest.TestCase):
                 knowledge_id="recovered-capture-rule",
                 scope="project",
                 kind="business-rule",
-                category="business-rules",
                 title="Recovered capture rule",
                 body="Every managed capture target must roll forward together.",
                 evidence=("src/recovery.py:L1-L12",),
@@ -749,7 +932,6 @@ class TransactionRecoveryTest(unittest.TestCase):
                 knowledge_id="keep-one-lifecycle-authority",
                 scope="project",
                 kind="decision",
-                category="adr-0001",
                 title="Keep one lifecycle authority",
                 body="The original current history must survive recovery.",
                 evidence=("src/recovery.py:L20-L32",),
@@ -764,7 +946,6 @@ class TransactionRecoveryTest(unittest.TestCase):
                 expected_version=1,
                 scope="project",
                 kind="decision",
-                category="adr-0001",
                 title="Keep one lifecycle authority",
                 body="The retired event must roll forward with every target.",
                 evidence=("src/recovery.py:L34-L42",),

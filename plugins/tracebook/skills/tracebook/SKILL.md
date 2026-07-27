@@ -83,6 +83,20 @@ blocking on a same-project writer. A `PROJECT_ACTIVATION_REQUIRED` response
 means the target has not been registered and must be activated with `resolve`
 before project context can be read. Context failure must be reported and may
 fall back to index navigation; do not pretend a structured search succeeded.
+Retrieval matches literal tokens (CJK bigrams, whole English words) with no
+stemming or synonyms, so prefer words that actually appear in the knowledge —
+if a query returns nothing, retry with terms from the project index or an exact
+`knowledge_id` rather than a paraphrase.
+
+To find knowledge from a source file — for example a path in an exception stack
+trace — pass `--evidence-path <repo-relative-or-project-absolute path>` (repeat
+for several files), with or without `--query`. It returns only knowledge whose
+`## Current` section lists that file as formal evidence (`evidence_match: true`),
+never a passing mention in prose or an old History reference. `--evidence-path`
+requires exactly one project and is project scope at the current snapshot only;
+combining it with `--scope
+domain/pattern/all` or `--as-of` is rejected. At least one of `--query` or
+`--evidence-path` must be non-empty.
 
 ## Read Related Projects Deliberately
 
@@ -136,10 +150,21 @@ not durable knowledge by themselves. A root cause supported by logs plus source,
 configuration, reproduction, or another stable source may pass the gate; never
 capture complete raw logs.
 
-Capture only when the conclusion is new or materially changed, verified,
-useful after the conversation, and has a governed destination. If any condition
-fails, do not capture it. An explicit no-write request disables capture, not
-relevant read-only context loading.
+Evaluate the write gate per atomic knowledge item, never per whole task. A task
+that produces several independent facts commits each that is new or
+materially changed, useful after the conversation, and has a governed
+destination — one `capture` call each. Never let one unverified item block the capture of an
+already-verified item. Skip an item only when it cannot be split further and its
+core conclusion has no evidence. An explicit no-write request disables capture,
+not relevant read-only context loading.
+
+An implemented-but-not-yet-accepted change is durable knowledge: capture the
+fact that the code or configuration was changed with `status: current`, and
+state its verification status and uncovered scope explicitly. Do not write it as
+"risk fully closed". Capture a long-lived, clearly unresolved risk as its own
+entity with `status: pending`. Do not withhold the confirmed facts because a
+dependency — often third-party — cannot yet be confirmed; record that dependency
+as a separate `pending` item instead.
 
 Write only verified, durable knowledge: business rules, terminology, scenarios,
 module relationships, architecture changes, code paths, API or database
@@ -152,7 +177,21 @@ project-specific facts, `02-domain` for reusable business knowledge, and
 summaries. Add source references for critical facts; mark incomplete evidence
 as `Pending`. Create an explicit JSON capture request and run
 `$SKILL_DIR/scripts/tracebook_runner.py capture` with `--root`, `--cwd`, and
-`--request`; consume its `changed_paths` and `new_paths`.
+`--request`; consume its `changed_paths` and `new_paths`. Pass the request
+through stdin with `--request -` (pipe the JSON in); do not write a temporary
+request file. A temporary file forces a placement decision the protocol does
+not govern and can leak scratch JSON into the knowledge root or a business
+repository. `--request <path>` remains supported for a pre-existing file, but a
+path resolving inside the knowledge root or the business repository is rejected
+with `INVALID_REQUEST`; stdin is the default and leaves nothing on disk to
+misplace or clean up.
+
+Each entity body should make explicit: the conclusion as a concrete fact with no
+inference mixed in; the evidence located in source, config, logs, tests, or a
+Git diff; the verification status (static / runtime / end-to-end / pending); the
+scope of services and entry points the conclusion applies to; and only the open
+items directly tied to that entity. Prefer "code changed, SIT acceptance
+pending, gateway network isolation unverified" over "security fix fully closed".
 
 The request must declare `operation` and a stable lowercase-hyphenated
 `knowledge_id`. Use `create`
@@ -160,11 +199,16 @@ only for a missing entity. Use `revise` or `change-status` with
 `expected_version` for an existing entity; title, body, evidence, and lifecycle
 changes retain the original ID. `event_id` remains content-event idempotence,
 not entity identity. The runner renders one Markdown authority page per entity
-with a Current section and versioned History.
+with a Current section and versioned History. `event_id` is output only: the
+runner generates it and echoes it in the capture response and as a
+`<!-- tracebook:event:... -->` page marker. Never copy it back into a capture
+request — an `event_id` field is rejected as unknown.
 Never submit raw transcripts, complete logs, temporary answers, or an
 unverified inference as a capture. Use `status: current` with an `evidence`
-list for confirmed knowledge. Use `status: pending` only for a durable,
-explicitly unresolved item; it may have an empty `evidence` list. Use
+list for confirmed knowledge. Use `status: pending` for a durable item that is
+confirmed to exist but not yet verified or resolved — a known open risk or
+awaited acceptance, not an evidence-poor guess; it may have an empty `evidence`
+list. Use
 `status: deprecated` for information that no longer applies. Use
 `status: superseded` only with a `replacement_knowledge_id` for an existing
 active successor knowledge entity.
@@ -176,8 +220,9 @@ prior version in History. Do not use a repeated title as an implicit overwrite.
 Use a lowercase-hyphenated `kind` to select the governed destination; project
 kinds include `architecture`, `api`, `business-rule`, `database`, `module`,
 `source-map`, `terminology`, `decision`, `incident`, and `change`. `domain`
-and `pattern` scopes also use a stable kind. `category`, when present, is only
-a classification and never a path.
+and `pattern` scopes also use a stable kind. Retired request fields such as
+`category`, `topic`, and `replacement` are rejected; use `kind` and
+`replacement_knowledge_id` as the schema-v2 contract defines.
 Entity paths are derived from scope, kind, and `knowledge_id`; do not create
 aggregate pages or use a topic split to route schema-v2 knowledge. Apply
 frontmatter and lifecycle labels when required.
@@ -198,7 +243,13 @@ Run `$SKILL_DIR/scripts/tracebook_runner.py check` with the external root as
 item as `--changed`, every `new_paths` item as `--new-path`, and the capture
 `health_scope` as `--scope`. Pass the current date as `--today` and the
 business repository root as `--source-root` for source-map validation. Consume
-and report the structured JSON result.
+and report the structured JSON result. When `--source-root` is supplied the
+report's `Review Candidates` section flags Current knowledge whose evidence
+files are missing (`source_missing`, strong) or changed after the knowledge was
+last updated (`source_mtime_newer`, advisory); optionally pass
+`--review-after-days N` (N > 0) to also flag knowledge not updated in N days
+(`review_age_exceeded`, advisory). These are review prompts, not proof a fact is
+wrong — verify against evidence before changing any status.
 
 When `check_type: Deep` is returned, do not treat it as a completed Deep check.
 Run `$SKILL_DIR/scripts/tracebook_runner.py audit` with the same `--root`,

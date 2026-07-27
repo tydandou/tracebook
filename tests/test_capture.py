@@ -21,7 +21,6 @@ class CaptureTest(unittest.TestCase):
             "operation": "create",
             "scope": "project",
             "kind": "business-rule",
-            "category": "business-rules",
             "knowledge_id": "refund-status-rule",
             "title": "Refund status rule",
             "body": "REFUNDING cannot be treated as a completed refund.",

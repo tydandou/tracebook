@@ -15,7 +15,6 @@ class LifecycleCaptureTest(unittest.TestCase):
             "operation": "create",
             "scope": "project",
             "kind": "decision",
-            "category": "decision",
             "knowledge_id": "persist-idempotency-keys",
             "title": "Persist idempotency keys first",
             "body": "Persist the message key before applying side effects.",

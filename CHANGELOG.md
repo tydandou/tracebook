@@ -3,6 +3,97 @@
 This project follows semantic versioning. Release entries are tagged locally
 before the matching Git tag is published.
 
+## [Unreleased]
+
+## [4.0.0] - 2026-07-27
+
+The major version is required because this release enforces previously
+advisory capture-input boundaries.
+
+### Added
+
+- Evidence reverse query: `context-read-path`/`context-read` accept repeatable
+  `--evidence-path` (repo-relative or project-absolute). Returns only knowledge
+  whose `## Current` section lists that file as formal evidence
+  (`evidence_match: true`), never a prose mention or a History reference.
+  Exactly one project at the current snapshot only. `context-read` resolves a
+  project-absolute path against the selected project's registered locations.
+- Knowledge review candidates: with `--source-root`, `check` reports Current
+  knowledge whose evidence files are missing (`source_missing`, strong) or
+  changed after the knowledge was last updated (`source_mtime_newer`,
+  advisory). `--review-after-days N` adds a `review_age_exceeded` advisory.
+  These are review prompts and never change a knowledge status automatically.
+  A stored evidence path that resolves outside `--source-root` is reported as
+  `source_outside_root` (strong) without probing the external target.
+- `capture --request -` reads the JSON request from stdin, so no temporary
+  request file has to be created. `--request <path>` remains supported for
+  pre-existing files outside governed trees.
+
+### Changed
+
+- Write-gate guidance is now per atomic knowledge item, not per whole task: a
+  task's verified facts are each captured even when a separate, unverified
+  dependency remains, which is captured as its own `status: pending` item.
+  `pending` means a confirmed-but-unresolved item (known risk / awaited
+  acceptance), not an evidence-poor guess.
+- A capture request that includes the output-only `event_id` field now returns
+  a specific hint instead of a bare "unknown fields" error.
+- Health check report (`to_markdown`) now renders the `Duplicate Pages`,
+  `Log Growth`, and `Review Candidates` sections that were previously computed
+  but omitted.
+- Retrieval ranking: on a score tie, the more recently updated knowledge now
+  sorts first (was oldest-first).
+- Risk level: a `source_missing` review candidate raises the scope risk level
+  to High; advisory candidates raise it to Medium. Existing projects with
+  missing evidence files may move from Low/Medium to High on the next check.
+- Snapshot storage is now bounded: after each project capture the store keeps
+  at most 10 valid versions including the live snapshot. Pruning atomically
+  retires an old directory before deletion; a lock-free reader whose resolved
+  root is retired retries from the current pointer instead of returning partial
+  or empty context.
+
+### Breaking Changes
+
+- Removed the retired capture request fields `category`, `topic`, and
+  `replacement`. They were accepted and then discarded by every code path;
+  they are now rejected as unknown fields. A caller still sending any of them
+  receives `INVALID_REQUEST` where the request previously succeeded.
+- A capture request file resolving inside the knowledge root or the business
+  repository is rejected with `INVALID_REQUEST`. Pipe the request through stdin
+  with `--request -`, or use a pre-existing file outside both governed trees.
+
+### Fixed
+
+- Transaction recovery no longer deletes an active writer's manifestless
+  staging directory. Writers publish a scope-bound internal intent before the
+  transaction directory becomes visible; recovery waits for that scope and
+  rechecks state before cleanup. Internal intent/manifest reads allow a
+  concurrent Windows delete and normalize vanished paths to `FileNotFoundError`.
+  First-use lock files are atomically published fully initialized, so competing
+  processes no longer write the empty file before acquiring its byte lock. CLI,
+  knowledge schemas, lock-free reads, and cross-project parallelism are unchanged.
+- Capture gate rejections no longer carry a doubled `INVALID_REQUEST:` prefix.
+  The gate's messages are already coded, so the runner passes them through
+  instead of prefixing them a second time. A caller matching on the error code
+  now sees one prefix.
+- Chinese task-sentence retrieval: the tokenizer no longer builds bigrams across
+  punctuation and word boundaries, so multi-clause queries recall the right
+  entities.
+- CRLF-saved authority pages are normalized on read and no longer silently drop
+  out of retrieval results.
+- Stopword-only queries (e.g. "the a is of to") now return no results instead
+  of arbitrary pages.
+- `project-status.md` records the numeric knowledge version (`v1`) instead of
+  the title text.
+- Windows snapshot durability tests no longer fail on 8.3 short-path
+  comparisons, restoring verification of the pointer-last-commit and
+  crash/recover guarantees.
+- Runner responses are written as UTF-8 bytes instead of through the console's
+  locale codepage, so CJK titles and queries no longer reach the caller as
+  non-UTF-8 JSON on a non-UTF-8 Windows console.
+- A snapshot-pruning failure can no longer surface as a capture error: pruning
+  runs after the write is durable, and every step is now contained.
+
 ## [3.3.2] - 2026-07-24
 
 ### Removed

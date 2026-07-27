@@ -240,6 +240,74 @@ class LockingTest(unittest.TestCase):
                 {path.name for path in locks_dir.iterdir()},
             )
 
+    def test_concurrent_processes_atomically_initialize_same_lock_file(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            ready = base / "ready"
+            ready.mkdir()
+            gate = base / "start"
+            helper = (
+                "from pathlib import Path\n"
+                "import sys,time\n"
+                "from plugins.tracebook.skills.tracebook.scripts.locking import file_lock\n"
+                "root,ready,gate=map(Path,sys.argv[1:4])\n"
+                "ready.touch()\n"
+                "deadline=time.monotonic()+10\n"
+                "while not gate.exists():\n"
+                "    if time.monotonic()>=deadline: raise TimeoutError('gate')\n"
+                "    time.sleep(0.01)\n"
+                "with file_lock(root,'shared-first-lock',timeout=5): pass\n"
+            )
+            processes: list[subprocess.Popen[str]] = []
+            for index in range(8):
+                processes.append(
+                    subprocess.Popen(
+                        [
+                            sys.executable,
+                            "-c",
+                            helper,
+                            str(root),
+                            str(ready / str(index)),
+                            str(gate),
+                        ],
+                        cwd=Path(__file__).resolve().parents[1],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
+                )
+            failures: list[str] = []
+            try:
+                deadline = time.monotonic() + 10
+                while len(list(ready.iterdir())) != len(processes):
+                    if time.monotonic() >= deadline:
+                        self.fail("workers did not reach lock initialization gate")
+                    time.sleep(0.01)
+                gate.touch()
+
+                for index, process in enumerate(processes):
+                    stdout, stderr = process.communicate(timeout=15)
+                    if process.returncode != 0:
+                        failures.append(
+                            f"worker {index}: exit={process.returncode}\n"
+                            f"stdout={stdout}\nstderr={stderr}"
+                        )
+            finally:
+                for process in processes:
+                    if process.poll() is None:
+                        process.kill()
+                        process.communicate()
+            self.assertEqual([], failures, "\n\n".join(failures))
+            lock_path = (
+                root
+                / ".tracebook-state"
+                / "locks"
+                / "shared-first-lock.lock"
+            )
+            self.assertEqual(b"\0", lock_path.read_bytes())
+            self.assertEqual([], list(lock_path.parent.glob(".shared-first-lock.lock.*.tmp")))
+
 
 if __name__ == "__main__":
     unittest.main()

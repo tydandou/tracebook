@@ -18,12 +18,14 @@ from .storage import (
     atomic_write_bytes,
     atomic_write_text,
     confined_path,
+    read_bytes_shared,
     sha256_bytes,
     sha256_file,
 )
 
 
 _MANIFEST_NAME = "manifest.json"
+_INTENT_SUFFIX = ".json"
 _MANIFEST_KEYS = {
     "version",
     "transaction_id",
@@ -33,6 +35,7 @@ _MANIFEST_KEYS = {
     "created_at",
     "updates",
 }
+_INTENT_KEYS = {"version", "transaction_id", "operation", "scope"}
 _UPDATE_KEYS = {"target", "staged", "original_hash", "staged_hash"}
 _LOCK_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -88,24 +91,74 @@ def _transactions_directory(root: Path, *, operation: str) -> Path:
     )
 
 
+def _transaction_intents_directory(root: Path, *, operation: str) -> Path:
+    return confined_path(
+        root,
+        root / ".tracebook-state" / "transaction-intents",
+        operation=operation,
+    )
+
+
 def _transaction_directory(
     transactions_dir: Path,
     transaction_id: str,
     *,
     operation: str,
 ) -> Path:
-    candidate = confined_path(
-        transactions_dir,
-        transactions_dir / transaction_id,
-        operation=operation,
-    )
     resolved_transactions = transactions_dir.resolve()
-    if candidate.parent != resolved_transactions or candidate.name != transaction_id:
+    lexical_candidate = resolved_transactions / transaction_id
+    if (
+        lexical_candidate.parent != resolved_transactions
+        or lexical_candidate.name != transaction_id
+    ):
         raise TracebookError(
             "PATH_OUTSIDE_ROOT",
-            f"Transaction path {candidate} is not a direct child of {resolved_transactions}",
+            f"Transaction path {lexical_candidate} is not a direct child of "
+            f"{resolved_transactions}",
             operation,
         )
+    try:
+        candidate = confined_path(
+            resolved_transactions,
+            lexical_candidate,
+            operation=operation,
+        )
+    except TracebookError:
+        # On Windows, resolving a directory concurrently removed by its writer
+        # can transiently produce a $Extend/$Deleted path. Once the lexical
+        # child is gone there is nothing left for recovery to inspect or alter.
+        if not lexical_candidate.exists():
+            return lexical_candidate
+        raise
+    return candidate
+
+
+def _intent_path(
+    intents_dir: Path,
+    transaction_id: str,
+    *,
+    operation: str,
+) -> Path:
+    filename = f"{transaction_id}{_INTENT_SUFFIX}"
+    resolved_intents = intents_dir.resolve()
+    lexical_candidate = resolved_intents / filename
+    if lexical_candidate.parent != resolved_intents or lexical_candidate.name != filename:
+        raise TracebookError(
+            "PATH_OUTSIDE_ROOT",
+            f"Transaction intent path {lexical_candidate} is not a direct child of "
+            f"{resolved_intents}",
+            operation,
+        )
+    try:
+        candidate = confined_path(
+            resolved_intents,
+            lexical_candidate,
+            operation=operation,
+        )
+    except TracebookError:
+        if not lexical_candidate.exists():
+            return lexical_candidate
+        raise
     return candidate
 
 
@@ -113,10 +166,46 @@ def _manifest_text(manifest: Mapping[str, object]) -> str:
     return json.dumps(manifest, indent=2, sort_keys=True) + "\n"
 
 
+def _intent_text(intent: Mapping[str, object]) -> str:
+    return json.dumps(intent, indent=2, sort_keys=True) + "\n"
+
+
+def _read_intent(intent_path: Path) -> dict[str, Any]:
+    try:
+        intent = json.loads(read_bytes_shared(intent_path).decode("utf-8"))
+    except json.JSONDecodeError as error:
+        raise _failure(
+            "recover",
+            f"Invalid transaction intent {intent_path}: {error.msg}",
+        ) from None
+
+    operation = (
+        intent.get("operation", "recover")
+        if isinstance(intent, dict)
+        else "recover"
+    )
+    if not isinstance(operation, str) or not operation:
+        operation = "recover"
+    if not isinstance(intent, dict) or set(intent) != _INTENT_KEYS:
+        raise _failure(operation, f"Invalid transaction intent {intent_path}")
+    if intent["version"] != 1:
+        raise _failure(operation, f"Unsupported transaction intent {intent_path}")
+    if not isinstance(intent["transaction_id"], str) or not intent["transaction_id"]:
+        raise _failure(operation, f"Invalid transaction id in {intent_path}")
+    if not isinstance(intent["operation"], str) or not intent["operation"]:
+        raise _failure(operation, f"Invalid operation in {intent_path}")
+    _validate_scope(
+        intent["scope"],
+        operation=operation,
+        manifest_path=intent_path,
+    )
+    return intent
+
+
 def _read_manifest(transaction_dir: Path) -> dict[str, Any]:
     manifest_path = transaction_dir / _MANIFEST_NAME
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = json.loads(read_bytes_shared(manifest_path).decode("utf-8"))
     except json.JSONDecodeError as error:
         raise _failure(
             "recover",
@@ -292,6 +381,14 @@ def _cleanup_transaction(root: Path, transaction_dir: Path, *, operation: str) -
     shutil.rmtree(confined_transaction)
 
 
+def _cleanup_intent(intent_path: Path) -> None:
+    try:
+        intent_path.unlink()
+    except FileNotFoundError:
+        return
+    _sync_directory(intent_path.parent)
+
+
 def commit_updates(
     root: Path,
     scope: str,
@@ -328,12 +425,28 @@ def commit_updates(
     )
 
     transactions_dir = _transactions_directory(resolved_root, operation=operation)
+    intents_dir = _transaction_intents_directory(resolved_root, operation=operation)
     selected_id = transaction_id if transaction_id is not None else str(uuid.uuid4())
     transaction_dir = _transaction_directory(
         transactions_dir,
         selected_id,
         operation=operation,
     )
+    intents_dir.mkdir(parents=True, exist_ok=True)
+    intent_path = _intent_path(intents_dir, selected_id, operation=operation)
+    if transaction_dir.exists() or intent_path.exists():
+        raise _failure(operation, f"Transaction id already exists: {selected_id}")
+    intent: dict[str, object] = {
+        "version": 1,
+        "transaction_id": selected_id,
+        "operation": operation,
+        "scope": scope,
+    }
+    # Publish ownership before the transaction directory becomes visible.
+    # Production callers hold this scope lock (or maintenance for root layout),
+    # so recovery can wait for an active writer before judging a manifestless
+    # directory to be abandoned.
+    atomic_write_text(intent_path, _intent_text(intent), operation=operation)
     staged_dir = transaction_dir / "staged"
     staged_dir.mkdir(parents=True, exist_ok=False)
 
@@ -373,6 +486,7 @@ def commit_updates(
     manifest["state"] = "committed"
     atomic_write_text(manifest_path, _manifest_text(manifest), operation=operation)
     _cleanup_transaction(resolved_root, transaction_dir, operation=operation)
+    _cleanup_intent(intent_path)
     return tuple(target for target, _ in ordered)
 
 
@@ -505,22 +619,150 @@ def inspect_transactions(root: Path) -> tuple[TransactionDiagnostic, ...]:
     return tuple(diagnostics)
 
 
+def _read_transaction_intent(
+    intents_dir: Path,
+    transaction_id: str,
+    *,
+    operation: str,
+) -> tuple[Path, dict[str, Any]]:
+    intent_path = _intent_path(
+        intents_dir,
+        transaction_id,
+        operation=operation,
+    )
+    intent = _read_intent(intent_path)
+    if intent["transaction_id"] != transaction_id:
+        raise _failure(
+            intent["operation"],
+            "Transaction intent does not match transaction id",
+        )
+    return intent_path, intent
+
+
+def _cleanup_stale_intents(
+    root: Path,
+    transactions_dir: Path,
+    intents_dir: Path,
+) -> None:
+    if not intents_dir.is_dir():
+        return
+    for discovered_intent in sorted(intents_dir.iterdir(), key=lambda path: path.name):
+        if not discovered_intent.is_file() or not discovered_intent.name.endswith(_INTENT_SUFFIX):
+            continue
+        transaction_id = discovered_intent.name[: -len(_INTENT_SUFFIX)]
+        try:
+            intent_path, intent = _read_transaction_intent(
+                intents_dir,
+                transaction_id,
+                operation="recover",
+            )
+        except FileNotFoundError:
+            continue
+        transaction_dir = _transaction_directory(
+            transactions_dir,
+            transaction_id,
+            operation="recover",
+        )
+        if transaction_dir.exists():
+            continue
+        initial_scope = intent["scope"]
+        with file_lock(root, initial_scope, operation="recover"):
+            if transaction_dir.exists():
+                continue
+            try:
+                current_intent = _read_intent(intent_path)
+            except FileNotFoundError:
+                continue
+            if (
+                current_intent["transaction_id"] != transaction_id
+                or current_intent["scope"] != initial_scope
+            ):
+                raise _failure(
+                    current_intent["operation"],
+                    "Transaction intent changed while waiting",
+                )
+            _cleanup_intent(intent_path)
+
+
+def _cleanup_manifestless_transactions(
+    root: Path,
+    transactions_dir: Path,
+    intents_dir: Path,
+) -> None:
+    if not transactions_dir.is_dir():
+        return
+    for discovered_dir in sorted(transactions_dir.iterdir(), key=lambda path: path.name):
+        if not discovered_dir.is_dir() or (discovered_dir / _MANIFEST_NAME).is_file():
+            continue
+        transaction_dir = _transaction_directory(
+            transactions_dir,
+            discovered_dir.name,
+            operation="recover",
+        )
+        intent_path = _intent_path(
+            intents_dir,
+            transaction_dir.name,
+            operation="recover",
+        )
+        if not intent_path.is_file():
+            # Compatibility for abandoned directories created before intents
+            # existed. New writers always publish an intent before making the
+            # transaction directory visible.
+            shutil.rmtree(transaction_dir, ignore_errors=True)
+            continue
+
+        try:
+            _, intent = _read_transaction_intent(
+                intents_dir,
+                transaction_dir.name,
+                operation="recover",
+            )
+        except FileNotFoundError:
+            if not transaction_dir.exists():
+                continue
+            raise _failure(
+                "recover",
+                "Transaction intent disappeared while directory remained",
+            ) from None
+        initial_scope = intent["scope"]
+        with file_lock(root, initial_scope, operation="recover"):
+            if not transaction_dir.exists():
+                _cleanup_intent(intent_path)
+                continue
+            if (transaction_dir / _MANIFEST_NAME).is_file():
+                continue
+            try:
+                current_intent = _read_intent(intent_path)
+            except FileNotFoundError:
+                raise _failure(
+                    intent["operation"],
+                    "Transaction intent disappeared while directory remained",
+                ) from None
+            if (
+                current_intent["transaction_id"] != transaction_dir.name
+                or current_intent["scope"] != initial_scope
+            ):
+                raise _failure(
+                    current_intent["operation"],
+                    "Transaction intent changed while waiting",
+                )
+            shutil.rmtree(transaction_dir)
+            _cleanup_intent(intent_path)
+
+
 def recover_transactions(root: Path) -> tuple[Path, ...]:
     resolved_root = root.resolve()
     recovered: list[Path] = []
     with file_lock(resolved_root, "maintenance", operation="recover"):
         transactions_dir = _transactions_directory(resolved_root, operation="recover")
-        if not transactions_dir.exists():
+        intents_dir = _transaction_intents_directory(resolved_root, operation="recover")
+        if not transactions_dir.exists() and not intents_dir.exists():
             return ()
 
-        # A directory without a manifest never reached the commit-intent point
-        # (commit_updates writes staged files, then the manifest, only then
-        # replaces targets). Such staged leftovers are safe to discard and
-        # would otherwise leak permanently, since recovery only inspects dirs
-        # that have a manifest.
-        for entry in transactions_dir.iterdir():
-            if entry.is_dir() and not (entry / _MANIFEST_NAME).is_file():
-                shutil.rmtree(entry, ignore_errors=True)
+        _cleanup_stale_intents(resolved_root, transactions_dir, intents_dir)
+        _cleanup_manifestless_transactions(resolved_root, transactions_dir, intents_dir)
+        if not transactions_dir.is_dir():
+            return ()
 
         transaction_dirs = sorted(
             (
@@ -558,6 +800,13 @@ def recover_transactions(root: Path) -> tuple[Path, ...]:
                         resolved_root,
                         transaction_dir,
                         operation=operation,
+                    )
+                    _cleanup_intent(
+                        _intent_path(
+                            intents_dir,
+                            transaction_dir.name,
+                            operation=operation,
+                        )
                     )
                     continue
 
@@ -606,6 +855,13 @@ def recover_transactions(root: Path) -> tuple[Path, ...]:
                     resolved_root,
                     transaction_dir,
                     operation=operation,
+                )
+                _cleanup_intent(
+                    _intent_path(
+                        intents_dir,
+                        transaction_dir.name,
+                        operation=operation,
+                    )
                 )
                 recovered.extend(update["target"] for update in validated)
     return tuple(recovered)

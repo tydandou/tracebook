@@ -156,6 +156,63 @@ class RunnerIntegrationTest(unittest.TestCase):
             self.assertFalse(target_path.exists())
             self.assertEqual(before, (root / "registry.json").read_bytes())
 
+    def test_context_read_resolves_absolute_evidence_from_registered_location(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            repo = base / "service"
+            (repo / ".git").mkdir(parents=True)
+            source = repo / "src" / "service.py"
+            source.parent.mkdir(parents=True)
+            source.write_text("service = True\n", encoding="utf-8")
+            resolved = self._run_runner(
+                base, "resolve", "--root", str(root), "--cwd", str(repo)
+            )
+            request = base / "evidence-request.json"
+            request.write_text(
+                json.dumps({
+                    "operation": "create",
+                    "knowledge_id": "service-entrypoint",
+                    "scope": "project",
+                    "kind": "source-map",
+                    "title": "Service entrypoint",
+                    "body": "The service starts here.",
+                    "evidence": ["src/service.py:L1"],
+                    "status": "current",
+                    "write_intent": "durable",
+                    "content_kind": "knowledge",
+                }),
+                encoding="utf-8",
+            )
+            self._run_runner(
+                base,
+                "capture",
+                "--root",
+                str(root),
+                "--cwd",
+                str(repo),
+                "--request",
+                str(request),
+                "--today",
+                "2026-07-27",
+            )
+
+            result = self._run_runner(
+                base,
+                "context-read",
+                "--root",
+                str(root),
+                "--project-id",
+                str(resolved["project"]["project_id"]),
+                "--evidence-path",
+                str(source),
+            )
+
+            self.assertEqual(
+                ["service-entrypoint"],
+                [item["knowledge_id"] for item in result["current_context"]],
+            )
+
     def test_complete_knowledge_flow_for_related_empty_and_iterating_projects(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp).resolve()
@@ -323,7 +380,6 @@ class RunnerIntegrationTest(unittest.TestCase):
                         "knowledge_id": "must-not-fall-back",
                         "scope": "project",
                         "kind": "business-rule",
-                        "category": "business-rules",
                         "title": "Must not use the legacy capture path",
                         "body": "A null operation must be rejected before any write.",
                         "evidence": ["src/example.py:L1-L1"],
@@ -463,6 +519,222 @@ class RunnerIntegrationTest(unittest.TestCase):
             self.assertEqual([str(target)], recovered["recovered_paths"])
             self.assertEqual("new\n", target.read_text(encoding="utf-8"))
 
+    def test_capture_rejects_unknown_request_fields(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(repo))
+            request = base / "capture.json"
+            request.write_text(
+                json.dumps(
+                    {
+                        "operation": "create",
+                        "knowledge_id": "dead-field-rule",
+                        "scope": "project",
+                        "kind": "business-rule",
+                        "category": "business-rules",
+                        "title": "Dead field rule",
+                        "body": "Retired fields must be rejected, not silently dropped.",
+                        "evidence": ["src/example.py:L1-L1"],
+                        "status": "Current",
+                        "write_intent": "durable",
+                        "content_kind": "knowledge",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(RUNNER), "capture", "--root", str(root),
+                 "--cwd", str(repo), "--request", str(request), "--today", "2026-07-19"],
+                cwd=base, capture_output=True, check=False, text=True,
+            )
+            self.assertEqual(2, result.returncode)
+            self.assertIn("unknown fields: category", json.loads(result.stdout)["error"])
+
+    def _capture_request_body(self, knowledge_id: str) -> dict:
+        return {
+            "operation": "create",
+            "knowledge_id": knowledge_id,
+            "scope": "project",
+            "kind": "business-rule",
+            "title": "Placement rule",
+            "body": "Request files must not live inside governed areas.",
+            "evidence": ["src/example.py:L1-L1"],
+            "status": "Current",
+            "write_intent": "durable",
+            "content_kind": "knowledge",
+        }
+
+    def test_capture_rejects_request_file_inside_knowledge_root(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(repo))
+            request = root / "capture-leaked.json"
+            request.write_text(json.dumps(self._capture_request_body("in-root-rule")), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(RUNNER), "capture", "--root", str(root),
+                 "--cwd", str(repo), "--request", str(request), "--today", "2026-07-19"],
+                cwd=base, capture_output=True, check=False, text=True,
+            )
+            self.assertEqual(2, result.returncode)
+            payload = json.loads(result.stdout)
+            self.assertIn("inside the knowledge root", payload["error"])
+            # The response names the offending file, the area, and the exact fix.
+            self.assertEqual(str(request.resolve()), payload["problem"]["request_path"])
+            self.assertEqual("knowledge root", payload["problem"]["governed_area"])
+            self.assertIn("--request -", payload["required_action"])
+
+    def test_capture_rejects_request_file_inside_business_repo(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(repo))
+            request = repo / "capture-leaked.json"
+            request.write_text(json.dumps(self._capture_request_body("in-repo-rule")), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(RUNNER), "capture", "--root", str(root),
+                 "--cwd", str(repo), "--request", str(request), "--today", "2026-07-19"],
+                cwd=base, capture_output=True, check=False, text=True,
+            )
+            self.assertEqual(2, result.returncode)
+            payload = json.loads(result.stdout)
+            self.assertIn("inside the business repository", payload["error"])
+            self.assertEqual(str(request.resolve()), payload["problem"]["request_path"])
+            self.assertEqual("business repository", payload["problem"]["governed_area"])
+            self.assertIn("--request -", payload["required_action"])
+
+    def test_capture_accepts_request_file_outside_governed_areas(self) -> None:
+        with TemporaryDirectory() as temp, TemporaryDirectory() as scratch:
+            base = Path(temp)
+            root = base / "knowledge"
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(repo))
+            request = Path(scratch) / "capture.json"
+            request.write_text(json.dumps(self._capture_request_body("outside-rule")), encoding="utf-8")
+            captured = self._run_runner(
+                base, "capture", "--root", str(root), "--cwd", str(repo),
+                "--request", str(request), "--today", "2026-07-19",
+            )
+            self.assertFalse(captured["skipped"])
+
+    def test_capture_reads_request_from_stdin(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(repo))
+            payload = json.dumps(
+                {
+                    "operation": "create",
+                    "knowledge_id": "stdin-capture-rule",
+                    "scope": "project",
+                    "kind": "business-rule",
+                    "title": "Stdin capture rule",
+                    "body": "A capture request may arrive on stdin without a temp file.",
+                    "evidence": ["src/example.py:L1-L1"],
+                    "status": "Current",
+                    "write_intent": "durable",
+                    "content_kind": "knowledge",
+                },
+                ensure_ascii=False,
+            )
+            result = subprocess.run(
+                [sys.executable, str(RUNNER), "capture", "--root", str(root),
+                 "--cwd", str(repo), "--request", "-", "--today", "2026-07-19"],
+                cwd=base, input=payload.encode("utf-8"),
+                capture_output=True, check=False,
+            )
+            response = json.loads(result.stdout.decode("utf-8"))
+            self.assertEqual(0, result.returncode, response)
+            self.assertFalse(response["skipped"])
+            # No capture-request scratch file leaked into the knowledge root.
+            self.assertEqual([], list(root.rglob("capture*.json")))
+            written = root / "01-projects"
+            self.assertTrue(any(
+                p.name == "stdin-capture-rule.md" for p in written.rglob("*.md")
+            ))
+
+    def test_gate_rejection_carries_exactly_one_error_code(self) -> None:
+        """`capture.py` pre-codes its messages; the runner must not prefix them twice."""
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(repo))
+            for evidence, fragment in (
+                ([], "evidence is required for Current knowledge"),
+                (["C:/outside/X.java"], "evidence is unclassified"),
+                (["../../etc/passwd"], "evidence is unclassified"),
+            ):
+                with self.subTest(evidence=evidence):
+                    payload = json.dumps({
+                        "operation": "create",
+                        "knowledge_id": "gate-probe",
+                        "scope": "project",
+                        "kind": "business-rule",
+                        "title": "Gate probe",
+                        "body": "Rejected before any write.",
+                        "evidence": evidence,
+                    }, ensure_ascii=False)
+                    result = subprocess.run(
+                        [sys.executable, str(RUNNER), "capture", "--root", str(root),
+                         "--cwd", str(repo), "--request", "-", "--today", "2026-07-19"],
+                        cwd=base, input=payload.encode("utf-8"),
+                        capture_output=True, check=False,
+                    )
+                    message = json.loads(result.stdout.decode("utf-8"))["error"]
+                    self.assertEqual(2, result.returncode, message)
+                    self.assertEqual(1, message.count("INVALID_REQUEST:"), message)
+                    self.assertTrue(message.startswith("INVALID_REQUEST: "), message)
+                    self.assertIn(fragment, message)
+            self.assertEqual([], list(root.rglob("gate-probe.md")))
+
+    def test_capture_rejects_event_id_with_a_specific_hint(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "knowledge"
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            self._run_runner(base, "resolve", "--root", str(root), "--cwd", str(repo))
+            request = base / "capture.json"
+            request.write_text(
+                json.dumps(
+                    {
+                        "operation": "create",
+                        "knowledge_id": "echoed-event-id-rule",
+                        "scope": "project",
+                        "kind": "business-rule",
+                        "title": "Echoed event id rule",
+                        "body": "An echoed output field must not be sent back as input.",
+                        "evidence": ["src/example.py:L1-L1"],
+                        "status": "Current",
+                        "write_intent": "durable",
+                        "content_kind": "knowledge",
+                        "event_id": "0123456789abcdef",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, str(RUNNER), "capture", "--root", str(root),
+                 "--cwd", str(repo), "--request", str(request), "--today", "2026-07-19"],
+                cwd=base, capture_output=True, check=False, text=True,
+            )
+            self.assertEqual(2, result.returncode)
+            error = json.loads(result.stdout)["error"]
+            self.assertIn("unknown fields: event_id", error)
+            self.assertIn("generated by the runner", error)
+
     def test_capture_scope_flows_to_check_and_audit(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)
@@ -489,7 +761,6 @@ class RunnerIntegrationTest(unittest.TestCase):
                                 "knowledge_id": f"{scope}-scope-check",
                                 "scope": scope,
                                 "kind": scope,
-                                "category": category,
                                 "title": title,
                                 "body": f"Verified {scope} knowledge.",
                                 "evidence": ["src/example.py:L1-L1"],

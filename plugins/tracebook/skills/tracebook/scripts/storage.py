@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -42,6 +43,8 @@ def read_bytes_shared(path: Path) -> bytes:
     OPEN_EXISTING = 3
     FLAG_BACKUP_SEMANTICS = 0x02000000
     ERROR_ACCESS_DENIED = 5
+    ERROR_FILE_NOT_FOUND = 2
+    ERROR_PATH_NOT_FOUND = 3
     ERROR_SHARING_VIOLATION = 32
     # A concurrent os.replace briefly puts the target in a delete-pending state;
     # a CreateFileW landing in that window returns ACCESS_DENIED even with full
@@ -65,6 +68,8 @@ def read_bytes_shared(path: Path) -> bytes:
         if last_error not in (ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION) or attempt == 4:
             break
         time.sleep(0.02 * (attempt + 1))
+    if last_error in {ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND}:
+        raise FileNotFoundError(errno.ENOENT, f"cannot open {path}", path)
     raise OSError(last_error, f"cannot open {path}")
 
 

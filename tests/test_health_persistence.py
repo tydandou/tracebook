@@ -483,7 +483,7 @@ class HealthPersistenceTest(unittest.TestCase):
                 finally:
                     active.remove(name)
 
-            def run(root: Path, scan_root: Path, *args: object) -> CheckReport:
+            def run(root: Path, scan_root: Path, *args: object, **kwargs: object) -> CheckReport:
                 self.assertEqual(context.root / "02-domain", scan_root)
                 self.assertIn("domain", active)
                 return report
@@ -495,9 +495,9 @@ class HealthPersistenceTest(unittest.TestCase):
             with patch.object(tracebook_runner, "file_lock", recording_lock), patch.object(
                 tracebook_runner, "run_check", side_effect=run
             ), patch.object(
-                tracebook_runner, "_persist_check_under_lock", side_effect=persist
+                tracebook_runner, "persist_check_under_lock", side_effect=persist
             ), patch.object(
-                tracebook_runner, "_finish_health_persistence", return_value=(aggregate,)
+                tracebook_runner, "finish_health_persistence", return_value=(aggregate,)
             ):
                 result = check(
                     context,
