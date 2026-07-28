@@ -20,6 +20,7 @@ if __package__ in (None, ""):
     from scripts.check_knowledge import (
         CheckReport,
         DeepAuditReport,
+        _load_page_contents,
         _trigger,
         run_check,
         run_deep_audit,
@@ -32,6 +33,7 @@ if __package__ in (None, ""):
         persist_audit_under_lock,
         persist_check_under_lock,
         scope_lock_name,
+        system_relation_candidates,
         ensure_health_layout,
         rebuild_global_health,
     )
@@ -52,7 +54,7 @@ if __package__ in (None, ""):
         update_project,
     )
     from scripts.snapshots import ensure_project_snapshot, project_knowledge_root
-    from scripts.system_registry import add_relation, bind_project as bind_system_project, create_system, get_system
+    from scripts.system_registry import add_relation, bind_project as bind_system_project, create_system, get_system, load_systems
     from scripts.transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 else:
     from .capture import (
@@ -63,6 +65,7 @@ else:
     from .check_knowledge import (
         CheckReport,
         DeepAuditReport,
+        _load_page_contents,
         _trigger,
         run_check,
         run_deep_audit,
@@ -75,6 +78,7 @@ else:
         persist_audit_under_lock,
         persist_check_under_lock,
         scope_lock_name,
+        system_relation_candidates,
         ensure_health_layout,
         rebuild_global_health,
     )
@@ -95,7 +99,7 @@ else:
         update_project,
     )
     from .snapshots import ensure_project_snapshot, project_knowledge_root
-    from .system_registry import add_relation, bind_project as bind_system_project, create_system, get_system
+    from .system_registry import add_relation, bind_project as bind_system_project, create_system, get_system, load_systems
     from .transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 
 
@@ -201,6 +205,30 @@ def preflight(root: Path, cwd: Path) -> dict[str, object]:
             ],
             "then": "context-read-path",
         }
+    if record is not None:
+        # Membership is what makes `context --system-id` actionable: without it a
+        # caller cannot tell whether the task spans a recorded system. Read-only,
+        # and omitted entirely when the project belongs to no system.
+        memberships = [
+            {
+                "system_id": system.system_id,
+                "name": system.name,
+                "member_project_ids": list(system.project_ids),
+                "relations": [
+                    {
+                        "source_project_id": relation.source_project_id,
+                        "target_project_id": relation.target_project_id,
+                        "kind": relation.kind,
+                    }
+                    for relation in system.relations
+                ],
+            }
+            for system in load_systems(resolved_root)
+            if record.project_id in system.project_ids
+        ]
+        if memberships:
+            payload["systems"] = memberships
+
     remote_warning, raw_remote = origin_remote_warning(target)
     if remote_warning is not None:
         payload["remote_warning"] = remote_warning
@@ -508,7 +536,7 @@ def _run_scoped_check(
         changed_paths,
         today,
     )
-    return run_check(
+    report = run_check(
         context.root,
         scan_root,
         changed_paths,
@@ -517,6 +545,18 @@ def _run_scoped_check(
         trigger=trigger,
         review_after_days=review_after_days,
     )
+    if scope == "project":
+        # Needs the project registry and the system registry, which the pure
+        # page-scanning check does not know about; appended here so run_check
+        # keeps its signature and its independence from those registries.
+        report.review_candidates = sorted(
+            report.review_candidates
+            + system_relation_candidates(
+                context.root, context.record, _load_page_contents(scan_root)
+            ),
+            key=lambda candidate: (candidate.path, candidate.reason),
+        )
+    return report
 
 def check(
     context: ResolvedContext,

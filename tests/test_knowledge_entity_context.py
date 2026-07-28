@@ -122,6 +122,39 @@ class KnowledgeEntityContextTest(unittest.TestCase):
             self.assertEqual(["refund-nullpointer"], ids)
             self.assertTrue(found["current_context"][0]["evidence_match"])
 
+    def test_query_broadens_the_set_while_evidence_match_stays_exact(self) -> None:
+        """`--query` adds query hits; `evidence_match` still isolates the reverse set.
+
+        `refund-idempotency` names RefundController.java in its prose body but
+        lists RefundService.java as evidence, so it must never be marked a match
+        even though a query recalls it.
+        """
+        with TemporaryDirectory() as temp:
+            resolved, repo = self._evidence_corpus(Path(temp))
+            evidence_only = read_context_for_path(
+                resolved.root, repo, "",
+                evidence_paths=("src/order/RefundController.java",),
+            )
+            combined = read_context_for_path(
+                resolved.root, repo, "退款",
+                evidence_paths=("src/order/RefundController.java",),
+            )
+            items = combined["current_context"]
+            ids = [item["knowledge_id"] for item in items]
+
+            self.assertIn("refund-idempotency", ids)
+            self.assertGreater(len(items), len(evidence_only["current_context"]))
+            self.assertEqual("refund-nullpointer", ids[0])
+            self.assertTrue(items[0]["evidence_match"])
+            self.assertFalse(
+                next(i for i in items if i["knowledge_id"] == "refund-idempotency")
+                ["evidence_match"]
+            )
+            self.assertEqual(
+                [i["knowledge_id"] for i in evidence_only["current_context"]],
+                [i["knowledge_id"] for i in items if i["evidence_match"]],
+            )
+
     def test_evidence_path_accepts_project_absolute_path(self) -> None:
         with TemporaryDirectory() as temp:
             resolved, repo = self._evidence_corpus(Path(temp))

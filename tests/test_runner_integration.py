@@ -858,18 +858,19 @@ class RunnerIntegrationTest(unittest.TestCase):
             "do not fall back to the default project scope.",
             verify_workflow,
         )
+        # The capture-output -> check-flag mapping may be taught as prose or as a
+        # copyable command, but all three mappings must still be stated.
         self.assertIn(
-            "Pass every capture `changed_paths` item as `--changed`",
+            "repeating `--changed` for every capture `changed_paths` item",
             verify_workflow,
         )
         self.assertIn(
-            "every `new_paths` item as `--new-path`",
+            "`--new-path` for every `new_paths` item",
             verify_workflow,
         )
-        self.assertIn(
-            "the capture `health_scope` as `--scope`.",
-            verify_workflow,
-        )
+        for flag in ('--scope "<health_scope>"', '--changed "<changed_paths item>"',
+                     '--new-path "<new_paths item>"'):
+            self.assertIn(flag, verify_workflow)
         self.assertIn(
             "Run `$SKILL_DIR/scripts/tracebook_runner.py audit` with the same "
             "`--root`, `--cwd`, `--today`, and `--source-root` values, plus the "

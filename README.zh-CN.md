@@ -54,7 +54,7 @@ runner 则用于集成、诊断和高级工作流。
 
 ## 安装
 
-`4.0.0` 已发布，对应 `v4.0.0` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.1` 已发布，对应 `v4.0.1` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -62,7 +62,7 @@ runner 则用于集成、诊断和高级工作流。
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.0
+codex plugin marketplace add tydandou/tracebook --ref v4.0.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -88,7 +88,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.0
+codex plugin marketplace add tydandou/tracebook --ref v4.0.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -97,7 +97,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.0
+codex plugin marketplace add tydandou/tracebook --ref v4.0.1
 codex plugin add tracebook@tracebook
 ```
 
@@ -310,8 +310,13 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" transactions \
 ```
 
 `transactions` 是只读命令：不需要 `--cwd`，不会获取锁、创建模板或修改知识文件。其 JSON
-会将每个事务标记为 `recoverable`、`blocked`、`cleanup-ready` 或 `invalid`，并返回诸如
-`TARGET_CHANGED` 的结构化问题代码。
+会将每个事务标记为 `recoverable`、`blocked`、`cleanup-ready`、`writer-or-crash` 或
+`invalid`，并返回诸如 `TARGET_CHANGED` 的结构化问题代码。
+
+`writer-or-crash` 表示该事务已发布 intent 但尚无 manifest：它可能是仍在写入的活跃写者，
+也可能是提交前崩溃的残留。只读诊断不取锁，因而无法区分两者——只有
+`recover-transactions` 在 scope 锁下才能裁决。**不要手工删除这类目录**，
+交给恢复命令处理。
 
 仅当事务已确认安全时，才使用显式维护命令继续完成；它绝不会丢弃、隔离或覆盖已变更的目标：
 
@@ -552,11 +557,11 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v4.0.0` 版本。
+`v4.0.1` 版本。
 
 ## 当前限制
 
-- `4.0.0` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
+- `4.0.1` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
   导入或与新格式混写；使用 v4 时请将 `TRACEBOOK_ROOT` 指向新的空知识根。
 
 - 项目 registry v1 不会被自动升级或与 project-id registry 混写；`resolve` 会返回明确的

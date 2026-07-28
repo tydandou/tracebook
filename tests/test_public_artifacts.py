@@ -45,7 +45,7 @@ class PublicArtifactsTest(unittest.TestCase):
         )
 
         self.assertEqual("tracebook", manifest["name"])
-        self.assertEqual("4.0.0", manifest["version"])
+        self.assertEqual("4.0.1", manifest["version"])
         self.assertFalse((ROOT / "plugins" / "tracebook" / "hooks").exists())
         self.assertEqual("./skills/", manifest["skills"])
         self.assertEqual(
@@ -75,11 +75,11 @@ class PublicArtifactsTest(unittest.TestCase):
         )
 
         self.assertEqual("tracebook", manifest["name"])
-        self.assertEqual("4.0.0", manifest["version"])
+        self.assertEqual("4.0.1", manifest["version"])
         self.assertEqual("tracebook", marketplace["name"])
         self.assertIn("Durable external project knowledge", marketplace["description"])
         self.assertEqual("./plugins/tracebook", marketplace["plugins"][0]["source"])
-        self.assertEqual("4.0.0", marketplace["plugins"][0]["version"])
+        self.assertEqual("4.0.1", marketplace["plugins"][0]["version"])
 
     def test_readme_declares_canonical_markdown_link_policy(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -150,7 +150,7 @@ class PublicArtifactsTest(unittest.TestCase):
         normalized_chinese = " ".join(chinese.split())
 
         self.assertNotIn("release candidate", english)
-        self.assertIn("The `4.0.0` release is available", english)
+        self.assertIn("The `4.0.1` release is available", english)
         self.assertIn("marketplace source is absent", english)
         self.assertIn("codex plugin marketplace remove tracebook", english)
         self.assertNotIn("optimized for project core-page", english)
@@ -160,7 +160,7 @@ class PublicArtifactsTest(unittest.TestCase):
         self.assertIn("lock-free snapshot reader", english)
 
         self.assertNotIn("发布候选", chinese)
-        self.assertIn("`4.0.0` 已发布", chinese)
+        self.assertIn("`4.0.1` 已发布", chinese)
         self.assertIn("codex plugin marketplace list", chinese)
         self.assertNotIn("针对 project 核心页面的命名方式优化", chinese)
         self.assertIn("每个活跃的持久 Markdown 页面", normalized_chinese)
