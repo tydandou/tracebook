@@ -590,11 +590,79 @@ def _diagnose_transaction(
     )
 
 
+def _diagnose_staging(
+    transactions_dir: Path,
+    intents_dir: Path,
+    transaction_id: str,
+) -> TransactionDiagnostic:
+    """Diagnose a transaction that has no manifest yet, from its intent alone.
+
+    Read-only and lock-free, which bounds what can be concluded: a writer
+    publishes its intent before the transaction directory becomes visible, so an
+    intent without a manifest means either a writer still staging files or a
+    process that died before the commit point. Only recovery can tell them
+    apart, because only recovery takes the scope lock the writer holds. Such a
+    transaction is therefore reported as ``writer-or-crash`` and never as
+    ``cleanup-ready`` — labelling live staging state safe to delete is the
+    failure mode the intent protocol exists to prevent.
+
+    An orphaned directory with no intent at all is the one case that is safe to
+    call ``cleanup-ready``: no current writer can own it.
+    """
+    has_directory = (transactions_dir / transaction_id).is_dir()
+    intent_path = intents_dir / f"{transaction_id}{_INTENT_SUFFIX}"
+    if not intent_path.is_file():
+        return TransactionDiagnostic(
+            transaction_id, "inspect", "unknown", "unknown", "cleanup-ready",
+            (
+                TransactionIssue(
+                    "ORPHANED_STAGING_WITHOUT_INTENT",
+                    "Staging directory has neither a manifest nor an intent; it "
+                    "predates the intent protocol and cannot belong to a writer",
+                ),
+            ),
+        )
+    try:
+        # Same reader recovery uses, so a diagnosis never contradicts what
+        # recovery will do — notably its transaction-id consistency check.
+        _, intent = _read_transaction_intent(
+            intents_dir, transaction_id, operation="inspect"
+        )
+    except (TracebookError, OSError) as error:
+        message = error.message if isinstance(error, TracebookError) else str(error)
+        return TransactionDiagnostic(
+            transaction_id, "inspect", "unknown", "unknown", "invalid",
+            (TransactionIssue("INVALID_TRANSACTION_INTENT", message),),
+        )
+    code, detail = (
+        ("INTENT_WITHOUT_MANIFEST",
+         "Intent published and staging directory present, but no manifest yet")
+        if has_directory else
+        ("INTENT_WITHOUT_TRANSACTION",
+         "Intent published with no transaction directory")
+    )
+    return TransactionDiagnostic(
+        transaction_id,
+        intent["operation"],
+        intent["scope"],
+        "staging",
+        "writer-or-crash",
+        (
+            TransactionIssue(
+                code,
+                f"{detail}; an active writer or a crash before commit. Run "
+                "recover-transactions instead of deleting it by hand",
+            ),
+        ),
+    )
+
+
 def inspect_transactions(root: Path) -> tuple[TransactionDiagnostic, ...]:
     """Read pending transaction state without creating locks or changing files."""
     resolved_root = root.expanduser().resolve()
     try:
         transactions_dir = _transactions_directory(resolved_root, operation="inspect")
+        intents_dir = _transaction_intents_directory(resolved_root, operation="inspect")
     except TracebookError as error:
         return (
             TransactionDiagnostic(
@@ -606,16 +674,36 @@ def inspect_transactions(root: Path) -> tuple[TransactionDiagnostic, ...]:
                 (TransactionIssue(error.code, error.message),),
             ),
         )
-    if not transactions_dir.is_dir():
+    if not transactions_dir.is_dir() and not intents_dir.is_dir():
         return ()
 
+    # Staging transactions are keyed by id so a directory and its intent produce
+    # one diagnostic, not two.
+    staging: set[str] = set()
     diagnostics: list[TransactionDiagnostic] = []
-    for discovered_dir in sorted(transactions_dir.iterdir(), key=lambda path: path.name):
-        if not discovered_dir.is_dir() or not (discovered_dir / _MANIFEST_NAME).is_file():
-            continue
-        diagnostic = _diagnose_transaction(resolved_root, transactions_dir, discovered_dir)
-        if diagnostic is not None:
-            diagnostics.append(diagnostic)
+    if transactions_dir.is_dir():
+        for discovered_dir in sorted(transactions_dir.iterdir(), key=lambda path: path.name):
+            if not discovered_dir.is_dir():
+                continue
+            if not (discovered_dir / _MANIFEST_NAME).is_file():
+                staging.add(discovered_dir.name)
+                continue
+            diagnostic = _diagnose_transaction(resolved_root, transactions_dir, discovered_dir)
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
+    if intents_dir.is_dir():
+        for discovered_intent in sorted(intents_dir.iterdir(), key=lambda path: path.name):
+            if not discovered_intent.is_file() or not discovered_intent.name.endswith(_INTENT_SUFFIX):
+                continue
+            transaction_id = discovered_intent.name[: -len(_INTENT_SUFFIX)]
+            # A committed transaction's manifest is authoritative; its intent is
+            # removed right after cleanup, so ignore the lingering intent here.
+            if not (transactions_dir / transaction_id / _MANIFEST_NAME).is_file():
+                staging.add(transaction_id)
+    diagnostics.extend(
+        _diagnose_staging(transactions_dir, intents_dir, transaction_id)
+        for transaction_id in sorted(staging)
+    )
     return tuple(diagnostics)
 
 

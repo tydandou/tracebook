@@ -5,6 +5,61 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-07-28
+
+### Added
+
+- `preflight` reports a registered project's `systems` membership, listing each
+  system's id, name, member projects, and recorded relations. Without it a
+  caller could not tell whether a task spans a recorded system, which is what
+  `context --system-id` requires. The field is omitted when the project belongs
+  to no system.
+- `check` reports `system_relation_candidate` (advisory) when a project's
+  Current evidence resolves into another registered project's working tree and
+  no system relation joins them. Attribution uses the deepest registered
+  location, so a project nested inside another does not flag for citing its own
+  sources. Shared topic words are deliberately not a signal.
+- `SKILL.md` and the cross-project reading rules now state when to register a
+  system relation — both projects already registered, a stable delivery
+  dependency rather than a passing reference, and an unambiguous direction and
+  kind — with copyable `system-create` / `system-bind-project` /
+  `system-relate` commands. These three commands were previously absent from the
+  skill, so relations were only ever created when a user asked for them by name.
+  The skill also states that a relation makes a cross-project read possible
+  without widening the default project scope, so a task spanning system members
+  must pass `context --system-id`.
+- `SKILL.md` opens with a Quick Start block holding runnable `preflight`,
+  `context-read-path`, and `capture` commands, and shows `check` as a command
+  rather than a prose parameter list. Capture is demonstrated only through
+  stdin (`--request -`); `--request <path>` is documented as a parenthetical so
+  a temporary request file is no longer presented as an equal option. Behavior
+  is unchanged — both forms were already supported and still are.
+- `SKILL.md` documents the `source_outside_root` review candidate, which the
+  engine and its tests already implemented but the skill never mentioned.
+
+### Changed
+
+- `transactions` now also reports transactions that have published an intent but
+  have no manifest yet, instead of skipping them. These get the new
+  `writer-or-crash` disposition and `staging` state: a read-only diagnosis takes
+  no lock, so it cannot distinguish an active writer from a crash before commit —
+  only recovery can, under the scope lock. A staging directory with no intent at
+  all predates the intent protocol and is still reported `cleanup-ready`; an
+  intent that does not match its own transaction id is reported `invalid`,
+  matching what recovery does with it. A caller that exhaustively matches on
+  `disposition` will see the new value.
+
+### Fixed
+
+- Corrected the documented contract for `--evidence-path`. The 4.0.0 entry below
+  and `SKILL.md` said it "returns only knowledge whose `## Current` section lists
+  that file", which was inaccurate whenever `--query` was also supplied. The
+  released behavior is unchanged: evidence matches are marked
+  `evidence_match: true` and ranked first; without `--query` the result set
+  contains those matches only; with `--query`, query hits are also returned
+  marked `evidence_match: false`, so callers filter on that field for the
+  reverse-lookup set alone.
+
 ## [4.0.0] - 2026-07-27
 
 The major version is required because this release enforces previously

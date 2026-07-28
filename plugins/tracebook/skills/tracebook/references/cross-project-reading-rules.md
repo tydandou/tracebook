@@ -23,3 +23,20 @@ Register shared-contract participants as a named system relationship instead
 of silently duplicating the fact between services. The current capture model
 keeps the authority in its owning project, domain, or pattern scope; retain
 that owner and its evidence in every answer.
+
+## Creating a Relation
+
+Registering a relation is a write, so it has its own gate — the rules above
+govern reading only. Create one when all three hold: both projects are already
+registered, the link is a stable delivery dependency rather than a passing
+reference, and the direction and kind are unambiguous from the task. Capturing
+durable knowledge into both projects during one task is the strongest evidence
+of the second condition; a `system_relation_candidate` in a `check` report is a
+prompt to evaluate it, not proof on its own.
+
+Nothing in the engine infers a relation. Neither adjacent directories, nor a
+shared external knowledge root, nor one document naming another repository
+creates one, because a wrong relation is a lasting structural claim about the
+knowledge base — it is safer to leave two projects unrelated than to assert a
+dependency that does not hold. When the three conditions are not all met, make
+no relation and do not ask.

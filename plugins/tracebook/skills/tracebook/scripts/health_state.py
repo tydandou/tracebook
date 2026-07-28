@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 import json
@@ -9,9 +9,17 @@ import re
 import stat
 
 from .errors import TracebookError
-from .check_knowledge import CheckReport, DeepAuditReport
+from .check_knowledge import (
+    CheckReport,
+    DeepAuditReport,
+    ReviewCandidate,
+    _entity_fields,
+    _relative,
+)
+from .knowledge_parse import current_evidence_paths
 from .locking import file_lock
 from .project_registry import ProjectRecord, _load_registry, project_lock_name, registry_path
+from .system_registry import load_systems
 from .storage import confined_path, sha256_bytes, sha256_file
 from .transaction import commit_updates
 
@@ -307,6 +315,92 @@ def _registered_projects(root: Path) -> tuple[ProjectRecord, ...]:
     with file_lock(root, "registry", operation="resolve"):
         records = _load_registry(registry_path(root), root)
     return tuple(records[identity] for identity in sorted(records))
+
+
+def system_relation_candidates(
+    root: Path,
+    record: ProjectRecord,
+    pages: Mapping[Path, str],
+) -> list[ReviewCandidate]:
+    """Flag Current knowledge whose evidence points into another project's repo.
+
+    Cross-repository evidence is an observed fact, not a guess: this project's
+    conclusion is backed by a file another registered project owns, so the two
+    are already coupled in practice while the knowledge base records no relation
+    between them.
+
+    Deliberately narrow. Shared topic words are not used — two projects both
+    saying "order" implies no delivery dependency, and that signal would be
+    noise. Nothing here creates a relation either: direction and kind are
+    semantic judgements the engine cannot make, so this only reports that the
+    question is worth answering, at ``advisory`` severity.
+    """
+    if not record.locations:
+        return []
+    related: set[str] = set()
+    for system in load_systems(root):
+        if record.project_id in system.project_ids:
+            related.update(system.project_ids)
+    # Every registered location, including this project's own, so a path can be
+    # attributed to its most specific owner. Nested registrations make the outer
+    # project contain the inner one's files, and the deepest match is the real
+    # owner — without this, a nested project would flag against its parent for
+    # citing its own sources.
+    owners: list[tuple[ProjectRecord, Path]] = []
+    for other in _registered_projects(root):
+        for location in other.locations:
+            try:
+                owners.append((other, Path(location).resolve()))
+            except OSError:
+                continue
+    if not owners:
+        return []
+    mine: list[Path] = []
+    for location in record.locations:
+        try:
+            mine.append(Path(location).resolve())
+        except OSError:
+            continue
+
+    candidates: list[ReviewCandidate] = []
+    for page, content in sorted(pages.items(), key=lambda item: item[0].as_posix()):
+        fields = _entity_fields(content)
+        if fields is None or fields.get("status") != "current":
+            continue
+        hits: dict[str, set[str]] = {}
+        for source_path in current_evidence_paths(content):
+            for base in mine:
+                try:
+                    target = (base / source_path).resolve()
+                except OSError:
+                    continue
+                if not target.is_file():
+                    continue
+                owner = max(
+                    (
+                        pair for pair in owners
+                        if target.is_relative_to(pair[1])
+                    ),
+                    key=lambda pair: len(pair[1].parts),
+                    default=None,
+                )
+                if owner is None:
+                    continue
+                other, _ = owner
+                if other.project_id == record.project_id or other.project_id in related:
+                    continue
+                hits.setdefault(other.name, set()).add(source_path)
+        for name, paths in sorted(hits.items()):
+            candidates.append(ReviewCandidate(
+                _relative(root, page),
+                fields.get("knowledge_id", ""),
+                fields.get("title", fields.get("knowledge_id", "")),
+                "system_relation_candidate",
+                "advisory",
+                f"evidence lives in registered project `{name}` with no system "
+                f"relation recorded: " + ", ".join(sorted(paths)),
+            ))
+    return candidates
 
 
 def _default_states(projects: tuple[ProjectRecord, ...]) -> tuple[HealthState, ...]:

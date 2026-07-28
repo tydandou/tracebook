@@ -541,6 +541,118 @@ class TransactionRecoveryTest(unittest.TestCase):
             self.assertEqual("old:b-later.md\n", second.read_text(encoding="utf-8"))
             self.assertTrue(transaction_dir.exists())
 
+    def _staging_dir(self, root: Path, transaction_id: str) -> Path:
+        staged = root / ".tracebook-state" / "transactions" / transaction_id / "staged"
+        staged.mkdir(parents=True, exist_ok=True)
+        (staged / "00000000.stage").write_text("staged", encoding="utf-8")
+        return staged.parent
+
+    def test_inspection_reports_intent_backed_staging_as_writer_or_crash(self) -> None:
+        """An intent without a manifest must never be advertised as safe to delete."""
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._staging_dir(root, "with-directory")
+            self._write_intent(root, "with-directory", scope="project-demo")
+            self._write_intent(root, "intent-only", scope="registry")
+
+            found = {d.transaction_id: d for d in transaction.inspect_transactions(root)}
+            self.assertEqual({"with-directory", "intent-only"}, set(found))
+            for transaction_id, scope, code in (
+                ("with-directory", "project-demo", "INTENT_WITHOUT_MANIFEST"),
+                ("intent-only", "registry", "INTENT_WITHOUT_TRANSACTION"),
+            ):
+                with self.subTest(transaction_id=transaction_id):
+                    diagnostic = found[transaction_id]
+                    self.assertEqual("staging", diagnostic.state)
+                    self.assertEqual("writer-or-crash", diagnostic.disposition)
+                    self.assertNotEqual("cleanup-ready", diagnostic.disposition)
+                    self.assertEqual("capture", diagnostic.operation)
+                    self.assertEqual(scope, diagnostic.scope)
+                    self.assertEqual(code, diagnostic.issues[0].code)
+                    self.assertIn("recover-transactions", diagnostic.issues[0].message)
+
+    def test_inspection_reports_pre_intent_orphan_as_cleanup_ready(self) -> None:
+        """A staging directory with no intent cannot belong to a writer."""
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._staging_dir(root, "pre-intent-orphan")
+            (diagnostic,) = transaction.inspect_transactions(root)
+            self.assertEqual("pre-intent-orphan", diagnostic.transaction_id)
+            self.assertEqual("cleanup-ready", diagnostic.disposition)
+            self.assertEqual(
+                "ORPHANED_STAGING_WITHOUT_INTENT", diagnostic.issues[0].code
+            )
+
+    def test_inspection_agrees_with_recovery_on_a_mismatched_intent_id(self) -> None:
+        """A diagnosis must not promise recovery will handle what it rejects."""
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            intents = root / ".tracebook-state" / "transaction-intents"
+            intents.mkdir(parents=True)
+            (intents / "visible-id.json").write_text(
+                json.dumps({"version": 1, "transaction_id": "different-id",
+                            "operation": "capture", "scope": "registry"},
+                           indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            (diagnostic,) = transaction.inspect_transactions(root)
+            self.assertEqual("visible-id", diagnostic.transaction_id)
+            self.assertEqual("invalid", diagnostic.disposition)
+            self.assertNotEqual("writer-or-crash", diagnostic.disposition)
+            self.assertEqual("INVALID_TRANSACTION_INTENT", diagnostic.issues[0].code)
+            self.assertIn("does not match", diagnostic.issues[0].message)
+            # Recovery rejects the same state, so the two agree.
+            with self.assertRaisesRegex(TracebookError, "does not match"):
+                transaction.recover_transactions(root)
+
+    def test_inspection_reports_an_unreadable_intent_as_invalid(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            intents = root / ".tracebook-state" / "transaction-intents"
+            intents.mkdir(parents=True)
+            (intents / "broken.json").write_text("{not json", encoding="utf-8")
+            (diagnostic,) = transaction.inspect_transactions(root)
+            self.assertEqual("broken", diagnostic.transaction_id)
+            self.assertEqual("invalid", diagnostic.disposition)
+            self.assertEqual("INVALID_TRANSACTION_INTENT", diagnostic.issues[0].code)
+
+    def test_inspection_of_staging_state_writes_nothing_and_takes_no_lock(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._staging_dir(root, "untouched")
+            self._write_intent(root, "untouched")
+            state = root / ".tracebook-state"
+            before = {
+                path.relative_to(root).as_posix(): path.read_bytes()
+                for path in sorted(state.rglob("*")) if path.is_file()
+            }
+
+            self.assertTrue(transaction.inspect_transactions(root))
+
+            after = {
+                path.relative_to(root).as_posix(): path.read_bytes()
+                for path in sorted(state.rglob("*")) if path.is_file()
+            }
+            self.assertEqual(before, after)
+            locks = state / "locks"
+            self.assertFalse(
+                locks.is_dir() and any(locks.iterdir()),
+                f"inspect created lock files: {list(locks.iterdir()) if locks.is_dir() else []}",
+            )
+
+    def test_inspection_ignores_an_intent_whose_transaction_has_a_manifest(self) -> None:
+        """A committed transaction is diagnosed from its manifest, not twice."""
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._prepare_crashed_transaction(
+                root, fail_after=0, transaction_id="manifest-wins"
+            )
+            self._write_intent(root, "manifest-wins")
+            found = [d for d in transaction.inspect_transactions(root)
+                     if d.transaction_id == "manifest-wins"]
+            self.assertEqual(1, len(found), found)
+            self.assertNotEqual("staging", found[0].state)
+
     def test_inspection_reports_a_manual_edit_without_writing_or_recovering(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp)

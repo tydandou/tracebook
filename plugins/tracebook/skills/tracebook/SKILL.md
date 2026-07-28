@@ -1,12 +1,48 @@
 ---
 name: tracebook
-description: MUST invoke before any software-development work in the session (analysis, scaffolding a new project, debugging, review, code changes, tests, builds, deploys, CI/CD, incidents), including work outside the current repository. Loads external project knowledge context. After task completion, evaluates write gate for durable knowledge capture. Skip only for general Q&A or non-project conversations.
+description: MUST invoke before any software-development work in the session. This includes analysis, scaffolding a new project, debugging, review, code changes, tests, builds, deploys, CI/CD, and incidents. It applies to work outside the current repository too. Loads external project knowledge context first. After task completion, evaluates the write gate for durable knowledge capture. Skip only for general Q&A or non-project conversations.
 ---
 
 # Tracebook
 
 Use Tracebook as the external, durable knowledge layer for a coding task. Keep
 business code and long-lived project analysis separate.
+
+## Quick Start
+
+Copy these commands. `SKILL_DIR` holds this `SKILL.md`; `ROOT` is
+`TRACEBOOK_ROOT` when set, else `~/.tracebook`; `CWD` is the target project root
+(its Git root when available), not necessarily your shell's cwd.
+
+```bash
+# 1. Before any work: read-only check. If it returns blocked:true, run the
+#    command in required_action.argv, then continue with step 2.
+python "$SKILL_DIR/scripts/tracebook_runner.py" preflight --root "$ROOT" --cwd "$CWD"
+
+# 2. Load task context (lock-free read). Add --evidence-path <file> to find
+#    knowledge backed by a specific source file.
+python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
+  --root "$ROOT" --cwd "$CWD" --query "<task text>"
+
+# 3. After the task, once per knowledge item that passes the write gate.
+#    Pipe the request through stdin; never write a temporary request file.
+python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
+  --root "$ROOT" --cwd "$CWD" --request - --today "$(date +%F)" <<'JSON'
+{
+  "operation": "create",
+  "knowledge_id": "refund-retry-policy",
+  "scope": "project",
+  "kind": "decision",
+  "title": "Refund retry policy",
+  "body": "Refunds retry at most twice, 3s timeout each.",
+  "evidence": ["src/order/RefundController.java:L87"]
+}
+JSON
+```
+
+Then verify the write with `check` (see Verify Knowledge Writes). The block above
+settles only which command to run; the sections below govern when each step
+applies and what may be captured.
 
 ## Hard Boundaries
 
@@ -90,9 +126,12 @@ if a query returns nothing, retry with terms from the project index or an exact
 
 To find knowledge from a source file — for example a path in an exception stack
 trace — pass `--evidence-path <repo-relative-or-project-absolute path>` (repeat
-for several files), with or without `--query`. It returns only knowledge whose
-`## Current` section lists that file as formal evidence (`evidence_match: true`),
-never a passing mention in prose or an old History reference. `--evidence-path`
+for several files), with or without `--query`. Knowledge whose `## Current`
+section lists that file as formal evidence is marked `evidence_match: true` and
+ranked first; a passing mention in prose or an old History reference never earns
+that mark. Without `--query` the result set contains those matches only. With
+`--query`, query hits are also returned and marked `evidence_match: false`, so
+filter on that field when you need the reverse-lookup set alone. `--evidence-path`
 requires exactly one project and is project scope at the current snapshot only;
 combining it with `--scope
 domain/pattern/all` or `--as-of` is rejected. At least one of `--query` or
@@ -120,6 +159,52 @@ reference source from the current workspace alone.
 If a user says only "related services" and no system is registered, search for
 candidate projects and ask for a source project or system before expanding the
 read scope. Follow [cross-project reading rules](references/cross-project-reading-rules.md).
+
+`preflight` reports a registered project's `systems` membership, including the
+other member projects and their recorded relations. When the task spans members
+of that system, read with `context --system-id <system-id>` rather than the
+default project scope: a system relation makes the cross-project read possible,
+it does not widen the default scope automatically.
+
+## Register a System Relation When the Link Is Structural
+
+Create the relation yourself, without waiting for the user to ask for it, when
+all three hold:
+
+1. both projects are already registered (`preflight` or `project-search`
+   confirms this — never register a project just to relate it);
+2. the link is a stable delivery dependency, not a passing reference. A task
+   that captured durable knowledge into both projects is the strongest signal;
+   a `check` report may also raise `system_relation_candidate` when one
+   project's evidence points into the other's repository;
+3. the direction and the relation kind are unambiguous from the task, because
+   the runner does not validate `--kind` — you are asserting the semantics.
+
+If any of the three fails, do nothing: do not create a system, do not ask, and
+do not guess a relation. Incidental mentions, one-off debugging, and a
+documentation example that merely names another repository are not relations.
+
+```bash
+SYS=$(python "$SKILL_DIR/scripts/tracebook_runner.py" system-create \
+  --root "$ROOT" --name "<system name>" \
+  | python -c "import sys,json;print(json.load(sys.stdin)['system']['system_id'])")
+
+for P in "<project-id-a>" "<project-id-b>"; do
+  python "$SKILL_DIR/scripts/tracebook_runner.py" system-bind-project \
+    --root "$ROOT" --system-id "$SYS" --project-id "$P"
+done
+
+# One call per direction; state both when each side constrains the other.
+python "$SKILL_DIR/scripts/tracebook_runner.py" system-relate --root "$ROOT" \
+  --system-id "$SYS" --source-project-id "<project-id-a>" \
+  --target-project-id "<project-id-b>" --kind designs
+python "$SKILL_DIR/scripts/tracebook_runner.py" system-relate --root "$ROOT" \
+  --system-id "$SYS" --source-project-id "<project-id-b>" \
+  --target-project-id "<project-id-a>" --kind implements
+```
+
+Report the system name and both relations in the final task report: this is a
+durable structural change to the knowledge base.
 
 Follow [reading rules](references/reading-rules.md) for selection and length
 limits. Load these references only when their rule applies:
@@ -175,16 +260,11 @@ Classify the destination before writing. Use project documents for
 project-specific facts, `02-domain` for reusable business knowledge, and
 `03-patterns` for reusable engineering knowledge. Update indexes and status
 summaries. Add source references for critical facts; mark incomplete evidence
-as `Pending`. Create an explicit JSON capture request and run
-`$SKILL_DIR/scripts/tracebook_runner.py capture` with `--root`, `--cwd`, and
-`--request`; consume its `changed_paths` and `new_paths`. Pass the request
-through stdin with `--request -` (pipe the JSON in); do not write a temporary
-request file. A temporary file forces a placement decision the protocol does
-not govern and can leak scratch JSON into the knowledge root or a business
-repository. `--request <path>` remains supported for a pre-existing file, but a
-path resolving inside the knowledge root or the business repository is rejected
-with `INVALID_REQUEST`; stdin is the default and leaves nothing on disk to
-misplace or clean up.
+as `Pending`. Pipe an explicit JSON capture request through stdin as shown in
+Quick Start, and consume the response's `changed_paths` and `new_paths`. Never
+write a temporary request file. (`--request <path>` stays supported for a
+pre-existing file outside both governed trees; a path resolving inside the
+knowledge root or the business repository is rejected with `INVALID_REQUEST`.)
 
 Each entity body should make explicit: the conclusion as a concrete fact with no
 inference mixed in; the evidence located in source, config, logs, tests, or a
@@ -238,15 +318,19 @@ it to the user verbatim in the next user-facing message. Do not defer it to
 the Final Task Report, paraphrase it, or omit it: this confirms a file write
 that has already occurred on the user's system.
 
-Run `$SKILL_DIR/scripts/tracebook_runner.py check` with the external root as
-`--root` and repository root as `--cwd`. Pass every capture `changed_paths`
-item as `--changed`, every `new_paths` item as `--new-path`, and the capture
-`health_scope` as `--scope`. Pass the current date as `--today` and the
-business repository root as `--source-root` for source-map validation. Consume
-and report the structured JSON result. When `--source-root` is supplied the
-report's `Review Candidates` section flags Current knowledge whose evidence
-files are missing (`source_missing`, strong) or changed after the knowledge was
-last updated (`source_mtime_newer`, advisory); optionally pass
+Then run `check`, repeating `--changed` for every capture `changed_paths` item
+and `--new-path` for every `new_paths` item, and consume its structured JSON:
+
+```bash
+python "$SKILL_DIR/scripts/tracebook_runner.py" check --root "$ROOT" --cwd "$CWD" \
+  --source-root "$CWD" --today "$(date +%F)" --scope "<health_scope>" \
+  --changed "<changed_paths item>" --new-path "<new_paths item>"
+```
+
+With `--source-root`, the report's `Review Candidates` section flags Current
+knowledge whose evidence files are missing (`source_missing`, strong), changed
+after the knowledge was last updated (`source_mtime_newer`, advisory), or
+resolve outside the source root (`source_outside_root`, strong). Add
 `--review-after-days N` (N > 0) to also flag knowledge not updated in N days
 (`review_age_exceeded`, advisory). These are review prompts, not proof a fact is
 wrong — verify against evidence before changing any status.
