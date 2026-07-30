@@ -583,6 +583,141 @@ class TransactionRecoveryTest(unittest.TestCase):
                 "ORPHANED_STAGING_WITHOUT_INTENT", diagnostic.issues[0].code
             )
 
+    def test_inspection_ignores_a_staging_entry_cleaned_after_enumeration(self) -> None:
+        """A stale directory snapshot must not become a synthetic orphan."""
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            transactions = root / ".tracebook-state" / "transactions"
+            intents = root / ".tracebook-state" / "transaction-intents"
+            transactions.mkdir(parents=True)
+            intents.mkdir(parents=True)
+
+            self.assertIsNone(
+                transaction._diagnose_staging(
+                    transactions, intents, "already-cleaned"
+                )
+            )
+
+    def test_inspection_ignores_a_manifest_entry_cleaned_during_read(self) -> None:
+        """A completed cleanup must not turn a manifest snapshot invalid."""
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            transactions = root / ".tracebook-state" / "transactions"
+            intents = root / ".tracebook-state" / "transaction-intents"
+            discovered = transactions / "already-cleaned"
+            discovered.mkdir(parents=True)
+            intents.mkdir(parents=True)
+
+            def finish_cleanup(_: Path) -> dict[str, object]:
+                shutil.rmtree(discovered)
+                raise TracebookError(
+                    "INVALID_TRANSACTION_STATE", "stale snapshot", "inspect"
+                )
+
+            with patch.object(transaction, "_read_manifest", side_effect=finish_cleanup):
+                self.assertIsNone(
+                    transaction._diagnose_transaction(
+                        root, transactions, intents, discovered
+                    )
+                )
+
+    def test_inspection_reclassifies_a_missing_manifest_from_its_intent(self) -> None:
+        """A surviving intent remains visible when its manifest disappears."""
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            transactions = root / ".tracebook-state" / "transactions"
+            intents = root / ".tracebook-state" / "transaction-intents"
+            discovered = transactions / "manifest-disappeared"
+            discovered.mkdir(parents=True)
+            self._write_intent(root, "manifest-disappeared", scope="registry")
+
+            diagnostic = transaction._diagnose_transaction(
+                root, transactions, intents, discovered
+            )
+
+            self.assertIsNotNone(diagnostic)
+            assert diagnostic is not None
+            self.assertEqual("registry", diagnostic.scope)
+            self.assertEqual("writer-or-crash", diagnostic.disposition)
+            self.assertEqual("INTENT_WITHOUT_MANIFEST", diagnostic.issues[0].code)
+
+    def test_scope_gate_ignores_a_transient_unknown_snapshot(self) -> None:
+        transient = transaction.TransactionDiagnostic(
+            "completed", "inspect", "unknown", "unknown", "invalid"
+        )
+        with patch.object(
+            transaction,
+            "inspect_transactions",
+            side_effect=((transient,), ()),
+        ) as inspect:
+            transaction.require_clean_transaction_scope(
+                Path("knowledge"), "registry", "resolve"
+            )
+
+        self.assertEqual(2, inspect.call_count)
+
+    def test_scope_gate_blocks_a_stable_unknown_transaction(self) -> None:
+        persistent = transaction.TransactionDiagnostic(
+            "corrupt", "inspect", "unknown", "unknown", "invalid"
+        )
+        with patch.object(
+            transaction,
+            "inspect_transactions",
+            return_value=(persistent,),
+        ) as inspect:
+            with self.assertRaises(TracebookError) as raised:
+                transaction.require_clean_transaction_scope(
+                    Path("knowledge"), "registry", "resolve"
+                )
+
+        self.assertEqual("TRANSACTION_RECOVERY_REQUIRED", raised.exception.code)
+        self.assertEqual(2, inspect.call_count)
+
+    def test_scope_gate_blocks_a_known_scope_without_a_second_snapshot(self) -> None:
+        pending = transaction.TransactionDiagnostic(
+            "pending", "capture", "registry", "prepared", "recoverable"
+        )
+        with patch.object(
+            transaction,
+            "inspect_transactions",
+            return_value=(pending,),
+        ) as inspect:
+            with self.assertRaises(TracebookError) as raised:
+                transaction.require_clean_transaction_scope(
+                    Path("knowledge"), "registry", "resolve"
+                )
+
+        self.assertEqual("TRANSACTION_RECOVERY_REQUIRED", raised.exception.code)
+        inspect.assert_called_once()
+
+    def test_inspection_ignores_an_intent_cleaned_during_read(self) -> None:
+        """An intent removed after the snapshot is not invalid state."""
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            transactions = root / ".tracebook-state" / "transactions"
+            intents = root / ".tracebook-state" / "transaction-intents"
+            transactions.mkdir(parents=True)
+            intents.mkdir(parents=True)
+            intent = intents / "already-cleaned.json"
+            intent.write_text("{}\n", encoding="utf-8")
+
+            def finish_cleanup(*_: object, **__: object) -> object:
+                intent.unlink()
+                raise TracebookError(
+                    "INVALID_TRANSACTION_INTENT", "stale snapshot", "inspect"
+                )
+
+            with patch.object(
+                transaction,
+                "_read_transaction_intent",
+                side_effect=finish_cleanup,
+            ):
+                self.assertIsNone(
+                    transaction._diagnose_staging(
+                        transactions, intents, "already-cleaned"
+                    )
+                )
+
     def test_inspection_agrees_with_recovery_on_a_mismatched_intent_id(self) -> None:
         """A diagnosis must not promise recovery will handle what it rejects."""
         with TemporaryDirectory() as temp:
