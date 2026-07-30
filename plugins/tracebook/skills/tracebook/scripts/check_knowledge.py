@@ -340,6 +340,49 @@ def _entity_fields(content: str) -> dict[str, str] | None:
     return values if values.get("schema_version") == "2" else None
 
 
+def _index_entry_issues(root: Path, pages: PageContents) -> list[str]:
+    """Report index files that link one entity page more than once.
+
+    A revise may change an entity's title, and an index keyed on the rendered
+    `- [title](link)` line accumulated one entry per title. The result counts a
+    single entity several times under names its authority page no longer carries.
+    `_duplicate_pages` cannot see this: it skips `index.md` by design.
+
+    Reported for existing knowledge roots, which are never rewritten
+    automatically, so the duplicates a past release introduced stay visible until
+    the next write to that entity converges them.
+    """
+    issues: list[str] = []
+    for page, content in pages.items():
+        if page.name != "index.md":
+            continue
+        counts: dict[Path, tuple[str, int]] = {}
+        for line in content.splitlines():
+            if not line.startswith("- ["):
+                continue
+            match = re.search(r"\]\(([^)]+)\)\s*$", line)
+            if match is None:
+                continue
+            link = match.group(1).strip().split("#", 1)[0]
+            if not link.endswith(".md") or "://" in link:
+                continue
+            target = (page.parent / link).resolve()
+            target_content = pages.get(target)
+            if target_content is None or _entity_fields(target_content) is None:
+                continue
+            first_link, count = counts.get(target, (link, 0))
+            counts[target] = (first_link, count + 1)
+        for _, (link, count) in sorted(
+            counts.items(), key=lambda item: item[0].as_posix()
+        ):
+            if count > 1:
+                issues.append(
+                    f"{_relative(root, page)}: {count} entries link {link}; "
+                    "one entity is listed several times, likely under stale titles"
+                )
+    return issues
+
+
 def _schema_v2_entity_issues(root: Path, pages: PageContents) -> list[str]:
     issues: list[str] = []
     authorities: dict[tuple[str, str, str, str], Path] = {}
@@ -619,6 +662,8 @@ def run_check(
         pending_confirmations=_pending_confirmations(root, pages),
         duplicate_pages=_duplicate_pages(root, pages) if check_type == "Regular" else [],
         log_growth=_log_growth(root, pages) if check_type == "Regular" else [],
-        entity_issues=_schema_v2_entity_issues(root, pages),
+        entity_issues=sorted(
+            _schema_v2_entity_issues(root, pages) + _index_entry_issues(root, pages)
+        ),
         review_candidates=_review_candidates(root, pages, now, source, review_after_days),
     )

@@ -110,8 +110,10 @@ For nontrivial software-repository work, default to this read phase even when
 the user did not explicitly request Tracebook. Read the external root
 `AGENTS.md`, health status, current project index, and
 project status in this order. Then select only documents relevant to the task.
-Do not load complete logs, raw material, archive directories, or `99-archive`
-without a tracing, audit, deep-health, or explicit-user reason. After the
+Do not load the knowledge root's own complete logs, raw material, archive
+directories, or `99-archive` without a tracing, audit, deep-health, or
+explicit-user reason. This bounds what is read out of the knowledge base; a log
+the user supplies for analysis is task input and is unaffected. After the
 minimal read set, call `tracebook_runner.py context-read-path --cwd
 <project-root> --query <task text>` and read only the returned schema-v2
 authority pages. It returns the last committed project snapshot without
@@ -124,18 +126,19 @@ stemming or synonyms, so prefer words that actually appear in the knowledge —
 if a query returns nothing, retry with terms from the project index or an exact
 `knowledge_id` rather than a paraphrase.
 
-To find knowledge from a source file — for example a path in an exception stack
-trace — pass `--evidence-path <repo-relative-or-project-absolute path>` (repeat
-for several files), with or without `--query`. Knowledge whose `## Current`
-section lists that file as formal evidence is marked `evidence_match: true` and
-ranked first; a passing mention in prose or an old History reference never earns
-that mark. Without `--query` the result set contains those matches only. With
-`--query`, query hits are also returned and marked `evidence_match: false`, so
-filter on that field when you need the reverse-lookup set alone. `--evidence-path`
-requires exactly one project and is project scope at the current snapshot only;
-combining it with `--scope
-domain/pattern/all` or `--as-of` is rejected. At least one of `--query` or
-`--evidence-path` must be non-empty.
+To find knowledge from a source file — a path in a stack trace or a log the user
+supplied — pass `--evidence-path <repo-relative-or-project-absolute path>`,
+repeating it per file, with or without `--query`. Entities listing that file as
+formal `## Current` evidence are marked `evidence_match: true` and ranked first;
+a prose mention or a History reference never earns that mark. It requires exactly
+one project at the current snapshot, so `--scope domain/pattern/all` and `--as-of`
+are rejected, and at least one of `--query` or `--evidence-path` must be non-empty.
+
+The opening read is not the only retrieval. Query again whenever you judge it
+useful, most often once a new file path, identifier, or `knowledge_id` is in
+hand, and treat a retrieved conclusion that contradicts a log or the current
+source as a finding rather than as truth. Follow
+[retrieval timing rules](references/retrieval-timing-rules.md).
 
 ## Read Related Projects Deliberately
 
@@ -220,6 +223,7 @@ limits. Load these references only when their rule applies:
 - [synthesis rules](references/synthesis-rules.md)
 - [health check rules](references/health-check-rules.md)
 - [cross-project reading rules](references/cross-project-reading-rules.md)
+- [retrieval timing rules](references/retrieval-timing-rules.md)
 
 ## Evaluate the Write Gate After the Task
 
@@ -229,11 +233,12 @@ knowledge was written. Routine work with no durable conclusion needs no skip
 message; explain a skipped capture only when the user asks, capture fails, or
 an important unverified/conflicting conclusion remains.
 
-Do not write knowledge after pure log analysis, temporary Q&A, unverified
-inference, or when the user prohibits a write. Treat tests and logs as evidence,
-not durable knowledge by themselves. A root cause supported by logs plus source,
-configuration, reproduction, or another stable source may pass the gate; never
-capture complete raw logs.
+Treat tests and logs as evidence, not durable knowledge by themselves. A root
+cause backed by logs **plus** source, configuration, or reproduction does pass
+the gate: a defect investigation that read the code to locate the fault normally
+qualifies, and that conclusion is worth keeping. What fails is a conclusion
+resting on logs alone, temporary Q&A, unverified inference, or when the user
+prohibits a write. Never capture raw logs as the knowledge itself.
 
 Evaluate the write gate per atomic knowledge item, never per whole task. A task
 that produces several independent facts commits each that is new or
@@ -303,8 +308,9 @@ kinds include `architecture`, `api`, `business-rule`, `database`, `module`,
 and `pattern` scopes also use a stable kind. Retired request fields such as
 `category`, `topic`, and `replacement` are rejected; use `kind` and
 `replacement_knowledge_id` as the schema-v2 contract defines.
-Entity paths are derived from scope, kind, and `knowledge_id`; do not create
-aggregate pages or use a topic split to route schema-v2 knowledge. Apply
+Project entity paths are derived from scope, kind, and `knowledge_id`; domain
+and pattern paths use scope plus `knowledge_id`, while `kind` remains governed
+metadata. Do not create aggregate pages or use a topic split to route schema-v2 knowledge. Apply
 frontmatter and lifecycle labels when required.
 ## Verify Knowledge Writes
 

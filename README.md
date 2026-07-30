@@ -72,7 +72,7 @@ depend on how often knowledge is reused versus the one-time capture cost.
 
 ## Install
 
-The `4.0.1` release is available as the `v4.0.1` tag. Use the tagged
+The `4.0.2` release is available as the `v4.0.2` tag. Use the tagged
 installation commands for the stable release, or use the local development
 loading instructions when working from a clone.
 
@@ -81,7 +81,7 @@ loading instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.1
+codex plugin marketplace add tydandou/tracebook --ref v4.0.2
 codex plugin add tracebook@tracebook
 ```
 
@@ -109,7 +109,7 @@ Removing a plugin never touches its knowledge root. If
 `codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.1
+codex plugin marketplace add tydandou/tracebook --ref v4.0.2
 codex plugin add tracebook@tracebook
 ```
 
@@ -118,7 +118,7 @@ To move to a different tagged source, replace the marketplace first:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.1
+codex plugin marketplace add tydandou/tracebook --ref v4.0.2
 codex plugin add tracebook@tracebook
 ```
 
@@ -378,6 +378,12 @@ judged safe; it never discards, quarantines, or overwrites a changed target:
 python "$SKILL_DIR/scripts/tracebook_runner.py" recover-transactions \
   --root "$TRACEBOOK_ROOT"
 ```
+
+Project and system metadata writers reject a pending transaction in their
+shared `registry` scope with `TRANSACTION_RECOVERY_REQUIRED`. Run the read-only
+diagnostic and explicit recovery above before retrying; a later write is never
+allowed to overwrite prepared targets and make the earlier transaction
+unrecoverable.
 
 ### Capture
 
@@ -674,11 +680,11 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v4.0.1` release.
+resolves the published `v4.0.2` release.
 
 ## Current Limitations
 
-- `4.0.1` retains schema-v2 authority pages and registry v2. Existing registry-v1
+- `4.0.2` retains schema-v2 authority pages and registry v2. Existing registry-v1
   knowledge roots are intentionally not migrated, imported, or mixed with the
   new format; point `TRACEBOOK_ROOT` at a new empty root for v4 work.
 

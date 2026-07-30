@@ -14,12 +14,17 @@ import uuid
 from .errors import TracebookError
 from .locking import file_lock
 from .project_registry import load_projects
-from .storage import atomic_write_text, confined_path
+from .storage import confined_path
+from .transaction import commit_updates, require_clean_transaction_scope
 
 
 SYSTEM_ID = re.compile(r"sys-[0-9a-f]{32}\Z")
 PROJECT_ID = re.compile(r"prj-[0-9a-f]{32}\Z")
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+_SYSTEMS_INDEX_START = "<!-- tracebook:systems:start -->"
+_SYSTEMS_INDEX_END = "<!-- tracebook:systems:end -->"
+_SYSTEM_PAGE_START = "<!-- tracebook:system:start -->"
+_SYSTEM_PAGE_END = "<!-- tracebook:system:end -->"
 
 
 @dataclass(frozen=True)
@@ -178,16 +183,175 @@ def _config_content(record: SystemRecord) -> str:
     return json.dumps({"version": 1, "system_id": record.system_id, "name": record.name, "project_ids": list(record.project_ids), "relations": [{"source_project_id": value.source_project_id, "target_project_id": value.target_project_id, "kind": value.kind} for value in record.relations]}, ensure_ascii=False, indent=2) + "\n"
 
 
+def _generated_block(start: str, end: str, entries: list[str], current: str) -> str:
+    """Replace a generated navigation block, leaving hand-written content alone."""
+    block = "\n".join([start, *entries, end])
+    expression = re.compile(rf"{re.escape(start)}.*?{re.escape(end)}", re.DOTALL)
+    if expression.search(current):
+        return expression.sub(lambda _: block, current).rstrip("\n") + "\n"
+    return current.rstrip("\n") + "\n\n" + block + "\n"
+
+
+def _regular_text(
+    path: Path,
+    *,
+    operation: str,
+    missing: str | None,
+) -> str | None:
+    """Read one generated/authority target without following non-regular entries."""
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        return missing
+    if not stat.S_ISREG(mode):
+        entry_type = "symlink" if stat.S_ISLNK(mode) else "non-regular entry"
+        raise _error(
+            "INVALID_SYSTEM_STATE",
+            f"Invalid system state at {path}: expected a regular file, found {entry_type}",
+            operation,
+        )
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        raise _error(
+            "INVALID_SYSTEM_STATE",
+            f"Invalid UTF-8 system state at {path}: {error}",
+            operation,
+        ) from None
+
+
+def _system_page_content(current: str, record: SystemRecord, names: dict[str, str]) -> str:
+    """Render a system's members and relations from its own record.
+
+    Keyed on `system_id` and `project_id` rather than on display names, which a
+    later rename may change.
+    """
+    def label(value: str) -> str:
+        return value.replace("\\", "\\\\").replace("]", "\\]")
+
+    entries = ["## Members"]
+    entries += [
+        f"- {label(names.get(project_id, project_id))} — `{project_id}`"
+        for project_id in sorted(record.project_ids, key=lambda value: (names.get(value, value).casefold(), value))
+    ] or ["- None"]
+    entries += ["", "## Relations"]
+    entries += [
+        f"- {label(names.get(relation.source_project_id, relation.source_project_id))} "
+        f"--{label(relation.kind)}--> "
+        f"{label(names.get(relation.target_project_id, relation.target_project_id))}"
+        for relation in sorted(
+            record.relations,
+            key=lambda value: (value.source_project_id, value.target_project_id, value.kind),
+        )
+    ] or ["- None"]
+    return _generated_block(_SYSTEM_PAGE_START, _SYSTEM_PAGE_END, entries, current)
+
+
+def _systems_index_content(current: str, records: dict[str, SystemRecord]) -> str:
+    def label(name: str) -> str:
+        return name.replace("\\", "\\\\").replace("]", "\\]")
+
+    entries = [
+        f"- [{label(record.name)}]({record.slug}/index.md) — `{record.system_id}`"
+        for record in sorted(
+            records.values(), key=lambda item: (item.name.casefold(), item.system_id)
+        )
+    ]
+    return _generated_block(_SYSTEMS_INDEX_START, _SYSTEMS_INDEX_END, entries, current)
+
+
+def _systems_index_update(
+    root: Path,
+    records: dict[str, SystemRecord],
+    operation: str,
+) -> tuple[Path, str, str]:
+    path = root / "04-systems" / "index.md"
+    current = _regular_text(
+        path,
+        operation=operation,
+        missing="# Systems Index\n",
+    )
+    assert current is not None
+    return path, current, _systems_index_content(current, records)
+
+
 def _persist(root: Path, records: dict[str, SystemRecord], changed: set[str], operation: str) -> None:
+    names = {record.project_id: record.name for record in load_projects(root)}
+    updates: dict[Path, str] = {}
+    directories: list[Path] = []
     for system_id in changed:
         record = records[system_id]
         directory = _validated_path(root, record.relative_path, _registry_path(root))
-        directory.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(_config_path(root, record), _config_content(record), operation=operation)
+        directories.append(directory)
+        config = _config_path(root, record)
+        current_config = _regular_text(config, operation=operation, missing=None)
+        updated_config = _config_content(record)
+        if current_config != updated_config:
+            updates[config] = updated_config
         index = directory / "index.md"
-        if not index.exists():
-            atomic_write_text(index, f"# {record.name}\n\n- System ID: `{record.system_id}`\n", operation=operation)
-    atomic_write_text(_registry_path(root), _registry_content(records), operation=operation)
+        current = _regular_text(
+            index,
+            operation=operation,
+            missing=f"# {record.name}\n\n- System ID: `{record.system_id}`\n",
+        )
+        assert current is not None
+        updated = _system_page_content(current, record, names)
+        if updated != current:
+            updates[index] = updated
+
+    registry = _registry_path(root)
+    current_registry = _regular_text(registry, operation=operation, missing=None)
+    updated_registry = _registry_content(records)
+    if current_registry != updated_registry:
+        updates[registry] = updated_registry
+
+    systems_index, current_index, updated_index = _systems_index_update(
+        root, records, operation
+    )
+    if current_index != updated_index:
+        updates[systems_index] = updated_index
+
+    # All target reads and type checks happen before the first filesystem write.
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
+    final_targets = (registry,) if registry in updates else ()
+    commit_updates(
+        root,
+        "registry",
+        operation,
+        updates,
+        final_targets=final_targets,
+    )
+
+
+def project_name_navigation_updates(
+    root: Path,
+    project_id: str,
+    names: dict[str, str],
+    operation: str,
+) -> dict[Path, str]:
+    """Return derived system-page updates after a project display-name change.
+
+    The caller holds both the registry and systems-registry locks and commits the
+    returned pages in the same registry-scope transaction as the project update.
+    """
+    records = _load(root)
+    updates: dict[Path, str] = {}
+    for record in records.values():
+        if project_id not in record.project_ids:
+            continue
+        directory = _validated_path(root, record.relative_path, _registry_path(root))
+        index = directory / "index.md"
+        current = _regular_text(
+            index,
+            operation=operation,
+            missing=f"# {record.name}\n\n- System ID: `{record.system_id}`\n",
+        )
+        assert current is not None
+        updated = _system_page_content(current, record, names)
+        if updated != current:
+            updates[index] = updated
+    return updates
 
 
 def create_system(root: Path, name: str) -> SystemRecord:
@@ -195,31 +359,38 @@ def create_system(root: Path, name: str) -> SystemRecord:
     normalized = name.strip()
     if not normalized:
         raise ValueError("System name must not be empty")
-    with file_lock(resolved, "systems-registry", operation="system-create"):
-        records = _load(resolved)
-        system_id = f"sys-{uuid.uuid4().hex}"
-        record = SystemRecord(system_id, normalized, _relative_path(system_id, normalized, records))
-        records[system_id] = record
-        _persist(resolved, records, {system_id}, "system-create")
-        return record
+    with file_lock(resolved, "registry", operation="system-create"):
+        require_clean_transaction_scope(resolved, "registry", "system-create")
+        with file_lock(resolved, "systems-registry", operation="system-create"):
+            records = _load(resolved)
+            system_id = f"sys-{uuid.uuid4().hex}"
+            record = SystemRecord(system_id, normalized, _relative_path(system_id, normalized, records))
+            records[system_id] = record
+            _persist(resolved, records, {system_id}, "system-create")
+            return record
 
 
 def bind_project(root: Path, system_id: str, project_id: str) -> SystemRecord:
     resolved = root.expanduser().resolve()
-    known = {record.project_id for record in load_projects(resolved)}
-    if project_id not in known:
-        raise _error("UNKNOWN_PROJECT", f"Unknown project {project_id}", "system-bind-project")
-    with file_lock(resolved, "systems-registry", operation="system-bind-project"):
-        records = _load(resolved)
-        record = records.get(system_id)
-        if record is None:
-            raise _error("UNKNOWN_SYSTEM", f"Unknown system {system_id}", "system-bind-project")
-        if project_id in record.project_ids:
-            return record
-        updated = replace(record, project_ids=(*record.project_ids, project_id))
-        records[system_id] = updated
-        _persist(resolved, records, {system_id}, "system-bind-project")
-        return updated
+    with file_lock(resolved, "registry", operation="system-bind-project"):
+        require_clean_transaction_scope(
+            resolved, "registry", "system-bind-project"
+        )
+        known = {record.project_id for record in load_projects(resolved)}
+        if project_id not in known:
+            raise _error("UNKNOWN_PROJECT", f"Unknown project {project_id}", "system-bind-project")
+        with file_lock(resolved, "systems-registry", operation="system-bind-project"):
+            records = _load(resolved)
+            record = records.get(system_id)
+            if record is None:
+                raise _error("UNKNOWN_SYSTEM", f"Unknown system {system_id}", "system-bind-project")
+            if project_id in record.project_ids:
+                _persist(resolved, records, {system_id}, "system-bind-project")
+                return record
+            updated = replace(record, project_ids=(*record.project_ids, project_id))
+            records[system_id] = updated
+            _persist(resolved, records, {system_id}, "system-bind-project")
+            return updated
 
 
 def add_relation(root: Path, system_id: str, source_project_id: str, target_project_id: str, kind: str) -> SystemRecord:
@@ -229,16 +400,19 @@ def add_relation(root: Path, system_id: str, source_project_id: str, target_proj
     relation = SystemRelation(source_project_id, target_project_id, kind)
     if source_project_id == target_project_id:
         raise ValueError("A system relation must connect two different projects")
-    with file_lock(resolved, "systems-registry", operation="system-relate"):
-        records = _load(resolved)
-        record = records.get(system_id)
-        if record is None:
-            raise _error("UNKNOWN_SYSTEM", f"Unknown system {system_id}", "system-relate")
-        if source_project_id not in record.project_ids or target_project_id not in record.project_ids:
-            raise _error("INVALID_SYSTEM_RELATION", "Both relation projects must belong to the system", "system-relate")
-        if relation in record.relations:
-            return record
-        updated = replace(record, relations=(*record.relations, relation))
-        records[system_id] = updated
-        _persist(resolved, records, {system_id}, "system-relate")
-        return updated
+    with file_lock(resolved, "registry", operation="system-relate"):
+        require_clean_transaction_scope(resolved, "registry", "system-relate")
+        with file_lock(resolved, "systems-registry", operation="system-relate"):
+            records = _load(resolved)
+            record = records.get(system_id)
+            if record is None:
+                raise _error("UNKNOWN_SYSTEM", f"Unknown system {system_id}", "system-relate")
+            if source_project_id not in record.project_ids or target_project_id not in record.project_ids:
+                raise _error("INVALID_SYSTEM_RELATION", "Both relation projects must belong to the system", "system-relate")
+            if relation in record.relations:
+                _persist(resolved, records, {system_id}, "system-relate")
+                return record
+            updated = replace(record, relations=(*record.relations, relation))
+            records[system_id] = updated
+            _persist(resolved, records, {system_id}, "system-relate")
+            return updated

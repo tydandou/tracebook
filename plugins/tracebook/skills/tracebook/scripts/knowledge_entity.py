@@ -144,10 +144,34 @@ def _existing_history(content: str, fields: dict[str, str]) -> str:
 
 
 def _index_content(root: Path, index: Path, page: Path, title: str) -> str:
+    """Upsert the entity's index entry, keyed on its link rather than its title.
+
+    The link is the entity's stable storage identity: project paths include
+    kind, while domain/pattern paths use their scope and `knowledge_id`. A title
+    is not stable. Keying on the rendered `- [title](link)`
+    line instead appended a second entry whenever a revise changed the title,
+    leaving the index counting one entity several times under stale names.
+    """
     current = index.read_text(encoding="utf-8") if index.exists() else "# Knowledge Index\n\n"
     link = page.relative_to(index.parent).as_posix()
     entry = f"- [{title}]({link})"
-    return current if entry in current else current.rstrip() + "\n" + entry + "\n"
+    suffix = f"]({link})"
+    lines = current.splitlines()
+    matches = [
+        position for position, line in enumerate(lines)
+        if line.startswith("- [") and line.rstrip().endswith(suffix)
+    ]
+    if not matches:
+        return current.rstrip() + "\n" + entry + "\n"
+    if len(matches) == 1 and lines[matches[0]].rstrip() == entry:
+        return current
+    # Keep the first slot so ordering is stable, and drop entries this link
+    # accumulated under earlier titles.
+    lines[matches[0]] = entry
+    stale = set(matches[1:])
+    return "\n".join(
+        line for position, line in enumerate(lines) if position not in stale
+    ).rstrip() + "\n"
 
 
 def _project_status(current: str, request: object, today: date, version: int) -> str:

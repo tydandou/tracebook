@@ -22,6 +22,7 @@ class SkillWorkflowTest(unittest.TestCase):
             "knowledge-lifecycle-rules.md",
             "synthesis-rules.md",
             "health-check-rules.md",
+            "retrieval-timing-rules.md",
         )
 
         for name in names:
@@ -62,7 +63,10 @@ class SkillWorkflowTest(unittest.TestCase):
 
         self.assertIn("Do not modify business repositories", skill)
         self.assertIn("existing external knowledge root automatically", skill)
-        self.assertIn("pure log analysis", skill)
+        # Logs alone must still fail the gate; the wording moved when the gate
+        # was reordered so "logs plus source passes" is not buried under it.
+        self.assertIn("resting on logs alone", skill)
+        self.assertIn("logs **plus** source", skill)
         self.assertIn("unverified inference", skill)
         self.assertIn("user prohibits a write", skill)
         self.assertIn("health check", skill.lower())
@@ -135,6 +139,49 @@ class SkillWorkflowTest(unittest.TestCase):
         self.assertIn("context-read-path", skill)
         self.assertIn("normal lock-free read", skill)
         self.assertIn("PROJECT_ACTIVATION_REQUIRED", skill)
+
+    def test_repository_agents_file_is_optional_in_skill_and_templates(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        english = (
+            SKILL_ROOT / "assets" / "knowledge-root-template" / "AGENTS.md"
+        ).read_text(encoding="utf-8")
+        chinese = (
+            SKILL_ROOT / "assets" / "knowledge-root-template-zh" / "AGENTS.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("`AGENTS.md` when present", skill)
+        self.assertIn("`AGENTS.md`, when present", english)
+        self.assertIn("`AGENTS.md`（如存在）", chinese)
+
+    def test_english_and_chinese_root_agents_cover_the_same_workflow_sections(self) -> None:
+        english = (
+            SKILL_ROOT / "assets" / "knowledge-root-template" / "AGENTS.md"
+        ).read_text(encoding="utf-8")
+        chinese = (
+            SKILL_ROOT / "assets" / "knowledge-root-template-zh" / "AGENTS.md"
+        ).read_text(encoding="utf-8")
+
+        for token in (
+            "index.md",
+            "context-read-path",
+            "knowledge_id",
+            "00-global/agent-workflow.md",
+            "01-projects",
+            "02-domain",
+            "03-patterns",
+            "04-systems",
+            "99-archive",
+            "system-create",
+            "system-bind-project",
+            "system-relate",
+            "{{knowledge_root}}",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, english)
+                self.assertIn(token, chinese)
+
+        self.assertEqual(6, english.count("\n## "))
+        self.assertEqual(6, chinese.count("\n## "))
 
 
 if __name__ == "__main__":

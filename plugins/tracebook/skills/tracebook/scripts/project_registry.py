@@ -18,6 +18,7 @@ from .errors import TracebookError
 from .knowledge_root import language_for_root, validate_external_root
 from .locking import file_lock
 from .storage import atomic_write_text, confined_path
+from .transaction import commit_updates, require_clean_transaction_scope
 
 
 _PROJECT_ID = re.compile(r"prj-[0-9a-f]{32}")
@@ -548,53 +549,80 @@ def _projects_index_content(current: str, records: dict[str, ProjectRecord]) -> 
         re.DOTALL,
     )
     if expression.search(current):
-        return expression.sub(block, current).rstrip("\n") + "\n"
+        return expression.sub(lambda _: block, current).rstrip("\n") + "\n"
     return current.rstrip("\n") + "\n\n" + block + "\n"
 
 
-def _update_projects_index(root: Path, records: dict[str, ProjectRecord], language: str) -> None:
-    path = root / "01-projects" / "index.md"
+def _project_regular_text(
+    path: Path,
+    *,
+    operation: str,
+    missing: str | None,
+) -> str | None:
     try:
         mode = path.lstat().st_mode
     except FileNotFoundError:
-        title = "项目知识索引" if language == "zh" else "Projects Index"
-        current = f"# {title}\n"
-    else:
-        if not stat.S_ISREG(mode):
-            entry_type = "symlink" if stat.S_ISLNK(mode) else "non-regular entry"
-            raise TracebookError(
-                "INVALID_PROJECT_STATE",
-                f"Invalid project index at {path}: expected a regular file, found {entry_type}",
-                "resolve",
-            )
-        current = path.read_text(encoding="utf-8")
-    updated = _projects_index_content(current, records)
-    if updated != current:
-        atomic_write_text(path, updated, operation="resolve")
-
-
-def _refresh_project_index_name(root: Path, record: ProjectRecord, previous_name: str) -> None:
-    """Update only the generated heading; preserve a manually customized page."""
-    path = root / record.relative_path / "index.md"
-    try:
-        mode = path.lstat().st_mode
-    except FileNotFoundError:
-        return
+        return missing
     if not stat.S_ISREG(mode):
         entry_type = "symlink" if stat.S_ISLNK(mode) else "non-regular entry"
         raise TracebookError(
             "INVALID_PROJECT_STATE",
             f"Invalid project state at {path}: expected a regular file, found {entry_type}",
-            "project-update",
+            operation,
         )
-    current = path.read_text(encoding="utf-8")
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        raise TracebookError(
+            "INVALID_PROJECT_STATE",
+            f"Invalid UTF-8 project state at {path}: {error}",
+            operation,
+        ) from None
+
+
+def _projects_index_update(
+    root: Path,
+    records: dict[str, ProjectRecord],
+    language: str,
+    operation: str,
+) -> tuple[Path, str, str]:
+    path = root / "01-projects" / "index.md"
+    title = "项目知识索引" if language == "zh" else "Projects Index"
+    current = _project_regular_text(
+        path,
+        operation=operation,
+        missing=f"# {title}\n",
+    )
+    assert current is not None
+    return path, current, _projects_index_content(current, records)
+
+
+def _update_projects_index(root: Path, records: dict[str, ProjectRecord], language: str) -> None:
+    path, current, updated = _projects_index_update(
+        root, records, language, "resolve"
+    )
+    if updated != current:
+        atomic_write_text(path, updated, operation="resolve")
+
+
+def _project_index_name_update(
+    root: Path,
+    record: ProjectRecord,
+    previous_name: str,
+) -> tuple[Path, str, str] | None:
+    """Return a generated-heading update while preserving customized pages."""
+    path = root / record.relative_path / "index.md"
+    current = _project_regular_text(
+        path,
+        operation="project-update",
+        missing=None,
+    )
+    if current is None:
+        return
     expected = f"# {previous_name}\n"
     if current.startswith(expected):
-        atomic_write_text(
-            path,
-            f"# {record.name}\n{current[len(expected):]}",
-            operation="project-update",
-        )
+        return path, current, f"# {record.name}\n{current[len(expected):]}"
+    return path, current, current
 
 
 def _signal_indexes(records: dict[str, ProjectRecord], *, registry: Path) -> tuple[dict[str, ProjectRecord], dict[str, ProjectRecord]]:
@@ -629,6 +657,7 @@ def ensure_project(knowledge_root: Path, repo: Path) -> ProjectRecord:
     path = registry_path(root)
 
     with file_lock(root, "registry", operation="resolve"):
+        require_clean_transaction_scope(root, "registry", "resolve")
         records = _load_registry(path, root)
         locations, remotes = _signal_indexes(records, registry=path)
         by_location = locations.get(location_key)
@@ -680,32 +709,100 @@ def update_project(
     root = knowledge_root.expanduser().resolve()
     path = registry_path(root)
     with file_lock(root, "registry", operation="project-update"):
-        records = _load_registry(path, root)
-        record = records.get(project_id)
-        if record is None:
-            raise TracebookError("UNKNOWN_PROJECT", f"Unknown project {project_id}", "project-update")
-        next_name = record.name if name is None else name.strip()
-        if not next_name:
-            raise ValueError("Project name must not be empty")
-        next_locations = record.locations
-        if locations is not None:
-            normalized = tuple(_canonical_location(value, registry=path)[0] for value in locations)
-            if not normalized:
-                raise ValueError("Project must keep at least one location")
-            if len({os.path.normcase(value) for value in normalized}) != len(normalized):
-                raise ValueError("Project locations must be unique")
-            next_locations = normalized
-        updated = replace(record, name=next_name, locations=next_locations)
-        if updated == record:
-            return record
-        others = dict(records)
-        others[project_id] = updated
-        _validate_unique_signals(others, registry=path)
-        _persist_records(root, path, others, {project_id}, operation="project-update")
-        if updated.name != record.name:
-            _refresh_project_index_name(root, updated, record.name)
-            _update_projects_index(root, others, language_for_root(root))
-        return updated
+        require_clean_transaction_scope(root, "registry", "project-update")
+        with file_lock(root, "systems-registry", operation="project-update"):
+            records = _load_registry(path, root)
+            record = records.get(project_id)
+            if record is None:
+                raise TracebookError("UNKNOWN_PROJECT", f"Unknown project {project_id}", "project-update")
+            next_name = record.name if name is None else name.strip()
+            if not next_name:
+                raise ValueError("Project name must not be empty")
+            next_locations = record.locations
+            if locations is not None:
+                normalized = tuple(_canonical_location(value, registry=path)[0] for value in locations)
+                if not normalized:
+                    raise ValueError("Project must keep at least one location")
+                if len({os.path.normcase(value) for value in normalized}) != len(normalized):
+                    raise ValueError("Project locations must be unique")
+                next_locations = normalized
+            updated = replace(record, name=next_name, locations=next_locations)
+            if updated == record:
+                return record
+            others = dict(records)
+            others[project_id] = updated
+            _validate_unique_signals(others, registry=path)
+
+            updates: dict[Path, str] = {}
+            config = project_config_path(root, updated)
+            current_config = _project_regular_text(
+                config,
+                operation="project-update",
+                missing=None,
+            )
+            if current_config is None:
+                raise TracebookError(
+                    "INVALID_PROJECT_STATE",
+                    f"Missing project config: {config}",
+                    "project-update",
+                )
+            updated_config = _project_config_content(updated)
+            if current_config != updated_config:
+                updates[config] = updated_config
+
+            current_registry = _project_regular_text(
+                path,
+                operation="project-update",
+                missing=None,
+            )
+            if current_registry is None:
+                raise TracebookError(
+                    "INVALID_PROJECT_STATE",
+                    f"Missing project registry: {path}",
+                    "project-update",
+                )
+            updated_registry = _registry_content(others)
+            if current_registry != updated_registry:
+                updates[path] = updated_registry
+
+            if updated.name != record.name:
+                heading = _project_index_name_update(root, updated, record.name)
+                if heading is not None:
+                    page, current_page, updated_page = heading
+                    if current_page != updated_page:
+                        updates[page] = updated_page
+                projects_index, current_index, updated_index = _projects_index_update(
+                    root,
+                    others,
+                    language_for_root(root),
+                    "project-update",
+                )
+                if current_index != updated_index:
+                    updates[projects_index] = updated_index
+
+                # Local import avoids a module-import cycle. Both registry locks
+                # are held, so these derived pages join the same transaction.
+                from .system_registry import project_name_navigation_updates
+
+                names = {value.project_id: value.name for value in others.values()}
+                updates.update(
+                    project_name_navigation_updates(
+                        root,
+                        project_id,
+                        names,
+                        "project-update",
+                    )
+                )
+
+            final_targets = (path,) if path in updates else ()
+            commit_updates(
+                root,
+                "registry",
+                "project-update",
+                updates,
+                final_targets=final_targets,
+            )
+            return updated
 
 
 def bind_remote(knowledge_root: Path, project_id: str, remote: str) -> ProjectRecord:
@@ -717,6 +814,9 @@ def bind_remote(knowledge_root: Path, project_id: str, remote: str) -> ProjectRe
     root = knowledge_root.expanduser().resolve()
     path = registry_path(root)
     with file_lock(root, "registry", operation="project-bind-remote"):
+        require_clean_transaction_scope(
+            root, "registry", "project-bind-remote"
+        )
         records = _load_registry(path, root)
         record = records.get(project_id)
         if record is None:
