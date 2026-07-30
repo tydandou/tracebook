@@ -5,6 +5,80 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.2] - 2026-07-30
+
+### Added
+
+- New `references/retrieval-timing-rules.md` states when to retrieve again after
+  the opening read: whenever the work yields a new retrieval key — a file path,
+  class or function name, `knowledge_id`, table name, error code, or config key
+  that was not in hand at the last query. It documents deterministic local
+  retrieval, log/stack-trace evidence reverse lookup, and the rule that current
+  source evidence outranks a conflicting stored conclusion.
+
+### Fixed
+
+- A project's knowledge index no longer accumulates one entry per title. Entries
+  are keyed on the entity's stable storage link — project paths contain kind while
+  domain/pattern paths use scope and `knowledge_id` — rather than on the rendered
+  `- [title](link)` line, so a revise that changes the
+  title updates the existing entry instead of appending a second one. A write to
+  an entity also collapses duplicates earlier releases left for that link.
+  Observed before this fix: a project with 4 knowledge files listed 9 entries,
+  three naming titles its authority pages no longer carried.
+- `check` reports an index that links one entity page more than once, under
+  `Schema-v2 Entity Integrity`. `_duplicate_pages` skips `index.md` by design, so
+  this accumulation was invisible to every health check. The check resolves the
+  link and verifies schema-v2 frontmatter, so repeated links to an ordinary
+  Markdown page are not misreported as duplicate entities.
+- A registered system is now reachable by browsing. `04-systems/index.md` gains a
+  generated navigation block listing each system with its id, and a system's own
+  page lists its member projects and directed relations, rebuilt from its record
+  on every `system-create` / `system-bind-project` / `system-relate`. Both are
+  keyed on stable ids, and hand-written content outside the generated block is
+  preserved. Previously the directory existed with nothing linking to it. The
+  system id stays outside the generated block, so rebuilding a page written
+  before the block existed does not leave two copies of it.
+- System metadata commands validate every config and navigation target before
+  their first authority write, then commit changed files through the existing
+  registry-scope recoverable transaction. An invalid system page or total index
+  can no longer make a command report failure after silently persisting a member
+  or relation. Metadata operations use the fixed `registry -> systems-registry`
+  lock order. After acquiring the registry lock, a new metadata command now
+  rejects an unfinished transaction in that scope with
+  `TRANSACTION_RECOVERY_REQUIRED`; this prevents a later command from changing
+  prepared targets and turning a recoverable crash into a blocked transaction.
+- Repeating an existing `system-bind-project` or `system-relate` now reconciles
+  missing or stale generated navigation instead of returning before maintenance.
+  `project-update --name` refreshes every member system page in the same
+  registry-scope transaction, so project display-name changes do not leave stale
+  system navigation.
+
+### Changed
+
+- Both knowledge-root `AGENTS.md` templates now send the reader to the root
+  `index.md` as step 3 of the required read order, and replace the
+  project-only "default location" section with one covering all four
+  destinations — `01-projects`, `02-domain`, `03-patterns`, and `04-systems`
+  (noting that systems are maintained by command, never by hand) — plus
+  `99-archive`. `02-domain`, `03-patterns`, and `04-systems` appeared nowhere in
+  either template before, even though the root `index.md` links all of them.
+  `00-global/agent-workflow.md` joins the rule-file list. The root path is now
+  stated on its own line rather than concatenated into a project path, which also
+  ends the mixed `D:\root/01-projects/...` separators.
+  **Existing knowledge roots are unaffected**: `initialize` never overwrites an
+  existing file. Delete `AGENTS.md` and re-run `initialize`, or edit it by hand.
+- The Chinese knowledge-root `AGENTS.md` template now matches the English one.
+  It carries the same required read order, rule-file list, knowledge destination
+  guidance, and task-end report. Both templates name `context-read-path`, state
+  that the opening read is not the only retrieval, and clarify that the
+  no-complete-logs rule bounds knowledge-root content rather than a log supplied
+  for analysis. Repository `AGENTS.md` remains conditional on the file existing.
+- The write gate now leads with what passes — a root cause backed by logs **plus**
+  source, configuration, or reproduction — instead of burying it under the
+  prohibition on log-only conclusions. The instruction not to load complete logs
+  now explicitly bounds reads out of the knowledge root, not task input.
+
 ## [4.0.1] - 2026-07-28
 
 ### Added

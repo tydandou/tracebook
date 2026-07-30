@@ -7,8 +7,7 @@ code repository.
 
 Store durable project knowledge, business rules, terminology, code-path maps,
 architecture understanding, incident conclusions, cross-project domain
-knowledge, and reusable engineering patterns. Use Git for review and Obsidian
-for browsing when desired.
+knowledge, and reusable engineering patterns.
 
 ## Required Read Order
 
@@ -16,14 +15,21 @@ For a business-project task, read in this order:
 
 1. The current business repository's `AGENTS.md`, when present.
 2. This file.
-3. `00-global/health/health-status.md`.
-4. The current project path returned by the resolver, then its `index.md`.
-5. The current project `project-status.md`, when present.
-6. Run the Runner `context` command with the task wording.
-7. Only task-relevant authority pages returned by that command.
+3. This root's `index.md` — the entry point to its six sections.
+4. `00-global/health/health-status.md`.
+5. The current project path returned by the resolver, then its `index.md`.
+6. The current project `project-status.md`.
+7. Run the Runner's `context-read-path` with the task wording — step 2 of the
+   Skill's Quick Start. If `preflight` returned `blocked: true`, execute its
+   `required_action.argv` first, then return to this step.
+8. Only task-relevant authority pages returned by that command.
+
+The opening read is not the only retrieval. When the work yields a new file path,
+identifier, or `knowledge_id`, query again; judging it useful is reason enough.
 
 Do not load complete logs, raw material, archive directories, or `99-archive`
-by default.
+by default. That bounds this knowledge base's own content; a log the user
+supplies for analysis is task input and is unaffected.
 
 ## Core Rules
 
@@ -42,6 +48,7 @@ by default.
 
 ## Rule Files
 
+- `00-global/agent-workflow.md`
 - `00-global/rules/reading-rules.md`
 - `00-global/rules/directory-rules.md`
 - `00-global/rules/auto-creation-rules.md`
@@ -54,13 +61,23 @@ by default.
 - `00-global/rules/synthesis-rules.md`
 - `00-global/health/health-check-rules.md`
 
-## Default Project Location
+## Where Knowledge Belongs
 
-Project knowledge belongs in:
+Classify by reuse scope before writing:
 
-```text
-{{knowledge_root}}/01-projects/{readable-name--id-suffix}
-```
+- `01-projects/{readable-name--id-suffix}` — project-specific facts. The
+  directory name is the project's name slug plus a stable ID suffix; its full
+  identity lives in that directory's `project.json`.
+- `02-domain` — business knowledge reusable across projects (terminology,
+  rules, processes, scenarios).
+- `03-patterns` — engineering knowledge reusable across projects (practices,
+  design patterns, verification conclusions).
+- `04-systems` — multi-project membership and directed service relations.
+  **Never create by hand**: `system-create`, `system-bind-project`, and
+  `system-relate` maintain it.
+- `99-archive` — deprecated and superseded knowledge, kept for traceability.
+
+This root's absolute path: `{{knowledge_root}}`.
 
 ## Task End Report
 

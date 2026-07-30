@@ -10,7 +10,8 @@ __pycache__/
 !.env.example
 *.local
 
-# Internal planning and design notes; retained locally, not published.
+# Internal planning and design notes are local by default. The approved v4.0.2
+# implementation plan is part of this release's reviewable change set.
 /docs/
 eval/
 .tmp/

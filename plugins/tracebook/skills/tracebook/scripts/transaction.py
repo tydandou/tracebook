@@ -707,6 +707,42 @@ def inspect_transactions(root: Path) -> tuple[TransactionDiagnostic, ...]:
     return tuple(diagnostics)
 
 
+def require_clean_transaction_scope(
+    root: Path,
+    scope: str,
+    operation: str,
+) -> None:
+    """Reject a new writer while an earlier transaction may still own the scope.
+
+    Production callers hold ``scope``'s lock before invoking this check. That
+    makes an intent without a manifest a crashed writer rather than a concurrent
+    live writer, and closes the race where a later command could overwrite a
+    recoverable transaction's targets before explicit recovery.
+
+    Recovery deliberately remains explicit: callers must report the pending
+    state and direct the user through ``transactions`` / ``recover-transactions``
+    instead of rolling it forward as a hidden side effect of another command.
+    """
+    _validate_scope(scope, operation=operation)
+    conflicts = [
+        diagnostic
+        for diagnostic in inspect_transactions(root)
+        if diagnostic.scope in {scope, "unknown"}
+    ]
+    if not conflicts:
+        return
+    identities = ", ".join(
+        f"{diagnostic.transaction_id} ({diagnostic.disposition})"
+        for diagnostic in conflicts
+    )
+    raise TracebookError(
+        "TRANSACTION_RECOVERY_REQUIRED",
+        f"Pending transaction state blocks {operation}: {identities}. Run "
+        "`transactions`, then `recover-transactions`, before retrying",
+        operation,
+    )
+
+
 def _read_transaction_intent(
     intents_dir: Path,
     transaction_id: str,
