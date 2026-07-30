@@ -48,6 +48,10 @@ before the matching Git tag is published.
   rejects an unfinished transaction in that scope with
   `TRANSACTION_RECOVERY_REQUIRED`; this prevents a later command from changing
   prepared targets and turning a recoverable crash into a blocked transaction.
+  Lock-free inspection also deduplicates transaction IDs, rechecks entries that
+  disappear during diagnosis, and confirms unknown-scope findings with a second
+  snapshot, so concurrent initialization is not misreported as corruption while
+  persistent orphaned or invalid state remains blocked.
 - Repeating an existing `system-bind-project` or `system-relate` now reconciles
   missing or stale generated navigation instead of returning before maintenance.
   `project-update --name` refreshes every member system page in the same

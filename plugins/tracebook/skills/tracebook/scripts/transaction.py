@@ -493,6 +493,7 @@ def commit_updates(
 def _diagnose_transaction(
     root: Path,
     transactions_dir: Path,
+    intents_dir: Path,
     discovered_dir: Path,
 ) -> TransactionDiagnostic | None:
     transaction_id = discovered_dir.name
@@ -521,8 +522,14 @@ def _diagnose_transaction(
             )
         validated = _validated_updates(root, transaction_dir, manifest)
     except FileNotFoundError:
-        return None
+        return _diagnose_staging(
+            transactions_dir, intents_dir, transaction_id
+        )
     except TracebookError as error:
+        if not (discovered_dir / _MANIFEST_NAME).is_file():
+            return _diagnose_staging(
+                transactions_dir, intents_dir, transaction_id
+            )
         return TransactionDiagnostic(
             transaction_id,
             error.operation,
@@ -532,6 +539,10 @@ def _diagnose_transaction(
             (TransactionIssue(error.code, error.message),),
         )
     except OSError as error:
+        if not (discovered_dir / _MANIFEST_NAME).is_file():
+            return _diagnose_staging(
+                transactions_dir, intents_dir, transaction_id
+            )
         return TransactionDiagnostic(
             transaction_id,
             "inspect",
@@ -594,7 +605,7 @@ def _diagnose_staging(
     transactions_dir: Path,
     intents_dir: Path,
     transaction_id: str,
-) -> TransactionDiagnostic:
+) -> TransactionDiagnostic | None:
     """Diagnose a transaction that has no manifest yet, from its intent alone.
 
     Read-only and lock-free, which bounds what can be concluded: a writer
@@ -607,11 +618,15 @@ def _diagnose_staging(
     failure mode the intent protocol exists to prevent.
 
     An orphaned directory with no intent at all is the one case that is safe to
-    call ``cleanup-ready``: no current writer can own it.
+    call ``cleanup-ready``: no current writer can own it. If both entries have
+    disappeared since the directory snapshots were enumerated, the transaction
+    has already been cleaned and must not be reported as an orphan.
     """
     has_directory = (transactions_dir / transaction_id).is_dir()
     intent_path = intents_dir / f"{transaction_id}{_INTENT_SUFFIX}"
     if not intent_path.is_file():
+        if not has_directory:
+            return None
         return TransactionDiagnostic(
             transaction_id, "inspect", "unknown", "unknown", "cleanup-ready",
             (
@@ -629,6 +644,11 @@ def _diagnose_staging(
             intents_dir, transaction_id, operation="inspect"
         )
     except (TracebookError, OSError) as error:
+        if (
+            not intent_path.is_file()
+            and not (transactions_dir / transaction_id).is_dir()
+        ):
+            return None
         message = error.message if isinstance(error, TracebookError) else str(error)
         return TransactionDiagnostic(
             transaction_id, "inspect", "unknown", "unknown", "invalid",
@@ -677,33 +697,35 @@ def inspect_transactions(root: Path) -> tuple[TransactionDiagnostic, ...]:
     if not transactions_dir.is_dir() and not intents_dir.is_dir():
         return ()
 
-    # Staging transactions are keyed by id so a directory and its intent produce
-    # one diagnostic, not two.
-    staging: set[str] = set()
+    # Snapshot identities first, then diagnose each identity once from its
+    # current state. A writer may publish a manifest or finish cleanup between
+    # the two directory enumerations; branching during enumeration could
+    # otherwise report the same transaction twice in contradictory states.
+    transaction_ids: set[str] = set()
     diagnostics: list[TransactionDiagnostic] = []
     if transactions_dir.is_dir():
         for discovered_dir in sorted(transactions_dir.iterdir(), key=lambda path: path.name):
             if not discovered_dir.is_dir():
                 continue
-            if not (discovered_dir / _MANIFEST_NAME).is_file():
-                staging.add(discovered_dir.name)
-                continue
-            diagnostic = _diagnose_transaction(resolved_root, transactions_dir, discovered_dir)
-            if diagnostic is not None:
-                diagnostics.append(diagnostic)
+            transaction_ids.add(discovered_dir.name)
     if intents_dir.is_dir():
         for discovered_intent in sorted(intents_dir.iterdir(), key=lambda path: path.name):
             if not discovered_intent.is_file() or not discovered_intent.name.endswith(_INTENT_SUFFIX):
                 continue
             transaction_id = discovered_intent.name[: -len(_INTENT_SUFFIX)]
-            # A committed transaction's manifest is authoritative; its intent is
-            # removed right after cleanup, so ignore the lingering intent here.
-            if not (transactions_dir / transaction_id / _MANIFEST_NAME).is_file():
-                staging.add(transaction_id)
-    diagnostics.extend(
-        _diagnose_staging(transactions_dir, intents_dir, transaction_id)
-        for transaction_id in sorted(staging)
-    )
+            transaction_ids.add(transaction_id)
+    for transaction_id in sorted(transaction_ids):
+        discovered_dir = transactions_dir / transaction_id
+        if (discovered_dir / _MANIFEST_NAME).is_file():
+            diagnostic = _diagnose_transaction(
+                resolved_root, transactions_dir, intents_dir, discovered_dir
+            )
+        else:
+            diagnostic = _diagnose_staging(
+                transactions_dir, intents_dir, transaction_id
+            )
+        if diagnostic is not None:
+            diagnostics.append(diagnostic)
     return tuple(diagnostics)
 
 
@@ -724,11 +746,30 @@ def require_clean_transaction_scope(
     instead of rolling it forward as a hidden side effect of another command.
     """
     _validate_scope(scope, operation=operation)
+    observed = inspect_transactions(root)
     conflicts = [
         diagnostic
-        for diagnostic in inspect_transactions(root)
-        if diagnostic.scope in {scope, "unknown"}
+        for diagnostic in observed
+        if diagnostic.scope == scope
     ]
+    if not conflicts:
+        # Inspection is intentionally lock-free. An unrelated writer can finish
+        # between path enumeration and file reads, producing a one-snapshot
+        # ``unknown`` diagnosis even though no transaction remains. Real
+        # corruption or a legacy orphan is stable, so require the same unknown
+        # transaction id to remain unknown in an immediate confirmation pass.
+        unknown_ids = {
+            diagnostic.transaction_id
+            for diagnostic in observed
+            if diagnostic.scope == "unknown"
+        }
+        if unknown_ids:
+            conflicts = [
+                diagnostic
+                for diagnostic in inspect_transactions(root)
+                if diagnostic.scope == "unknown"
+                and diagnostic.transaction_id in unknown_ids
+            ]
     if not conflicts:
         return
     identities = ", ".join(
