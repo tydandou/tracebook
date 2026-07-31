@@ -75,6 +75,8 @@ def validate_request(request: object) -> None:
     replacement = getattr(request, "replacement_knowledge_id", None)
     if status == "superseded" and (not isinstance(replacement, str) or SLUG.fullmatch(replacement) is None):
         raise _error("replacement_knowledge_id", "is required for Superseded knowledge")
+    if status != "superseded" and replacement is not None:
+        raise _error("replacement_knowledge_id", "is allowed only for Superseded knowledge")
 
 
 def entity_path(root: Path, record: ProjectRecord, request: object) -> Path:
@@ -190,7 +192,6 @@ def capture_entity(root: Path, record: ProjectRecord, request: object, today: da
     index = _index_path(root, record, getattr(request, "scope"))
     lock = project_lock_name(record) if getattr(request, "scope") == "project" else getattr(request, "scope")
     with file_lock(root, lock, operation="capture"):
-        path.parent.mkdir(parents=True, exist_ok=True)
         current = path.read_text(encoding="utf-8") if path.exists() else ""
         event_id = _event_id(path.relative_to(root), request)
         if event_id in EVENT.findall(current):
@@ -212,12 +213,51 @@ def capture_entity(root: Path, record: ProjectRecord, request: object, today: da
         else:
             created, history, version = today.isoformat(), "", 1
         if _status(getattr(request, "status", "current")) == "superseded":
+            # The successor is resolved beside the entity being retired, so a
+            # project entity can only be superseded within its own kind
+            # directory. Domain and pattern paths carry no kind, so any kind in
+            # that scope qualifies. Name the directory in the failure: "same
+            # collection" alone does not say that kind is what has to match.
             replacement_path = path.with_name(f"{getattr(request, 'replacement_knowledge_id')}.md")
-            if replacement_path == path or not replacement_path.exists():
-                raise _error("replacement_knowledge_id", "must reference an existing entity in the same collection")
-            replacement_status = _front(replacement_path.read_text(encoding="utf-8")).get("status")
-            if replacement_status in {"deprecated", "superseded"}:
-                raise _error("replacement_knowledge_id", "must reference an active entity")
+            if replacement_path == path:
+                raise _error("replacement_knowledge_id", "must differ from knowledge_id")
+            if not replacement_path.exists():
+                location = (
+                    f"project scope kind `{getattr(request, 'kind')}`"
+                    if getattr(request, "scope") == "project"
+                    else f"`{getattr(request, 'scope')}` scope"
+                )
+                raise _error(
+                    "replacement_knowledge_id",
+                    f"must name an existing entity stored beside this one — no "
+                    f"`{getattr(request, 'replacement_knowledge_id')}` in {location}",
+                )
+            try:
+                replacement_fields = _front(replacement_path.read_text(encoding="utf-8"))
+            except EntityError as error:
+                raise _error(
+                    "replacement_knowledge_id",
+                    "must reference a matching schema-v2 authority",
+                ) from error
+            expected_project = record.identity if getattr(request, "scope") == "project" else "null"
+            if (
+                replacement_fields.get("schema_version") != "2"
+                or replacement_fields.get("scope") != getattr(request, "scope")
+                or replacement_fields.get("project") != expected_project
+                or not replacement_fields.get("type")
+                or (
+                    getattr(request, "scope") == "project"
+                    and replacement_fields.get("type") != getattr(request, "kind")
+                )
+                or replacement_fields.get("knowledge_id") != getattr(request, "replacement_knowledge_id")
+            ):
+                raise _error("replacement_knowledge_id", "must reference a matching schema-v2 authority")
+            replacement_status = replacement_fields.get("status")
+            if replacement_status != "current":
+                raise _error(
+                    "replacement_knowledge_id",
+                    f"must reference Current knowledge; found {replacement_status or 'missing status'}",
+                )
         rendered = _render(record, request, today, version, created, history, event_id)
         updates = {path: rendered, index: _index_content(root, index, path, getattr(request, "title").strip())}
         if getattr(request, "scope") == "project":

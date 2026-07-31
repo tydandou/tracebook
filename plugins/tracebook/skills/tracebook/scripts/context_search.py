@@ -149,7 +149,16 @@ def _candidates(root: Path, projects: tuple[ProjectRecord, ...], scope: str, inc
             continue
         versions = [Candidate(fields, path, section.group(1).strip(), int(fields["version"]), fields["updated"], source_project_id=source.project_id if source else None, source_project_name=source.name if source else None)]
         for version, updated, body in HISTORY.findall(content):
-            versions.append(Candidate(fields, path, body.strip(), int(version), updated, True, source.project_id if source else None, source.name if source else None))
+            versions.append(Candidate(
+                fields,
+                path,
+                body.strip(),
+                int(version),
+                updated,
+                source_project_id=source.project_id if source else None,
+                source_project_name=source.name if source else None,
+                historical=True,
+            ))
         if as_of is not None:
             eligible = [item for item in versions if date.fromisoformat(item.updated) <= as_of]
             if not eligible:

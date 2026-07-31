@@ -416,7 +416,11 @@ def _schema_v2_entity_issues(root: Path, pages: PageContents) -> list[str]:
                 f"{relative}: invalid Current file evidence: "
                 + ", ".join(sorted(invalid_evidence))
             )
-        key = (fields["scope"], fields["project"], fields["type"], knowledge_id)
+        # Project paths include kind, while domain and pattern paths are flat by
+        # knowledge_id. Health identity must match that storage contract or a
+        # valid cross-kind domain replacement is reported missing.
+        collection_kind = fields["type"] if fields["scope"] == "project" else ""
+        key = (fields["scope"], fields["project"], collection_kind, knowledge_id)
         if key in authorities:
             issues.append(f"{_relative(root, authorities[key])} <-> {relative}: duplicate authority")
         else:
@@ -429,8 +433,10 @@ def _schema_v2_entity_issues(root: Path, pages: PageContents) -> list[str]:
             replacement_entity = entities.get(replacement_key)
             if replacement == key[3] or replacement_entity is None:
                 issues.append(f"{_relative(root, page)}: replacement is missing or self-referential")
-            elif replacement_entity[1].get("status") in {"deprecated", "superseded"}:
-                issues.append(f"{_relative(root, page)}: replacement is inactive")
+            elif replacement_entity[1].get("status") != "current":
+                issues.append(f"{_relative(root, page)}: replacement is not Current")
+        elif replacement != "null":
+            issues.append(f"{_relative(root, page)}: non-Superseded entity has a replacement")
     return sorted(set(issues))
 
 def _review_candidates(
