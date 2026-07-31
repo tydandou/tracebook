@@ -5,6 +5,50 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.3] - 2026-08-01
+
+### Changed
+
+- A refused `superseded` capture now says why. A missing successor names the
+  directory that was searched — `no \`settlement-window\` in project scope kind
+  \`decision\`` — and a self-reference reports `must differ from knowledge_id`
+  rather than sharing one message with the missing case. The previous wording,
+  "must reference an existing entity in the same collection", did not reveal
+  that for project scope the successor has to share the entity's `kind`.
+- `SKILL.md` and `references/knowledge-lifecycle-rules.md` define what a
+  collection is and record that the supersede constraint differs by scope:
+  project entities are stored under `knowledge/<kind>/` and can only be
+  superseded within one kind, while domain and pattern entities sit in a flat
+  per-scope directory that accepts any kind. The asymmetry follows from the path
+  layout rather than from a rule about what may replace what, and both scopes
+  now have tests so neither can change silently. Both files also note that a
+  successor of a different project kind is usually a different fact, making
+  `deprecated` — which needs no replacement pointer — the right operation.
+- `SKILL.md` and `references/knowledge-lifecycle-rules.md` state when a revise
+  is warranted: a material conclusion, evidence, title, or lifecycle change.
+  Evidence repairs remain versioned when a source moves, a health finding is
+  resolved, or support changes materially; formatting-only churn does not.
+- Both files also state that a direction not yet authorized for implementation
+  is never the main entity's current version: it belongs in its own entity with
+  `status: pending`, moved to `deprecated` when dropped. Recorded as Current, it
+  costs an extra version as soon as it is overturned and leaves a proposal in
+  History that never described the system.
+
+### Fixed
+
+- Historical results from an explicit project or system read now retain the
+  actual source project's stable ID and name. Positional construction had put
+  the boolean historical flag into `source_project.project_id`, returning
+  `true` instead of the project ID for prior versions.
+- `superseded` capture now accepts only a matching schema-v2 replacement whose
+  status is `current`; a `pending` proposal can no longer retire confirmed
+  knowledge. Non-Superseded entities reject stray replacement pointers.
+- Domain and pattern replacement health validation now follows their flat
+  per-scope storage identity, matching capture behavior for cross-kind
+  successors instead of reporting a valid replacement as missing.
+- Capture validates a Superseded replacement before creating the authority
+  collection, so a rejected request leaves no empty directory behind.
+
 ## [4.0.2] - 2026-07-30
 
 ### Added

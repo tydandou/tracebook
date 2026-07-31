@@ -240,6 +240,19 @@ qualifies, and that conclusion is worth keeping. What fails is a conclusion
 resting on logs alone, temporary Q&A, unverified inference, or when the user
 prohibits a write. Never capture raw logs as the knowledge itself.
 
+A revise records a material change to the durable entity: its conclusion,
+governed evidence, title, or lifecycle facts. New evidence warrants a revise
+when it replaces a moved or obsolete source, resolves a health finding, or
+materially changes the support for the conclusion. Formatting-only edits and
+incidental investigation notes do not; keep those out of durable knowledge or
+capture a genuinely independent fact as its own entity.
+
+A proposed direction that has not been authorized for implementation is never
+the current version of the main entity. Record it as its own entity with
+`status: pending` and `change-status` it to `deprecated` once it is dropped;
+writing it as the main entity's Current costs an extra version the moment it is
+overturned.
+
 Evaluate the write gate per atomic knowledge item, never per whole task. A task
 that produces several independent facts commits each that is new or
 materially changed, useful after the conversation, and has a governed
@@ -296,7 +309,12 @@ awaited acceptance, not an evidence-poor guess; it may have an empty `evidence`
 list. Use
 `status: deprecated` for information that no longer applies. Use
 `status: superseded` only with a `replacement_knowledge_id` for an existing
-active successor knowledge entity.
+`current` successor knowledge entity. A replacement pointer is invalid for all
+other statuses. The successor is resolved beside the entity
+it replaces, so a project entity requires a successor of the same `kind`;
+domain and pattern paths carry no kind and accept any. When the successor is a
+different project kind it is usually a different fact rather than a new version
+— use `deprecated`, which needs no replacement, instead of forcing a pointer.
 
 The same entity event is idempotent. A changed body, evidence, title, or
 lifecycle state requires an explicit revise/status operation and preserves the

@@ -289,10 +289,23 @@ class KnowledgeEntityContextTest(unittest.TestCase):
             )
 
             local = retrieve_context(first, "OrderPaid", scope="project")
+            capture(
+                second,
+                self._request(
+                    operation="revise",
+                    expected_version=1,
+                    kind="architecture",
+                    knowledge_id="order-event-contract",
+                    title="Order event contract",
+                    body="Order service publishes OrderPaid events with order_id.",
+                ),
+                date(2026, 7, 23),
+            )
             expanded = retrieve_context(
                 first,
                 "OrderPaid",
                 project_ids=(second.record.project_id,),
+                include_history=True,
                 scope="project",
             )
             reference = retrieve_context(
@@ -305,6 +318,8 @@ class KnowledgeEntityContextTest(unittest.TestCase):
 
             self.assertEqual([], local["current_context"])
             self.assertEqual(second.record.project_id, expanded["current_context"][0]["source_project"]["project_id"])
+            self.assertEqual(second.record.project_id, expanded["historical_context"][0]["source_project"]["project_id"])
+            self.assertEqual(second.record.name, expanded["historical_context"][0]["source_project"]["name"])
             self.assertEqual("order-event-contract", reference["current_context"][0]["knowledge_id"])
 
     def test_context_can_select_registered_system_members(self) -> None:

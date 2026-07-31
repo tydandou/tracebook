@@ -281,6 +281,8 @@ class RunnerIntegrationTest(unittest.TestCase):
             iteration = self._run_runner(base, "context", "--root", str(root), "--cwd", str(payment_path), "--query", "transient failure", "--include-history")
             self.assertEqual(2, iteration["current_context"][0]["version"])
             self.assertEqual(1, iteration["historical_context"][0]["version"])
+            self.assertEqual(payment_id, iteration["historical_context"][0]["source_project"]["project_id"])
+            self.assertEqual(payment["project"]["name"], iteration["historical_context"][0]["source_project"]["name"])
 
     def test_runner_accepts_utf8_bom_capture_requests_and_reports_legacy_roots(self) -> None:
         with TemporaryDirectory() as temp:
