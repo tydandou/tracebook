@@ -77,7 +77,7 @@ class PublicArtifactsTest(unittest.TestCase):
         self.assertEqual("tracebook", manifest["name"])
         self.assertEqual("4.0.3", manifest["version"])
         self.assertEqual("tracebook", marketplace["name"])
-        self.assertIn("Durable external project knowledge", marketplace["description"])
+        self.assertIn("evidence-backed project memory", marketplace["description"])
         self.assertEqual("./plugins/tracebook", marketplace["plugins"][0]["source"])
         self.assertEqual("4.0.3", marketplace["plugins"][0]["version"])
 

@@ -1,6 +1,6 @@
 {
   "name": "tracebook",
-  "description": "Durable external project knowledge plugins for engineering workflows.",
+  "description": "Local, evidence-backed project memory for coding-agent workflows.",
   "owner": {
     "name": "Tracebook Contributors"
   },
@@ -8,7 +8,7 @@
     {
       "name": "tracebook",
       "source": "./plugins/tracebook",
-      "description": "Durable and traceable external project knowledge for Claude Code.",
+      "description": "Project memory that survives across Claude Code sessions, backed by source evidence.",
       "version": "4.0.3"
     }
   ]

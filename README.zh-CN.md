@@ -1,13 +1,105 @@
 # Tracebook
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+<p align="center">
+  <img src="docs/assets/tracebook-hero.svg" alt="Tracebook — 跨越对话的工程记忆" width="100%">
+</p>
 
-Tracebook 是面向软件开发工作的本地持久化知识层。它的 Agent Skill 会在任务开始前加载
-聚焦的项目上下文，并在任务结束后把经过验证、值得长期保留的结论捕获到业务仓库之外。
+<p align="center">
+  <a href="https://github.com/tydandou/tracebook/actions/workflows/ci.yml"><img src="https://github.com/tydandou/tracebook/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a>
+  <a href="https://github.com/tydandou/tracebook/releases/latest"><img src="https://img.shields.io/github/v/release/tydandou/tracebook" alt="最新版本"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/tydandou/tracebook" alt="Apache-2.0 许可证"></a>
+  <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB" alt="Python 3.10 或更高版本">
+</p>
 
-本仓库同时提供 Codex 和 Claude Code 的原生 marketplace metadata；支持 Open Agent
-Skills 的其他 Agent 也能使用同一份 Skill 包。日常使用以自然语言为主；确定性 JSON
-runner 则用于集成、诊断和高级工作流。
+<p align="center"><strong>为编程 Agent 提供本地、可追溯、基于证据的项目记忆。</strong></p>
+
+<p align="center">
+  <a href="#两条命令完成安装">安装</a> ·
+  <a href="#一个任务两次会话">30 秒了解</a> ·
+  <a href="#为什么需要-tracebook">为什么使用</a> ·
+  <a href="README.md">English</a>
+</p>
+
+编程 Agent 不应该在每次新对话里重新摸索同一套架构、事故根因或业务规则。Tracebook
+会在仓库工作前只加载相关的项目知识，并在任务结束后只保留经过验证、值得复用且有证据
+支撑的结论。
+
+它是面向 Codex、Claude Code 和其他 Open Agent Skills 宿主的纯 Agent Skill：**不需要
+服务器、数据库、后台进程、生命周期 Hook 或 API key，也不会向业务仓库写入文件。**
+知识以人可以直接检查的 Markdown 保存在 `~/.tracebook`。
+
+## 两条命令完成安装
+
+需要 Python 3.10 或更高版本。安装当前稳定版后，启动新的 Agent 会话即可：
+
+**Codex**
+
+```text
+codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin add tracebook@tracebook
+```
+
+**Claude Code**
+
+```text
+claude plugin marketplace add tydandou/tracebook
+claude plugin install tracebook@tracebook
+```
+
+这就是完整的运行时安装。需要本地开发、更新、恢复安装或使用其他 Open Agent Skills
+宿主时，请查看后文的[完整安装说明](#安装)。
+
+## 一个任务，两次会话
+
+```text
+第一次会话
+> 诊断退款重试缺陷，并验证根因。
+
+Tracebook  →  Agent 对照源码与测试验证结论
+           →  持久结论连同证据一起被捕获
+
+几天后的第二次会话
+> 修改退款重试策略，但不能破坏现有行为。
+
+Tracebook  →  Agent 在编辑前加载相关的当前结论
+           →  从已验证上下文开始，而不是重新摸索
+```
+
+捕获不是把聊天记录倒进文件。每个权威知识页都有稳定身份、状态、版本历史和来源证据：
+
+```markdown
+---
+knowledge_id: refund-retry-policy
+status: current
+version: 2
+---
+
+## Current
+
+退款最多重试两次，每次超时 3 秒。
+
+Evidence:
+- `src/order/RefundController.java:L87`
+```
+
+如果任务没有产生经过验证、值得复用的结论，Tracebook 不会写入任何持久知识。
+
+## 它带来的差异
+
+| 没有 Tracebook | 使用 Tracebook |
+| --- | --- |
+| 每次新会话都重新打开同一批文件 | 工作前加载相关结论 |
+| 重要上下文随着聊天结束而消失 | 持久知识独立于聊天与业务仓库 |
+| 过时笔记也可能显得权威 | 生命周期状态和历史明确表达变化 |
+| 记忆方案通常需要服务或仓库文件 | 本地 Markdown、无需服务、业务仓库零写入 |
+| 跨项目上下文依靠手工复制 | 稳定项目 ID 与显式系统关系约束检索范围 |
+
+Tracebook 最适合长期维护的仓库、反复出现的事故处理、多仓库系统，以及需要检查
+“Agent 为什么相信这个项目事实”的团队。它刻意不做语义搜索服务，也不会自动倾倒
+Agent 看到的所有内容。
+
+如果你也希望解决这个问题，可以为 [Tracebook 点 Star](https://github.com/tydandou/tracebook)，
+以便关注后续进展，也帮助更多编程 Agent 用户发现它。
 
 ## 为什么需要 Tracebook
 

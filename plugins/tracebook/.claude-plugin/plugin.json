@@ -1,6 +1,6 @@
 {
   "name": "tracebook",
-  "description": "Durable and traceable external project knowledge for Claude Code.",
+  "description": "Local, evidence-backed project memory that survives across Claude Code sessions.",
   "version": "4.0.3",
   "author": {
     "name": "Tracebook Contributors"

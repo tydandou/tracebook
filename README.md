@@ -1,15 +1,110 @@
 # Tracebook
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+<p align="center">
+  <img src="docs/assets/tracebook-hero.svg" alt="Tracebook — memory that survives the chat" width="100%">
+</p>
 
-Tracebook is a local, durable knowledge layer for software work. Its Agent
-Skill loads focused project context before a task and captures verified,
-long-lived conclusions afterward, outside the business repository.
+<p align="center">
+  <a href="https://github.com/tydandou/tracebook/actions/workflows/ci.yml"><img src="https://github.com/tydandou/tracebook/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a>
+  <a href="https://github.com/tydandou/tracebook/releases/latest"><img src="https://img.shields.io/github/v/release/tydandou/tracebook" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/tydandou/tracebook" alt="Apache-2.0 license"></a>
+  <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB" alt="Python 3.10 or newer">
+</p>
 
-The repository provides native marketplace metadata for Codex and Claude Code,
-and the same Skill package can be used by agents that support Open Agent
-Skills. Natural-language use is the normal path; a deterministic JSON runner is
-available for integrations, diagnosis, and advanced workflows.
+<p align="center"><strong>A local, evidence-backed memory layer for coding agents.</strong></p>
+
+<p align="center">
+  <a href="#install-in-two-commands">Install</a> ·
+  <a href="#one-task-two-sessions">30-second tour</a> ·
+  <a href="#why-tracebook">Why Tracebook</a> ·
+  <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+Your coding agent should not rediscover the same architecture, incident root
+cause, or business rule every time a chat starts. Tracebook loads only relevant
+project knowledge before repository work, then preserves only conclusions that
+are verified, durable, and backed by evidence.
+
+It is a pure Agent Skill for Codex, Claude Code, and other Open Agent Skills
+hosts: **no server, database, daemon, lifecycle hook, API key, or file written
+to your business repositories.** Knowledge stays as inspectable Markdown under
+`~/.tracebook`.
+
+## Install in two commands
+
+Requires Python 3.10 or newer. Install the current stable release, then start a
+new agent session:
+
+**Codex**
+
+```text
+codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin add tracebook@tracebook
+```
+
+**Claude Code**
+
+```text
+claude plugin marketplace add tydandou/tracebook
+claude plugin install tracebook@tracebook
+```
+
+That is the complete runtime setup. See [Install](#install) for local
+development, updates, recovery, and other Open Agent Skills hosts.
+
+## One task, two sessions
+
+```text
+Session 1
+> Diagnose the refund retry bug and verify the root cause.
+
+Tracebook  →  the agent verifies the finding against source and tests
+           →  the durable conclusion is captured with its evidence
+
+Session 2, days later
+> Change the refund retry policy without breaking existing behavior.
+
+Tracebook  →  the relevant current conclusion is loaded before editing
+           →  the agent starts from verified context instead of rediscovery
+```
+
+Capture is not a transcript dump. A stored authority page has a stable identity,
+status, version history, and source evidence:
+
+```markdown
+---
+knowledge_id: refund-retry-policy
+status: current
+version: 2
+---
+
+## Current
+
+Refunds retry at most twice with a 3-second timeout.
+
+Evidence:
+- `src/order/RefundController.java:L87`
+```
+
+If a task produces no verified, reusable conclusion, Tracebook writes nothing.
+
+## The difference
+
+| Without Tracebook | With Tracebook |
+| --- | --- |
+| Each new session reopens the same files | Relevant conclusions are loaded before work |
+| Important context disappears with the chat | Durable knowledge lives outside the chat and repository |
+| A stale note can look authoritative | Lifecycle states and history make change explicit |
+| Memory systems add services or repo files | Local Markdown; no service and zero business-repo writes |
+| Cross-project context is copied manually | Stable project IDs and explicit system relations bound retrieval |
+
+Tracebook is most useful for long-lived repositories, recurring incident work,
+multi-repository systems, and teams that need to inspect why an agent believes a
+project fact. It is intentionally not a semantic search service or an automatic
+dump of everything an agent sees.
+
+If this is a problem you want solved, [star Tracebook](https://github.com/tydandou/tracebook)
+to follow its development and help other coding-agent users discover it.
 
 ## Why Tracebook
 
