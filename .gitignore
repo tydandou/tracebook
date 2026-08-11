@@ -13,5 +13,9 @@ __pycache__/
 # Internal planning and design notes are local by default. Approved release
 # implementation plans are part of their reviewable change sets.
 /docs/
+!/assets/
+!/assets/tracebook-hero.svg
+!/assets/tracebook-social-preview.svg
+!/assets/tracebook-social-preview.png
 eval/
 .tmp/
