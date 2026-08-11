@@ -1,0 +1,40 @@
+# Tracebook
+
+> Tracebook is persistent, evidence-backed project memory for AI coding agents. It stores governed knowledge as local Markdown outside business repositories and requires no server, database, daemon, lifecycle hook, or API key.
+
+Canonical site: https://tydandou.github.io/tracebook/
+Source: https://github.com/tydandou/tracebook
+Stable release: v4.0.3
+License: Apache-2.0
+Runtime: Python 3.10+
+
+## Primary pages
+
+- [Overview](https://tydandou.github.io/tracebook/): Product scope, workflow, installation, and boundaries.
+- [中文介绍](https://tydandou.github.io/tracebook/zh/): Chinese overview and installation.
+- [Cross-session demo](https://tydandou.github.io/tracebook/demo/): Reproducible isolated workflow using the real runner.
+- [Tracebook vs CLAUDE.md and AGENTS.md](https://tydandou.github.io/tracebook/compare/claude-md/): Instructions versus evolving project knowledge.
+- [External vs repo-local memory](https://tydandou.github.io/tracebook/compare/repo-local-memory/): Storage and ownership tradeoffs.
+- [Tracebook vs vector memory](https://tydandou.github.io/tracebook/compare/vector-memory/): Deterministic governed facts versus semantic retrieval.
+
+## Core facts
+
+- Tracebook is an Agent Skill for Codex, Claude Code, and compatible Open Agent Skills hosts.
+- Knowledge is stored as inspectable Markdown under `~/.tracebook` by default.
+- Current facts use stable identities, evidence references, lifecycle states, and version history.
+- Retrieval is bounded and deterministic; it is not vector or semantic search.
+- Tracebook never writes memory, configuration, hooks, or scratch requests into business repositories.
+- Cross-project reads require explicit project selection or recorded system membership.
+- Deep audit output is evidence triage for human review, not an automatic truth verdict.
+
+## Install
+
+Codex:
+
+    codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+    codex plugin add tracebook@tracebook
+
+Claude Code:
+
+    claude plugin marketplace add tydandou/tracebook
+    claude plugin install tracebook@tracebook

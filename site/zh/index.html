@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tracebook — AI 编程 Agent 的本地项目记忆</title>
+  <meta name="description" content="为 Codex、Claude Code 等 AI 编程 Agent 提供本地、跨会话、基于证据的项目知识与持久记忆。使用可检查的 Markdown，无需服务器、数据库或 API Key。">
+  <meta name="theme-color" content="#07111f">
+  <link rel="canonical" href="https://tydandou.github.io/tracebook/zh/">
+  <link rel="alternate" hreflang="en" href="https://tydandou.github.io/tracebook/">
+  <link rel="alternate" hreflang="zh-CN" href="https://tydandou.github.io/tracebook/zh/">
+  <link rel="stylesheet" href="../assets/site.css">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Tracebook — 跨越对话的工程记忆">
+  <meta property="og:description" content="AI 编程 Agent 的本地、可追溯、跨会话项目记忆。">
+  <meta property="og:url" content="https://tydandou.github.io/tracebook/zh/">
+  <meta property="og:image" content="https://raw.githubusercontent.com/tydandou/tracebook/master/assets/tracebook-social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <header class="site-header">
+    <nav class="nav shell" aria-label="主导航">
+      <a class="brand" href="../" aria-label="Tracebook 首页"><span class="brand-mark" aria-hidden="true"></span> TRACEBOOK</a>
+      <div class="nav-links">
+        <a href="#how-it-works">工作方式</a>
+        <a href="../demo/">演示</a>
+        <a href="#compare">方案对比</a>
+        <a class="language-link" href="../" lang="en">English</a>
+        <a class="nav-star" href="https://github.com/tydandou/tracebook">GitHub ↗</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero shell">
+      <div>
+        <p class="eyebrow">持久项目记忆</p>
+        <h1><span class="gradient-text">让项目记忆</span>跨越对话。</h1>
+        <p class="hero-copy">Tracebook 为 Codex、Claude Code 和其他编程 Agent 提供本地、基于证据的项目记忆；无需服务器、数据库，也不会向你的业务仓库写入文件。</p>
+        <div class="actions">
+          <a class="button button-primary" href="#install">两条命令完成安装</a>
+          <a class="button button-quiet" href="../demo/">运行跨会话演示</a>
+        </div>
+        <div class="proof-row" aria-label="核心特性">
+          <span>纯 Markdown</span>
+          <span>证据门禁</span>
+          <span>无需服务与 API Key</span>
+        </div>
+      </div>
+
+      <div class="memory-card" aria-label="基于证据的记忆示例">
+        <div class="card-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="bar-title">refund-retry-policy.md</span></div>
+        <div class="memory-body">
+          <p class="code-muted">---</p>
+          <p><span class="code-key">knowledge_id:</span> <span class="code-value">refund-retry-policy</span></p>
+          <p><span class="code-key">status:</span> <span class="code-value">current</span></p>
+          <p><span class="code-key">version:</span> <span class="code-value">2</span></p>
+          <p class="code-muted">---</p><br>
+          <p class="code-heading">## Current</p>
+          <p>退款最多重试两次，</p>
+          <p>每次超时 3 秒。</p><br>
+          <p class="code-evidence">Evidence: src/refunds.py:L18</p>
+          <div class="flow-line" aria-hidden="true"><span class="flow-node">验证</span><span class="flow-arrow">→</span><span class="flow-node">捕获</span><span class="flow-arrow">→</span><span class="flow-node">复用</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell" aria-labelledby="problem-title">
+      <p class="section-kicker">问题</p>
+      <h2 id="problem-title">新对话，不应该等于重新调查。</h2>
+      <p class="section-lede">源代码会保留下来，但围绕代码形成的判断经常随着会话消失。Tracebook 只保存值得复用的结论，并保留以后质疑这些结论所需的证据。</p>
+      <div class="grid-3">
+        <article class="feature"><span class="feature-number">01</span><h3>减少重复摸索</h3><p>Agent 工作前加载相关结论，无需反复重读同一套架构、事故根因和业务规则。</p></article>
+        <article class="feature"><span class="feature-number">02</span><h3>每个事实都能溯源</h3><p>当前结论必须声明证据。源文件缺失或晚于知识更新时间时，健康检查会提出复核提示。</p></article>
+        <article class="feature"><span class="feature-number">03</span><h3>业务仓库保持干净</h3><p>知识保存在 <code>~/.tracebook</code>，无需记忆目录、后台进程、向量数据库、Hook 或仓库配置。</p></article>
+      </div>
+    </section>
+
+    <section class="section shell" id="how-it-works" aria-labelledby="workflow-title">
+      <p class="section-kicker">一个任务，两次会话</p>
+      <h2 id="workflow-title">让 Agent 把经过验证的上下文带到下一次工作。</h2>
+      <p class="section-lede">Agent 负责判断哪些结论值得保存；本地 Runner 负责项目身份、存储、版本历史、事务和健康检查。</p>
+      <div class="timeline">
+        <article class="step"><span class="step-label">开始工作前</span><h3>只读取相关知识</h3><p>解析当前项目，使用有边界的检索返回相关且仍然生效的知识，不把整个知识库塞进上下文。</p></article>
+        <article class="step"><span class="step-label">完成验证后</span><h3>捕获持久结论</h3><p>聊天原文和未经验证的猜测不会成为当前事实。稳定 ID、证据、范围、状态和历史共同约束写入。</p></article>
+        <article class="step"><span class="step-label">下一次会话</span><h3>从证据开始</h3><p>Agent 先取得当前结论；当任务需要深入确认时，再回到结论引用的源码、配置或测试。</p></article>
+      </div>
+    </section>
+
+    <section class="section shell" aria-labelledby="governance-title">
+      <div class="split-panel">
+        <div>
+          <p class="section-kicker">受治理的记忆</p>
+          <h2 id="governance-title">不是聊天记录仓库。</h2>
+          <p class="section-lede">知识可以处于 Current、Pending、Deprecated、Superseded 或 Historical 状态。写入具备事务保护，正常读取使用已提交快照。</p>
+          <ul class="check-list">
+            <li>项目、领域和可复用工程模式三种范围</li>
+            <li>同一 Git remote 的多个 clone 共用稳定项目 ID</li>
+            <li>通过显式系统与关系约束跨项目检索</li>
+            <li>Light、Regular 与显式 Deep 健康流程</li>
+          </ul>
+        </div>
+        <div>
+          <div class="terminal"><div class="terminal-head"><span>知识生命周期</span></div><pre><span class="code-value">CURRENT</span>     当前生效
+   │
+   ├── revise → 保留版本历史
+   │
+   ├── <span class="code-key">SUPERSEDED</span> → 指向替代知识
+   │
+   └── <span class="code-muted">DEPRECATED</span> → 不再适用
+
+<span class="code-evidence">PENDING</span>     已知但尚未确认
+<span class="code-muted">HISTORICAL</span>  仅在显式请求时读取</pre></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell" id="install" aria-labelledby="install-title">
+      <p class="section-kicker">稳定版本 · v4.0.3</p>
+      <h2 id="install-title">安装，重启 Agent，然后继续工作。</h2>
+      <p class="section-lede">需要 Python 3.10 或更高版本。文档工作流已在 Ubuntu 与 Windows、Python 3.10 与 3.13 的 CI 中验证。</p>
+      <div class="split-panel">
+        <div><h3>Codex</h3><div class="terminal"><div class="terminal-head"><span>终端</span><button class="copy-button" data-copy="codex-install">复制</button></div><pre id="codex-install">codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin add tracebook@tracebook</pre></div></div>
+        <div><h3>Claude Code</h3><div class="terminal"><div class="terminal-head"><span>终端</span><button class="copy-button" data-copy="claude-install">复制</button></div><pre id="claude-install">claude plugin marketplace add tydandou/tracebook
+claude plugin install tracebook@tracebook</pre></div></div>
+      </div>
+    </section>
+
+    <section class="section shell" id="compare" aria-labelledby="compare-title">
+      <p class="section-kicker">选择适合的记忆模型</p>
+      <h2 id="compare-title">Tracebook 有意保持明确边界。</h2>
+      <p class="section-lede">它不是任务管理器、语义搜索引擎，也不替代宿主的指令文件。以下对比说明这些边界在什么情况下有价值，以及什么时候另一种方案更合适。</p>
+      <div class="compare-grid">
+        <a class="comparison-card" href="../compare/claude-md/"><span class="tag">指令</span><h3>与 CLAUDE.md / AGENTS.md 对比</h3><p>稳定指令与不断演化的项目知识解决的是不同问题，严肃项目通常需要同时使用。</p><span class="comparison-link">查看对比 →</span></a>
+        <a class="comparison-card" href="../compare/repo-local-memory/"><span class="tag">存储</span><h3>外部记忆与仓库内记忆</h3><p>在随代码评审和保持业务仓库零写入之间做出明确选择。</p><span class="comparison-link">查看对比 →</span></a>
+        <a class="comparison-card" href="../compare/vector-memory/"><span class="tag">检索</span><h3>Markdown 治理与向量记忆</h3><p>可确定复核的工程事实，与大规模语义模糊检索并不是同一类需求。</p><span class="comparison-link">查看对比 →</span></a>
+      </div>
+    </section>
+
+    <section class="section shell"><div class="cta"><div><p class="section-kicker">给 Agent 一份项目记忆</p><h2>停止为重复摸索付费。</h2><p>先运行隔离演示并检查生成的 Markdown，再决定 Tracebook 是否适合你的日常开发工作流。</p><div class="actions"><a class="button button-primary" href="../demo/">运行演示</a><a class="button button-quiet" href="https://github.com/tydandou/tracebook">查看 GitHub 源码</a></div></div></div></section>
+  </main>
+
+  <footer class="site-footer"><div class="footer-row shell"><span>© <span data-year>2026</span> Tracebook contributors · Apache-2.0</span><div class="footer-links"><a href="https://github.com/tydandou/tracebook">GitHub</a><a href="https://github.com/tydandou/tracebook/releases/latest">版本</a><a href="https://github.com/tydandou/tracebook/discussions">讨论</a><a href="../llms.txt">llms.txt</a></div></div></footer>
+  <script src="../assets/site.js" defer></script>
+</body>
+</html>
