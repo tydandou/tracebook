@@ -5,6 +5,13 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+### Changed
+
+- Release source archives now exclude the GitHub Pages site, launch copy,
+  promotional images, demo collateral, and their dedicated tests through
+  `export-ignore`. Published GitHub Releases also receive clean ZIP and TAR.GZ
+  assets plus SHA-256 checksums, built from the tagged commit.
+
 ## [4.0.3] - 2026-08-01
 
 ### Changed

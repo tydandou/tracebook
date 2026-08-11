@@ -1,0 +1,46 @@
+name: Package Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build clean source archives
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+      - name: Build release archives
+        id: package
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          prefix="tracebook-${version}/"
+          zip_name="tracebook-${version}.zip"
+          tar_name="tracebook-${version}.tar.gz"
+
+          git archive --format=zip --prefix="$prefix" --output="$zip_name" HEAD
+          git archive --format=tar.gz --prefix="$prefix" --output="$tar_name" HEAD
+          sha256sum "$zip_name" "$tar_name" > SHA256SUMS
+
+          echo "zip_name=$zip_name" >> "$GITHUB_OUTPUT"
+          echo "tar_name=$tar_name" >> "$GITHUB_OUTPUT"
+      - name: Upload release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          ZIP_NAME: ${{ steps.package.outputs.zip_name }}
+          TAR_NAME: ${{ steps.package.outputs.tar_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" "$ZIP_NAME" "$TAR_NAME" SHA256SUMS --clobber
