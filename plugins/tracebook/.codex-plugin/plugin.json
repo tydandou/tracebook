@@ -1,7 +1,7 @@
 {
   "name": "tracebook",
   "version": "4.0.3",
-  "description": "Durable and traceable external project knowledge for Codex.",
+  "description": "Local, evidence-backed project memory that survives across Codex sessions.",
   "author": {
     "name": "Tracebook Contributors",
     "url": "https://github.com/tydandou"
@@ -9,12 +9,12 @@
   "homepage": "https://github.com/tydandou/tracebook",
   "repository": "https://github.com/tydandou/tracebook",
   "license": "Apache-2.0",
-  "keywords": ["knowledge", "engineering", "documentation", "obsidian"],
+  "keywords": ["agent-memory", "coding-agent", "persistent-memory", "local-first", "knowledge-base", "engineering", "markdown", "obsidian"],
   "skills": "./skills/",
   "interface": {
     "displayName": "Tracebook",
-    "shortDescription": "Durable external project knowledge",
-    "longDescription": "Automatically load focused project context for repository work and capture only verified durable engineering knowledge outside business repositories.",
+    "shortDescription": "Evidence-backed memory for coding agents",
+    "longDescription": "Load focused project context before repository work and preserve only verified, durable engineering knowledge as local Markdown outside business repositories.",
     "developerName": "Tracebook Contributors",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
