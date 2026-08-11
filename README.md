@@ -30,6 +30,13 @@ hosts: **no server, database, daemon, lifecycle hook, API key, or file written
 to your business repositories.** Knowledge stays as inspectable Markdown under
 `~/.tracebook`.
 
+The current release is **stable and feature-complete for its documented scope**.
+Project activation, focused retrieval, evidence-gated capture, lifecycle history,
+cross-project systems, crash-safe transactions, recovery, and health checks are
+implemented and verified in CI on Python 3.10 and 3.13 across Ubuntu and Windows.
+You can use Tracebook for regular project work without operating any supporting
+service.
+
 ## Install in two commands
 
 Requires Python 3.10 or newer. Install the current stable release, then start a
@@ -482,7 +489,7 @@ unrecoverable.
 
 ### Capture
 
-Pass a schema-v2 request to the Runner through stdin (`--request -`), so no
+Pass a capture request to the Runner through stdin (`--request -`), so no
 scratch request file needs a placement or cleanup decision. Example request body:
 
 ```json
@@ -647,7 +654,7 @@ evidence before any finding becomes a durable conclusion.
 | `transactions` | `root`, `transactions` | Read-only transaction diagnostics and per-transaction disposition |
 | `recover-transactions` | `recovered_paths` | Explicit safe roll-forward results; never a discard or quarantine action |
 | `context` | `current_context`, `historical_context`, `warnings`, `truncated` | Bounded deterministic authority-page retrieval |
-| `capture` | `changed_paths`, `new_paths`, `skipped`, `health_scope`, `event_id` | Schema-v2 entity transaction result and scope required by the following check |
+| `capture` | `changed_paths`, `new_paths`, `skipped`, `health_scope`, `event_id` | Versioned entity transaction result and scope required by the following check |
 | `check` | `check_type`, `changed_paths`, `report` | Required health level, persisted health paths, and Markdown report |
 | `audit` | `changed_paths`, `report` | Persisted Deep-health paths and Markdown audit report |
 
@@ -777,17 +784,15 @@ the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
 resolves the published `v4.0.3` release.
 
-## Current Limitations
+## Stable Scope and Guarantees
 
-- `4.0.3` retains schema-v2 authority pages and registry v2. Existing registry-v1
-  knowledge roots are intentionally not migrated, imported, or mixed with the
-  new format; point `TRACEBOOK_ROOT` at a new empty root for v4 work.
+Tracebook is complete for the local, evidence-backed project-memory workflow
+documented here. The following boundaries are deliberate guarantees, not missing
+runtime dependencies:
 
-- Registry v1 is not upgraded automatically or mixed with the project-id
-  registry. `resolve` reports an explicit upgrade requirement; existing
-  knowledge pages are never moved or merged automatically.
-
-- No migration, discovery, or automatic import of existing knowledge roots.
+- Existing or unsupported knowledge roots are never upgraded, moved, merged, or
+  imported automatically. Start a fresh installation with an empty configured
+  root; any future migration remains an explicit, separately approved operation.
 - No cloud sync, MCP server, vector database, daemon, or background service.
 - No lifecycle Hooks. Automatic Skill selection remains host-dependent, but
   `$tracebook` can always be invoked explicitly.

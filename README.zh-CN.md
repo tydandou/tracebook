@@ -28,6 +28,10 @@
 服务器、数据库、后台进程、生命周期 Hook 或 API key，也不会向业务仓库写入文件。**
 知识以人可以直接检查的 Markdown 保存在 `~/.tracebook`。
 
+当前版本在文档声明的范围内已经**稳定且功能完整**。项目激活、聚焦检索、证据门禁捕获、
+生命周期历史、跨项目系统、崩溃安全事务、恢复和健康检查均已实现，并在 Ubuntu 与 Windows
+上的 Python 3.10 和 3.13 CI 中验证。日常项目可以直接使用 Tracebook，无需运行任何配套服务。
+
 ## 两条命令完成安装
 
 需要 Python 3.10 或更高版本。安装当前稳定版后，启动新的 Agent 会话即可：
@@ -423,7 +427,7 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" recover-transactions \
 
 ### 捕获
 
-通过 stdin（`--request -`）把 schema-v2 请求交给 Runner，避免为临时请求文件选择位置或清理。
+通过 stdin（`--request -`）把捕获请求交给 Runner，避免为临时请求文件选择位置或清理。
 请求体示例：
 
 ```json
@@ -655,15 +659,13 @@ git diff --check
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
 `v4.0.3` 版本。
 
-## 当前限制
+## 稳定范围与保证
 
-- `4.0.3` 保持 schema-v2 authority 页面和 registry v2。registry v1 知识根不会被迁移、
-  导入或与新格式混写；使用 v4 时请将 `TRACEBOOK_ROOT` 指向新的空知识根。
+Tracebook 已完整覆盖本文档描述的本地、基于证据的项目记忆工作流。以下边界是有意提供的
+安全保证，而不是尚未补齐的运行时依赖：
 
-- 项目 registry v1 不会被自动升级或与 project-id registry 混写；`resolve` 会返回明确的
-  升级要求。既有知识页面不会被自动移动或合并。
-
-- 不迁移、不发现、也不自动导入现有知识根目录。
+- 既有或不受支持的知识根目录不会被自动升级、移动、合并或导入。全新安装应使用配置好的
+  空知识根；未来如提供迁移，也必须是单独授权的显式操作。
 - 不提供 cloud sync、MCP server、vector database、daemon 或后台服务。
 - 不包含生命周期 Hook。自动选择 Skill 仍取决于宿主，但可随时显式调用 `$tracebook`。
 - 不会自动确认业务陈述或 Deep 审计发现为真；证据和人工复核仍具有权威性。
