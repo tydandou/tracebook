@@ -14,9 +14,11 @@
 <p align="center"><strong>A local, evidence-backed memory layer for coding agents.</strong></p>
 
 <p align="center">
+  <a href="https://tydandou.github.io/tracebook/">Website</a> ·
   <a href="#install-in-two-commands">Install</a> ·
   <a href="#one-task-two-sessions">30-second tour</a> ·
-  <a href="#why-tracebook">Why Tracebook</a> ·
+  <a href="https://tydandou.github.io/tracebook/demo/">Live demo</a> ·
+  <a href="https://tydandou.github.io/tracebook/#compare">Compare</a> ·
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
@@ -94,6 +96,17 @@ Evidence:
 ```
 
 If a task produces no verified, reusable conclusion, Tracebook writes nothing.
+
+For executable proof, run the
+[isolated cross-session demo](https://tydandou.github.io/tracebook/demo/):
+
+```text
+python demo/cross_session_demo.py
+```
+
+It uses the real runner with a temporary business repository and a separate
+temporary knowledge root, verifies the capture, recalls it in a second simulated
+session, and removes the temporary environment on exit.
 
 ## The difference
 

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tracebook vs CLAUDE.md and AGENTS.md — Instructions vs Project Memory</title>
+  <meta name="description" content="A practical comparison of CLAUDE.md, AGENTS.md, auto memory, and Tracebook for persistent project context in AI coding agents.">
+  <link rel="canonical" href="https://tydandou.github.io/tracebook/compare/claude-md/">
+  <link rel="stylesheet" href="../../assets/site.css"><meta name="theme-color" content="#07111f">
+  <meta property="og:type" content="article"><meta property="og:title" content="Tracebook vs CLAUDE.md and AGENTS.md"><meta property="og:description" content="Stable instructions and evolving project knowledge solve different problems."><meta property="og:url" content="https://tydandou.github.io/tracebook/compare/claude-md/"><meta property="og:image" content="https://raw.githubusercontent.com/tydandou/tracebook/master/docs/assets/tracebook-social-preview.png"><meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><nav class="nav shell" aria-label="Primary navigation"><a class="brand" href="../../"><span class="brand-mark" aria-hidden="true"></span> TRACEBOOK</a><div class="nav-links"><a href="../../#how-it-works">How it works</a><a href="../../demo/">Demo</a><a href="../repo-local-memory/">Next comparison</a><a class="nav-star" href="https://github.com/tydandou/tracebook">GitHub ↗</a></div></nav></header>
+  <main id="main">
+    <section class="article-hero shell"><p class="eyebrow">Practical comparison</p><h1>Tracebook vs CLAUDE.md and AGENTS.md</h1><p class="hero-copy">Instruction files tell an agent how to work. Tracebook preserves what the agent has verified about a project. They are complements, not substitutes.</p><div class="article-meta"><span class="tag">Instructions</span><span class="tag">Project memory</span><span class="tag">Cross-session context</span></div></section>
+    <div class="article-layout shell">
+      <article class="article">
+        <div class="answer"><p><strong>Short answer:</strong> keep stable commands, conventions, and behavioral rules in CLAUDE.md or AGENTS.md. Use Tracebook for evolving architecture decisions, incident findings, API contracts, business rules, and other conclusions that need evidence and lifecycle history.</p></div>
+        <h2 id="different-jobs">They do different jobs</h2>
+        <p>A repository instruction file is intentionally prominent. It is a good place for facts the agent should hold on every relevant turn: build commands, formatting rules, safety requirements, and workflow conventions.</p>
+        <p>Engineering knowledge behaves differently. A root cause can be superseded. An API contract can move. A decision may apply to one project, a group of services, or a reusable domain. Loading all of it on every turn wastes context and makes stale statements hard to distinguish from current ones.</p>
+        <div class="table-wrap"><table><thead><tr><th>Question</th><th>CLAUDE.md / AGENTS.md</th><th>Tracebook</th></tr></thead><tbody>
+          <tr><td>Primary job</td><td>Guide agent behavior</td><td>Preserve verified project knowledge</td></tr>
+          <tr><td>Typical content</td><td>Commands, conventions, constraints</td><td>Decisions, rules, incidents, module relations</td></tr>
+          <tr><td>Loading model</td><td>Host- and path-defined instruction loading</td><td>Focused task query over current authority pages</td></tr>
+          <tr><td>Evidence</td><td>Optional prose</td><td>Governed source references for current facts</td></tr>
+          <tr><td>Lifecycle</td><td>Manual editing</td><td>Current, pending, deprecated, superseded, history</td></tr>
+          <tr><td>Storage</td><td>Inside the repository</td><td>External local Markdown root</td></tr>
+        </tbody></table></div>
+        <h2 id="use-both">A useful combined pattern</h2>
+        <ol><li>Put invariant repository instructions in AGENTS.md or CLAUDE.md.</li><li>Let the Tracebook Skill run before meaningful repository work.</li><li>Retrieve only knowledge relevant to the task.</li><li>After verification, capture only conclusions with durable value.</li><li>Keep one short instruction pointing agents to the memory workflow instead of duplicating the knowledge itself.</li></ol>
+        <blockquote><p>Instruction: “Run the integration suite before editing payment flows.” Knowledge: “Payment retries currently use exponential backoff because provider X rejects immediate replays; evidence: source and incident report.”</p></blockquote>
+        <h2 id="auto-memory">What about built-in auto memory?</h2>
+        <p>Built-in memory is useful when you want a host to learn recurring preferences and repository patterns automatically. Tracebook adds a stricter boundary: captures must pass a durable-value and evidence gate, project identity is explicit, writes update governed Markdown authority pages, and health checks can surface stale evidence.</p>
+        <p>The tradeoff is intentional. Tracebook does not promise effortless capture of everything, semantic recall, or zero judgment. It favors inspectability and controlled persistence.</p>
+        <h2 id="when">Which should you choose?</h2>
+        <div class="callout"><strong>Use instruction files alone when</strong><p>Your repository is small, the context is stable, and a concise set of commands and conventions covers what agents repeatedly need.</p></div>
+        <div class="callout"><strong>Add Tracebook when</strong><p>Sessions repeatedly rediscover decisions or root causes, knowledge changes over time, multiple repositories share a system, or people need to inspect why an agent believes a project fact.</p></div>
+        <h2 id="sources">Sources and verification</h2>
+        <p>This comparison is based on Tracebook's published workflow and implementation tests. For host behavior, consult the current <a href="https://docs.anthropic.com/en/docs/claude-code/memory">Claude Code memory documentation</a> and the instruction-file documentation of the agent you use.</p>
+      </article>
+      <aside class="article-aside" aria-label="On this page"><strong>On this page</strong><a href="#different-jobs">Different jobs</a><a href="#use-both">Use both</a><a href="#auto-memory">Auto memory</a><a href="#when">Which to choose</a><a href="#sources">Sources</a></aside>
+    </div>
+    <section class="section shell"><div class="cta"><div><p class="section-kicker">Try the workflow</p><h2>See two sessions share one verified fact.</h2><p>The demo uses the real Tracebook runner in an isolated temporary directory and removes everything afterward.</p><div class="actions"><a class="button button-primary" href="../../demo/">Run the demo</a><a class="button button-quiet" href="https://github.com/tydandou/tracebook">Read the repository guide</a></div></div></div></section>
+  </main>
+  <footer class="site-footer"><div class="footer-row shell"><span>Tracebook · Apache-2.0</span><div class="footer-links"><a href="../../">Home</a><a href="../repo-local-memory/">Next: storage models</a></div></div></footer>
+</body>
+</html>

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tracebook vs Vector Database Memory for AI Coding Agents</title>
+  <meta name="description" content="Compare deterministic evidence-backed Markdown project memory with MCP, embeddings, and vector database memory for AI coding agents.">
+  <link rel="canonical" href="https://tydandou.github.io/tracebook/compare/vector-memory/">
+  <link rel="stylesheet" href="../../assets/site.css"><meta name="theme-color" content="#07111f">
+  <meta property="og:type" content="article"><meta property="og:title" content="Tracebook vs vector database memory"><meta property="og:description" content="Governed engineering facts and fuzzy semantic retrieval solve different problems."><meta property="og:url" content="https://tydandou.github.io/tracebook/compare/vector-memory/"><meta property="og:image" content="https://raw.githubusercontent.com/tydandou/tracebook/master/docs/assets/tracebook-social-preview.png"><meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><nav class="nav shell" aria-label="Primary navigation"><a class="brand" href="../../"><span class="brand-mark" aria-hidden="true"></span> TRACEBOOK</a><div class="nav-links"><a href="../../#how-it-works">How it works</a><a href="../../demo/">Demo</a><a href="../claude-md/">All comparisons</a><a class="nav-star" href="https://github.com/tydandou/tracebook">GitHub ↗</a></div></nav></header>
+  <main id="main">
+    <section class="article-hero shell"><p class="eyebrow">Retrieval model</p><h1>Tracebook vs vector database memory</h1><p class="hero-copy">Vector search answers “what looks similar?” Tracebook answers “which governed project facts are current, and what evidence supports them?”</p><div class="article-meta"><span class="tag">Deterministic retrieval</span><span class="tag">No embeddings</span><span class="tag">Evidence governance</span></div></section>
+    <div class="article-layout shell">
+      <article class="article">
+        <div class="answer"><p><strong>Short answer:</strong> choose vector memory for large, fuzzy corpora where semantic recall matters. Choose Tracebook for a smaller set of durable engineering conclusions that require inspectable evidence, lifecycle state, bounded scope, and no supporting service.</p></div>
+        <h2 id="different">Retrieval and authority are different problems</h2>
+        <p>Embeddings can find passages that share meaning even when they use different words. That is valuable for broad documentation, transcripts, tickets, and code search. But similarity does not establish that a statement is current, verified, or authoritative.</p>
+        <p>Tracebook starts from the opposite direction. It stores fewer items. Each current item has a stable identity, governed scope, lifecycle, history, and evidence. Retrieval is lexical and deterministic by design; the agent can explain why an item matched and which source should be checked.</p>
+        <div class="table-wrap"><table><thead><tr><th>Dimension</th><th>Vector / embedding memory</th><th>Tracebook</th></tr></thead><tbody>
+          <tr><td>Best at</td><td>Fuzzy semantic recall over large corpora</td><td>Focused recall of governed project facts</td></tr>
+          <tr><td>Infrastructure</td><td>Often embeddings, index, service, or local database</td><td>Python runner and Markdown files</td></tr>
+          <tr><td>Ranking</td><td>Similarity plus metadata and reranking</td><td>Literal tokens, evidence-path priority, deterministic bounds</td></tr>
+          <tr><td>Authority</td><td>Depends on application design</td><td>Explicit evidence and lifecycle contract</td></tr>
+          <tr><td>Staleness</td><td>Reindexing and application-specific policy</td><td>Status transitions and health review candidates</td></tr>
+          <tr><td>Operational cost</td><td>Ranges from embedded local DB to hosted service</td><td>No server, daemon, API key, or vector store</td></tr>
+        </tbody></table></div>
+        <h2 id="vector">Choose vector memory when</h2>
+        <ul><li>You need semantic search across thousands of documents or conversations.</li><li>Users will ask with vocabulary that rarely matches the stored text.</li><li>Approximate ranking is acceptable and you can operate the indexing pipeline.</li><li>The memory product needs automatic capture at high volume.</li></ul>
+        <h2 id="tracebook">Choose Tracebook when</h2>
+        <ul><li>A wrong or stale engineering fact is more costly than a missed fuzzy match.</li><li>People need to inspect the fact, its source, its status, and its history as Markdown.</li><li>Project isolation and explicit cross-project scope matter.</li><li>You want the memory layer to work without a database, service, API key, or background process.</li></ul>
+        <h2 id="mcp">What about MCP?</h2>
+        <p>MCP is an integration protocol, not a storage or authority model. A vector memory service may expose MCP tools; so may a deterministic store. Tracebook is currently distributed as an Agent Skill and intentionally does not run an MCP server. That removes a service boundary, while making invocation dependent on the host's Skill support.</p>
+        <h2 id="hybrid">Can they work together?</h2>
+        <p>Yes, if authority remains clear. Use semantic search to discover candidate source material, then verify a durable conclusion and capture it in Tracebook with evidence. Do not treat an embedding match itself as proof.</p>
+        <blockquote><p>Semantic retrieval can find the evidence. Governance decides whether the conclusion deserves to survive.</p></blockquote>
+        <h2 id="limits">Known boundary</h2>
+        <p>Tracebook retrieval uses literal English tokens and CJK bigrams. It does not stem terms, infer synonyms, or promise semantic recall. Queries work best when they use vocabulary present in the knowledge pages or an exact evidence path. This limitation is part of the published contract.</p>
+      </article>
+      <aside class="article-aside" aria-label="On this page"><strong>On this page</strong><a href="#different">Different problems</a><a href="#vector">Choose vectors</a><a href="#tracebook">Choose Tracebook</a><a href="#mcp">MCP</a><a href="#hybrid">Hybrid</a><a href="#limits">Boundary</a></aside>
+    </div>
+    <section class="section shell"><div class="cta"><div><p class="section-kicker">No black box required</p><h2>Inspect the exact memory artifact.</h2><p>Run the real workflow locally, then open the generated authority page and its evidence with any text editor.</p><div class="actions"><a class="button button-primary" href="../../demo/">Run the demo</a><a class="button button-quiet" href="https://github.com/tydandou/tracebook">View the implementation</a></div></div></div></section>
+  </main>
+  <footer class="site-footer"><div class="footer-row shell"><span>Tracebook · Apache-2.0</span><div class="footer-links"><a href="../../">Home</a><a href="../repo-local-memory/">Storage comparison</a></div></div></footer>
+</body>
+</html>

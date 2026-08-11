@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>External Project Memory vs Repo-Local Memory for Coding Agents</title>
+  <meta name="description" content="Compare external local Markdown project memory with repo-local memory files for AI coding agents, including privacy, review, portability, and context tradeoffs.">
+  <link rel="canonical" href="https://tydandou.github.io/tracebook/compare/repo-local-memory/">
+  <link rel="stylesheet" href="../../assets/site.css"><meta name="theme-color" content="#07111f">
+  <meta property="og:type" content="article"><meta property="og:title" content="External project memory vs repo-local memory"><meta property="og:description" content="Where should a coding agent's durable project knowledge live?"><meta property="og:url" content="https://tydandou.github.io/tracebook/compare/repo-local-memory/"><meta property="og:image" content="https://raw.githubusercontent.com/tydandou/tracebook/master/docs/assets/tracebook-social-preview.png"><meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><nav class="nav shell" aria-label="Primary navigation"><a class="brand" href="../../"><span class="brand-mark" aria-hidden="true"></span> TRACEBOOK</a><div class="nav-links"><a href="../../#how-it-works">How it works</a><a href="../../demo/">Demo</a><a href="../vector-memory/">Next comparison</a><a class="nav-star" href="https://github.com/tydandou/tracebook">GitHub ↗</a></div></nav></header>
+  <main id="main">
+    <section class="article-hero shell"><p class="eyebrow">Storage model</p><h1>External project memory vs repo-local memory</h1><p class="hero-copy">Repo-local memory travels with the code. External local memory keeps business repositories untouched. The right choice depends on who owns the knowledge and how it should be reviewed.</p><div class="article-meta"><span class="tag">Local-first</span><span class="tag">Markdown</span><span class="tag">Repository boundaries</span></div></section>
+    <div class="article-layout shell">
+      <article class="article">
+        <div class="answer"><p><strong>Short answer:</strong> use repo-local memory when the knowledge belongs in version control and should travel through code review. Use external memory when you need private or cross-repository continuity without adding files, churn, or agent-managed notes to business repositories.</p></div>
+        <h2 id="models">Two local-first models</h2>
+        <p>Both approaches can use plain Markdown and work without a cloud service. The difference is authority and ownership—not whether the files are readable.</p>
+        <div class="table-wrap"><table><thead><tr><th>Concern</th><th>Repo-local memory</th><th>Tracebook external memory</th></tr></thead><tbody>
+          <tr><td>Location</td><td>Inside each business repository</td><td>Under a separate local knowledge root</td></tr>
+          <tr><td>Git review</td><td>Natural: memory changes appear in PRs</td><td>Separate from business-code diffs</td></tr>
+          <tr><td>Clone portability</td><td>Travels automatically with the repository</td><td>Same remote resolves to one local project identity; root must be available</td></tr>
+          <tr><td>Private context</td><td>Must be excluded or carefully governed</td><td>Local by default and not committed with source</td></tr>
+          <tr><td>Cross-project knowledge</td><td>Usually copied or linked manually</td><td>Explicit project, domain, pattern, and system scopes</td></tr>
+          <tr><td>Repository noise</td><td>Memory updates can add review churn</td><td>Zero business-repository writes</td></tr>
+        </tbody></table></div>
+        <h2 id="repo-local">When repo-local is the better design</h2>
+        <ul><li>The entire team should review every memory change alongside code.</li><li>The knowledge is part of the repository's public or contractual documentation.</li><li>New clones must receive the same memory with no external setup.</li><li>Your agent host already has a small, effective path-scoped instruction system.</li></ul>
+        <h2 id="external">When external memory is the better design</h2>
+        <ul><li>You do not want agents writing operational notes into business repositories.</li><li>Personal debugging context, local environment facts, or incident conclusions should stay outside source control.</li><li>Several repositories participate in one system and need explicit relationships without copying files.</li><li>You want knowledge lifecycle and health state to evolve independently from product releases.</li></ul>
+        <h2 id="hybrid">A deliberate hybrid</h2>
+        <p>The boundary does not have to be absolute. Put public architecture documents, accepted ADRs, and team instructions in the repository. Keep working conclusions and governed agent memory externally. When an external conclusion becomes a product contract, graduate it into the repository and update the memory to cite that authoritative document.</p>
+        <div class="callout"><strong>Avoid accidental duplication</strong><p>Do not leave the same rule as two unrelated “current” facts. Decide which surface is authoritative, then point the other surface to it.</p></div>
+        <h2 id="tracebook-boundary">Tracebook's explicit boundary</h2>
+        <p>Tracebook never installs a memory directory, hook, configuration file, or generated instruction into a business repository. Its runner validates that capture requests do not use scratch files inside either the business repository or governed knowledge root. This is a safety property, not a claim that repo-local memory is universally worse.</p>
+      </article>
+      <aside class="article-aside" aria-label="On this page"><strong>On this page</strong><a href="#models">Two models</a><a href="#repo-local">Choose repo-local</a><a href="#external">Choose external</a><a href="#hybrid">Hybrid model</a><a href="#tracebook-boundary">Tracebook boundary</a></aside>
+    </div>
+    <section class="section shell"><div class="cta"><div><p class="section-kicker">Inspect the boundary</p><h2>Run an isolated end-to-end demo.</h2><p>The demo creates a temporary business repository and a separate temporary knowledge root, then proves the second session can retrieve the first session's evidence-backed conclusion.</p><div class="actions"><a class="button button-primary" href="../../demo/">Run the demo</a><a class="button button-quiet" href="../vector-memory/">Compare vector memory</a></div></div></div></section>
+  </main>
+  <footer class="site-footer"><div class="footer-row shell"><span>Tracebook · Apache-2.0</span><div class="footer-links"><a href="../../">Home</a><a href="../claude-md/">Instructions comparison</a></div></div></footer>
+</body>
+</html>
