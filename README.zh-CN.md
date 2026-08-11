@@ -14,9 +14,11 @@
 <p align="center"><strong>为编程 Agent 提供本地、可追溯、基于证据的项目记忆。</strong></p>
 
 <p align="center">
+  <a href="https://tydandou.github.io/tracebook/zh/">官网</a> ·
   <a href="#两条命令完成安装">安装</a> ·
   <a href="#一个任务两次会话">30 秒了解</a> ·
-  <a href="#为什么需要-tracebook">为什么使用</a> ·
+  <a href="https://tydandou.github.io/tracebook/demo/">在线演示</a> ·
+  <a href="https://tydandou.github.io/tracebook/zh/#compare">方案对比</a> ·
   <a href="README.md">English</a>
 </p>
 
@@ -87,6 +89,16 @@ Evidence:
 ```
 
 如果任务没有产生经过验证、值得复用的结论，Tracebook 不会写入任何持久知识。
+
+如果希望直接验证完整链路，可以运行
+[隔离的跨会话演示](https://tydandou.github.io/tracebook/demo/)：
+
+```text
+python demo/cross_session_demo.py
+```
+
+它使用真实 Runner，在临时业务仓库和独立临时知识根目录中完成捕获、健康检查与第二次
+会话检索，退出时自动删除整个临时环境。
 
 ## 它带来的差异
 

@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tracebook — Persistent Project Memory for AI Coding Agents</title>
+  <meta name="description" content="Local-first, evidence-backed project memory for Codex, Claude Code, and other AI coding agents. Plain Markdown, cross-session context, no server.">
+  <meta name="theme-color" content="#07111f">
+  <link rel="canonical" href="https://tydandou.github.io/tracebook/">
+  <link rel="alternate" hreflang="en" href="https://tydandou.github.io/tracebook/">
+  <link rel="alternate" hreflang="zh-CN" href="https://tydandou.github.io/tracebook/zh/">
+  <link rel="stylesheet" href="assets/site.css">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Tracebook — Memory that survives the chat">
+  <meta property="og:description" content="Persistent, evidence-backed project memory for AI coding agents. Local-first Markdown. No server.">
+  <meta property="og:url" content="https://tydandou.github.io/tracebook/">
+  <meta property="og:image" content="https://raw.githubusercontent.com/tydandou/tracebook/master/assets/tracebook-social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Tracebook — Memory that survives the chat">
+  <meta name="twitter:description" content="Persistent, evidence-backed project memory for AI coding agents.">
+  <meta name="twitter:image" content="https://raw.githubusercontent.com/tydandou/tracebook/master/assets/tracebook-social-preview.png">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Tracebook",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Windows, Linux, macOS",
+    "softwareVersion": "4.0.3",
+    "description": "Local-first, evidence-backed project memory for AI coding agents.",
+    "url": "https://tydandou.github.io/tracebook/",
+    "downloadUrl": "https://github.com/tydandou/tracebook",
+    "license": "https://www.apache.org/licenses/LICENSE-2.0",
+    "isAccessibleForFree": true,
+    "codeRepository": "https://github.com/tydandou/tracebook"
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <nav class="nav shell" aria-label="Primary navigation">
+      <a class="brand" href="./" aria-label="Tracebook home"><span class="brand-mark" aria-hidden="true"></span> TRACEBOOK</a>
+      <div class="nav-links">
+        <a href="#how-it-works">How it works</a>
+        <a href="demo/">Demo</a>
+        <a href="#compare">Compare</a>
+        <a class="language-link" href="zh/" lang="zh-CN">中文</a>
+        <a class="nav-star" href="https://github.com/tydandou/tracebook">GitHub ↗</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero shell">
+      <div>
+        <p class="eyebrow">Persistent project memory</p>
+        <h1><span class="gradient-text">Memory that survives</span> the chat.</h1>
+        <p class="hero-copy">Tracebook gives Codex, Claude Code, and other coding agents a local, evidence-backed memory of your project—without adding a server, database, or files to your business repositories.</p>
+        <div class="actions">
+          <a class="button button-primary" href="#install">Install in two commands</a>
+          <a class="button button-quiet" href="demo/">Run the cross-session demo</a>
+        </div>
+        <div class="proof-row" aria-label="Key properties">
+          <span>Plain Markdown</span>
+          <span>Evidence gated</span>
+          <span>No server or API key</span>
+        </div>
+      </div>
+
+      <div class="memory-card" aria-label="Example evidence-backed memory record">
+        <div class="card-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="bar-title">refund-retry-policy.md</span></div>
+        <div class="memory-body">
+          <p class="code-muted">---</p>
+          <p><span class="code-key">knowledge_id:</span> <span class="code-value">refund-retry-policy</span></p>
+          <p><span class="code-key">status:</span> <span class="code-value">current</span></p>
+          <p><span class="code-key">version:</span> <span class="code-value">2</span></p>
+          <p class="code-muted">---</p>
+          <br>
+          <p class="code-heading">## Current</p>
+          <p>Refunds retry at most twice</p>
+          <p>with a 3-second timeout.</p>
+          <br>
+          <p class="code-evidence">Evidence: src/refunds.py:L18</p>
+          <div class="flow-line" aria-hidden="true">
+            <span class="flow-node">verify</span><span class="flow-arrow">→</span>
+            <span class="flow-node">capture</span><span class="flow-arrow">→</span>
+            <span class="flow-node">recall</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell" aria-labelledby="problem-title">
+      <p class="section-kicker">The problem</p>
+      <h2 id="problem-title">A new chat should not mean a new investigation.</h2>
+      <p class="section-lede">Source code survives the session. The reasoning around it often does not. Tracebook preserves the conclusions worth reusing—and keeps the evidence needed to challenge them later.</p>
+      <div class="grid-3">
+        <article class="feature"><span class="feature-number">01</span><h3>Stop rediscovery</h3><p>Load focused conclusions before repository work instead of reopening the same architecture, incidents, and business rules.</p></article>
+        <article class="feature"><span class="feature-number">02</span><h3>Keep claims traceable</h3><p>Every current fact names its supporting source. Health checks flag missing or newer evidence instead of silently trusting stale notes.</p></article>
+        <article class="feature"><span class="feature-number">03</span><h3>Keep the repo clean</h3><p>Knowledge stays under <code>~/.tracebook</code>. No memory folder, daemon, vector database, hook, or configuration is written into business repositories.</p></article>
+      </div>
+    </section>
+
+    <section class="section shell" id="how-it-works" aria-labelledby="workflow-title">
+      <p class="section-kicker">One task, two sessions</p>
+      <h2 id="workflow-title">The agent carries verified context forward.</h2>
+      <p class="section-lede">Tracebook is an Agent Skill with a deterministic local runner. The agent makes semantic judgments; the runner owns identity, storage, history, transactions, and health checks.</p>
+      <div class="timeline">
+        <article class="step"><span class="step-label">Before work</span><h3>Load only what matters</h3><p>The active project is resolved, then bounded retrieval returns relevant current knowledge with source-project identity.</p></article>
+        <article class="step"><span class="step-label">After verification</span><h3>Capture durable conclusions</h3><p>Raw transcripts and guesses are rejected. Stable IDs, evidence, scope, lifecycle state, and version history make changes explicit.</p></article>
+        <article class="step"><span class="step-label">Next session</span><h3>Start from evidence</h3><p>The next agent retrieves the current conclusion first, then checks the cited source when the task needs deeper verification.</p></article>
+      </div>
+    </section>
+
+    <section class="section shell" aria-labelledby="governance-title">
+      <div class="split-panel">
+        <div>
+          <p class="section-kicker">Memory with governance</p>
+          <h2 id="governance-title">Not a transcript dump.</h2>
+          <p class="section-lede">A memory can be current, pending, deprecated, superseded, or historical. Writes are transactional; normal reads use committed snapshots.</p>
+          <ul class="check-list">
+            <li>Project, domain, and reusable pattern scopes</li>
+            <li>Stable project IDs across clones of one Git remote</li>
+            <li>Explicit cross-project systems and relations</li>
+            <li>Light, regular, and deep health workflows</li>
+          </ul>
+        </div>
+        <div>
+          <div class="terminal">
+            <div class="terminal-head"><span>Knowledge lifecycle</span></div>
+            <pre><span class="code-value">CURRENT</span>     applies now
+   │
+   ├── revise → version history retained
+   │
+   ├── <span class="code-key">SUPERSEDED</span> → replacement linked
+   │
+   └── <span class="code-muted">DEPRECATED</span> → no longer applies
+
+<span class="code-evidence">PENDING</span>     known, not yet confirmed
+<span class="code-muted">HISTORICAL</span>  available only on request</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell" id="install" aria-labelledby="install-title">
+      <p class="section-kicker">Stable release · v4.0.3</p>
+      <h2 id="install-title">Install, restart your agent, keep working.</h2>
+      <p class="section-lede">Python 3.10 or newer is required. The documented workflow is verified in CI on Ubuntu and Windows with Python 3.10 and 3.13.</p>
+      <div class="split-panel">
+        <div>
+          <h3>Codex</h3>
+          <div class="terminal">
+            <div class="terminal-head"><span>Terminal</span><button class="copy-button" data-copy="codex-install">Copy</button></div>
+            <pre id="codex-install">codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin add tracebook@tracebook</pre>
+          </div>
+        </div>
+        <div>
+          <h3>Claude Code</h3>
+          <div class="terminal">
+            <div class="terminal-head"><span>Terminal</span><button class="copy-button" data-copy="claude-install">Copy</button></div>
+            <pre id="claude-install">claude plugin marketplace add tydandou/tracebook
+claude plugin install tracebook@tracebook</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell" id="compare" aria-labelledby="compare-title">
+      <p class="section-kicker">Choose the right memory model</p>
+      <h2 id="compare-title">Tracebook is deliberately narrow.</h2>
+      <p class="section-lede">It is not a task manager, semantic search engine, or replacement for host instruction files. These practical comparisons explain where the boundary helps—and where another approach fits better.</p>
+      <div class="compare-grid">
+        <a class="comparison-card" href="compare/claude-md/"><span class="tag">Instructions</span><h3>Tracebook vs CLAUDE.md and AGENTS.md</h3><p>Stable instructions and evolving project knowledge solve different problems. Most serious projects benefit from both.</p><span class="comparison-link">Read the comparison →</span></a>
+        <a class="comparison-card" href="compare/repo-local-memory/"><span class="tag">Storage</span><h3>External memory vs repo-local memory</h3><p>Choose between repository reviewability and strict separation from business code, or combine them intentionally.</p><span class="comparison-link">Read the comparison →</span></a>
+        <a class="comparison-card" href="compare/vector-memory/"><span class="tag">Retrieval</span><h3>Markdown governance vs vector memory</h3><p>Deterministic evidence-backed facts are different from fuzzy semantic retrieval over large corpora.</p><span class="comparison-link">Read the comparison →</span></a>
+      </div>
+    </section>
+
+    <section class="section-tight shell" aria-label="Verification summary">
+      <div class="stats">
+        <div class="stat"><strong>Local-first</strong><span>Inspectable Markdown on your disk</span></div>
+        <div class="stat"><strong>Zero services</strong><span>No server, daemon, database, or API key</span></div>
+        <div class="stat"><strong>Cross-session</strong><span>Current conclusions survive the chat</span></div>
+        <div class="stat"><strong>Apache-2.0</strong><span>Open source and free to use</span></div>
+      </div>
+    </section>
+
+    <section class="section shell">
+      <div class="cta">
+        <div>
+          <p class="section-kicker">Give your agent a project memory</p>
+          <h2>Stop paying the rediscovery tax.</h2>
+          <p>Run the isolated demo, inspect the Markdown it creates, then decide whether Tracebook belongs in your regular coding workflow.</p>
+          <div class="actions">
+            <a class="button button-primary" href="demo/">Run the demo</a>
+            <a class="button button-quiet" href="https://github.com/tydandou/tracebook">View source on GitHub</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-row shell">
+      <span>© <span data-year>2026</span> Tracebook contributors · Apache-2.0</span>
+      <div class="footer-links"><a href="https://github.com/tydandou/tracebook">GitHub</a><a href="https://github.com/tydandou/tracebook/releases/latest">Release</a><a href="https://github.com/tydandou/tracebook/discussions">Discussions</a><a href="llms.txt">llms.txt</a></div>
+    </div>
+  </footer>
+  <script src="assets/site.js" defer></script>
+</body>
+</html>

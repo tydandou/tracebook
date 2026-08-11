@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tracebook Cross-Session Project Memory Demo</title>
+  <meta name="description" content="Run a reproducible, isolated demo that captures an evidence-backed project fact in one coding-agent session and retrieves it in the next.">
+  <link rel="canonical" href="https://tydandou.github.io/tracebook/demo/">
+  <link rel="stylesheet" href="../assets/site.css"><meta name="theme-color" content="#07111f">
+  <meta property="og:type" content="article"><meta property="og:title" content="Tracebook cross-session demo"><meta property="og:description" content="One command. Two simulated sessions. One verified fact that survives."><meta property="og:url" content="https://tydandou.github.io/tracebook/demo/"><meta property="og:image" content="https://raw.githubusercontent.com/tydandou/tracebook/master/assets/tracebook-social-preview.png"><meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><nav class="nav shell" aria-label="Primary navigation"><a class="brand" href="../"><span class="brand-mark" aria-hidden="true"></span> TRACEBOOK</a><div class="nav-links"><a href="#what-it-proves">What it proves</a><a href="../#install">Install</a><a href="../#compare">Compare</a><a class="nav-star" href="https://github.com/tydandou/tracebook">GitHub ↗</a></div></nav></header>
+  <main id="main">
+    <section class="article-hero shell"><p class="eyebrow">Reproducible demo</p><h1>One command. Two sessions. One fact that survives.</h1><p class="hero-copy">The demo executes the real Tracebook runner against a temporary business repository and a separate temporary knowledge root. It captures a verified refund policy, checks the write, retrieves it in a second simulated session, then deletes the temporary environment.</p><div class="article-meta"><span class="tag">No user data touched</span><span class="tag">No network required</span><span class="tag">Automatic cleanup</span></div></section>
+    <div class="article-layout shell">
+      <article class="article">
+        <h2 id="run">Run it</h2>
+        <p>Clone the repository and execute the demo with Python 3.10 or newer:</p>
+        <div class="terminal"><div class="terminal-head"><span>Terminal</span><button class="copy-button" data-copy="demo-command">Copy</button></div><pre id="demo-command">git clone https://github.com/tydandou/tracebook.git
+cd tracebook
+python demo/cross_session_demo.py</pre></div>
+        <p>For machine-readable output:</p>
+        <div class="terminal"><div class="terminal-head"><span>Terminal</span><button class="copy-button" data-copy="demo-json">Copy</button></div><pre id="demo-json">python demo/cross_session_demo.py --json</pre></div>
+        <h2 id="what-it-proves">What the demo proves</h2>
+        <ol><li><strong>Isolation:</strong> the business repository and knowledge root are separate temporary directories.</li><li><strong>Activation:</strong> preflight reports the new project needs explicit activation, then resolve registers it.</li><li><strong>Evidence-gated capture:</strong> Session 1 stores a durable rule with a source reference and stable knowledge ID.</li><li><strong>Health verification:</strong> the capture result drives a scoped check using the exact changed and new paths.</li><li><strong>Cross-session retrieval:</strong> Session 2 asks about refund retry behavior and receives the current authority page.</li><li><strong>Cleanup:</strong> the temporary directory is deleted on exit, including when the demo fails.</li></ol>
+        <h2 id="expected">Expected result</h2>
+        <div class="terminal"><div class="terminal-head"><span>Illustrative output</span></div><pre>SESSION 1  verified refund retry policy
+CAPTURE    refund-retry-policy · current · evidence attached
+CHECK      Light · no broken links or missing sources
+
+SESSION 2  query: refund retry timeout
+RECALLED   refund-retry-policy
+FACT       Refunds retry at most twice with a 3-second timeout.
+
+RESULT     cross-session retrieval verified</pre></div>
+        <div class="callout"><strong>This is a workflow demonstration, not a token benchmark.</strong><p>It verifies persistence, evidence, isolation, and retrieval. It does not invent a percentage for token savings or claim that every task will become faster.</p></div>
+        <h2 id="inspect">Inspect the implementation</h2>
+        <p>The script is intentionally small and uses only the Python standard library plus the runner already in this repository. Read <a href="https://github.com/tydandou/tracebook/blob/master/demo/cross_session_demo.py">demo/cross_session_demo.py</a> before running it.</p>
+      </article>
+      <aside class="article-aside" aria-label="On this page"><strong>On this page</strong><a href="#run">Run it</a><a href="#what-it-proves">What it proves</a><a href="#expected">Expected result</a><a href="#inspect">Inspect source</a></aside>
+    </div>
+    <section class="section shell"><div class="cta"><div><p class="section-kicker">Ready for a real project?</p><h2>Install the stable release.</h2><p>Tracebook is a pure Agent Skill: no supporting service, database, daemon, API key, or business-repository memory folder.</p><div class="actions"><a class="button button-primary" href="../#install">Installation commands</a><a class="button button-quiet" href="https://github.com/tydandou/tracebook">Star on GitHub</a></div></div></div></section>
+  </main>
+  <footer class="site-footer"><div class="footer-row shell"><span>Tracebook · Apache-2.0</span><div class="footer-links"><a href="../">Home</a><a href="../compare/claude-md/">Comparisons</a></div></div></footer>
+  <script src="../assets/site.js" defer></script>
+</body>
+</html>
