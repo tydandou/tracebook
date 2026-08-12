@@ -47,7 +47,7 @@ new agent session:
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin marketplace add tydandou/tracebook --ref v4.0.4
 codex plugin add tracebook@tracebook
 ```
 
@@ -187,7 +187,7 @@ depend on how often knowledge is reused versus the one-time capture cost.
 
 ## Install
 
-The `4.0.3` release is available as the `v4.0.3` tag. Use the tagged
+The `4.0.4` release is available as the `v4.0.4` tag. Use the tagged
 installation commands for the stable release, or use the local development
 loading instructions when working from a clone.
 
@@ -196,7 +196,7 @@ loading instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin marketplace add tydandou/tracebook --ref v4.0.4
 codex plugin add tracebook@tracebook
 ```
 
@@ -224,7 +224,7 @@ Removing a plugin never touches its knowledge root. If
 `codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin marketplace add tydandou/tracebook --ref v4.0.4
 codex plugin add tracebook@tracebook
 ```
 
@@ -233,7 +233,7 @@ To move to a different tagged source, replace the marketplace first:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin marketplace add tydandou/tracebook --ref v4.0.4
 codex plugin add tracebook@tracebook
 ```
 
@@ -502,8 +502,10 @@ unrecoverable.
 
 ### Capture
 
-Pass a capture request to the Runner through stdin (`--request -`), so no
-scratch request file needs a placement or cleanup decision. Example request body:
+Send capture requests through the versioned ASCII-safe envelope. It preserves
+the exact UTF-8 bytes and verifies them with SHA-256 before parsing, so the same
+request works through Windows PowerShell 5.1/7, Bash, and Zsh without depending
+on the active console code page. Example request body:
 
 ```json
 {
@@ -520,14 +522,43 @@ scratch request file needs a placement or cleanup decision. Example request body
 }
 ```
 
-Then send that JSON on the process stdin while running:
+On Linux and macOS (Bash or Zsh), wrap a UTF-8 request and pipe the ASCII-only
+envelope to the Runner:
 
-```sh
-python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
-  --root "$TRACEBOOK_ROOT" \
-  --cwd . \
-  --request -
+```bash
+{
+  python "$SKILL_DIR/scripts/tracebook_request_envelope.py" --request - <<'JSON'
+{
+  "operation": "create",
+  "knowledge_id": "order-retry-eligibility",
+  "scope": "project",
+  "kind": "business-rule",
+  "title": "Order retry eligibility",
+  "body": "Only orders in the retryable state may re-enter fulfillment.",
+  "evidence": ["src/order.py:L20-L38"]
+}
+JSON
+} | python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
+  --root "$TRACEBOOK_ROOT" --cwd . --request -
 ```
+
+On Windows PowerShell 5.1 or 7:
+
+```powershell
+$request = @'
+{"operation":"create","knowledge_id":"order-retry-eligibility","scope":"project","kind":"business-rule","title":"Order retry eligibility","body":"Only orders in the retryable state may re-enter fulfillment.","evidence":["src/order.py:L20-L38"]}
+'@
+& "$SKILL_DIR/scripts/New-TracebookRequestEnvelope.ps1" -Json $request |
+  python "$SKILL_DIR/scripts/tracebook_runner.py" capture `
+    --root "$env:TRACEBOOK_ROOT" --cwd . --request -
+```
+
+The Runner still accepts legacy raw UTF-8 JSON for compatibility. Do not pipe
+raw non-ASCII JSON from Windows PowerShell 5.1: its default native-command
+pipeline encoding is ASCII and irreversibly replaces those characters before
+Python receives them. Suspicious replacement markers or runs of ASCII `?` are
+rejected before any knowledge write; `--allow-suspicious-encoding` is reserved
+for text where those characters are intentional.
 
 `--request <path>` remains available for a pre-existing file outside both the
 knowledge root and business repository. Files inside either governed tree are
@@ -795,7 +826,7 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v4.0.3` release.
+resolves the published `v4.0.4` release.
 
 ## Stable Scope and Guarantees
 

@@ -5,8 +5,26 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.4] - 2026-08-12
+
+### Added
+
+- Added a versioned, ASCII-only `base64+utf-8` capture envelope with strict
+  Base64 validation and SHA-256 integrity verification. The legacy raw UTF-8
+  request remains compatible.
+- Added first-party envelope helpers for Windows PowerShell 5.1/7 and Python,
+  plus CI coverage on Windows, Ubuntu, and macOS with PowerShell, Bash, and Zsh
+  transport smoke tests.
+- Knowledge health checks now report high-confidence replacement characters,
+  common mojibake markers, and runs of three or more ASCII question marks with
+  file-and-line evidence.
+
 ### Changed
 
+- Capture transport and schema validation now run before project resolution or
+  knowledge-root initialization, so malformed or visibly lossy requests have
+  no knowledge-side effects. Intentional suspicious text requires the explicit
+  `--allow-suspicious-encoding` override and is recorded in the response.
 - Release source archives now exclude the GitHub Pages site, launch copy,
   promotional images, demo collateral, and their dedicated tests through
   `export-ignore`. Published GitHub Releases also receive clean ZIP and TAR.GZ

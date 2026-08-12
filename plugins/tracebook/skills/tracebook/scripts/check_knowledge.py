@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 
 from .knowledge_parse import current_evidence_paths, invalid_current_file_evidence
+from .request_transport import suspicious_text_findings
 
 
 MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
@@ -42,6 +43,7 @@ class CheckReport:
     duplicate_pages: list[str]
     log_growth: list[str]
     entity_issues: list[str]
+    content_integrity_issues: list[str] = field(default_factory=list)
     review_candidates: list[ReviewCandidate] = field(default_factory=list)
 
     def to_markdown(self) -> str:
@@ -57,6 +59,7 @@ class CheckReport:
             ("Duplicate Pages", self.duplicate_pages),
             ("Log Growth", self.log_growth),
             ("Schema-v2 Entity Integrity", self.entity_issues),
+            ("Text Encoding Integrity", self.content_integrity_issues),
             ("Review Candidates", [candidate.render() for candidate in self.review_candidates]),
         ]
         lines = ["## Knowledge Health Check", ""]
@@ -161,6 +164,16 @@ def _load_page_contents(project_dir: Path) -> PageContents:
         page: page.read_text(encoding="utf-8")
         for page in _markdown_files(project_dir)
     }
+
+
+def _content_integrity_issues(root: Path, pages: PageContents) -> list[str]:
+    issues: list[str] = []
+    for page, content in pages.items():
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            for finding in suspicious_text_findings(line):
+                detail = finding.split(": ", 1)[-1]
+                issues.append(f"{_relative(root, page)}:L{line_number}: {detail}")
+    return sorted(set(issues))
 
 def _broken_links(root: Path, pages: PageContents) -> list[str]:
     broken: list[str] = []
@@ -671,5 +684,6 @@ def run_check(
         entity_issues=sorted(
             _schema_v2_entity_issues(root, pages) + _index_entry_issues(root, pages)
         ),
+        content_integrity_issues=_content_integrity_issues(root, pages),
         review_candidates=_review_candidates(root, pages, now, source, review_after_days),
     )

@@ -9,7 +9,7 @@
       "name": "tracebook",
       "source": "./plugins/tracebook",
       "description": "Project memory that survives across Claude Code sessions, backed by source evidence.",
-      "version": "4.0.3"
+      "version": "4.0.4"
     }
   ]
 }

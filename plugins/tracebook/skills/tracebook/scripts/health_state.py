@@ -735,6 +735,7 @@ def _check_state(
         *report.missing_sources,
         *report.outdated_paths,
         *report.entity_issues,
+        *report.content_integrity_issues,
         *(c.render() for c in report.review_candidates if c.severity == "strong"),
     )
     medium_findings = (

@@ -25,9 +25,9 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
   --root "$ROOT" --cwd "$CWD" --query "<task text>"
 
 # 3. After the task, once per knowledge item that passes the write gate.
-#    Pipe the request through stdin; never write a temporary request file.
-python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
-  --root "$ROOT" --cwd "$CWD" --request - --today "$(date +%F)" <<'JSON'
+#    Wrap UTF-8 as an integrity-checked ASCII envelope; never write a temp file.
+{
+  python "$SKILL_DIR/scripts/tracebook_request_envelope.py" --request - <<'JSON'
 {
   "operation": "create",
   "knowledge_id": "refund-retry-policy",
@@ -38,7 +38,18 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
   "evidence": ["src/order/RefundController.java:L87"]
 }
 JSON
+} | python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
+  --root "$ROOT" --cwd "$CWD" --request - --today "$(date +%F)"
 ```
+
+On Windows PowerShell 5.1 or 7, put the same JSON in a here-string and pipe
+`New-TracebookRequestEnvelope.ps1 -Json $request` to the Runner. The envelope
+is ASCII-only and carries the original UTF-8 SHA-256, so native-command pipe
+encoding and console code pages cannot alter it. Legacy raw UTF-8 JSON remains
+accepted, but it is unsafe for non-ASCII text through PowerShell 5.1's default
+pipeline. A request with high-confidence lossy-text markers is rejected before
+project resolution; use `--allow-suspicious-encoding` only for intentional
+ASCII question-mark runs or replacement-marker text.
 
 Then verify the write with `check` (see Verify Knowledge Writes). The block above
 settles only which command to run; the sections below govern when each step
@@ -278,7 +289,7 @@ Classify the destination before writing. Use project documents for
 project-specific facts, `02-domain` for reusable business knowledge, and
 `03-patterns` for reusable engineering knowledge. Update indexes and status
 summaries. Add source references for critical facts; mark incomplete evidence
-as `Pending`. Pipe an explicit JSON capture request through stdin as shown in
+as `Pending`. Pipe an explicit, ASCII-safe envelope through stdin as shown in
 Quick Start, and consume the response's `changed_paths` and `new_paths`. Never
 write a temporary request file. (`--request <path>` stays supported for a
 pre-existing file outside both governed trees; a path resolving inside the

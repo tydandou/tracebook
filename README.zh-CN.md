@@ -41,7 +41,7 @@
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin marketplace add tydandou/tracebook --ref v4.0.4
 codex plugin add tracebook@tracebook
 ```
 
@@ -162,7 +162,7 @@ Agent 看到的所有内容。
 
 ## 安装
 
-`4.0.3` 已发布，对应 `v4.0.3` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.4` 已发布，对应 `v4.0.4` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -170,7 +170,7 @@ Agent 看到的所有内容。
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin marketplace add tydandou/tracebook --ref v4.0.4
 codex plugin add tracebook@tracebook
 ```
 
@@ -196,7 +196,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin marketplace add tydandou/tracebook --ref v4.0.4
 codex plugin add tracebook@tracebook
 ```
 
@@ -205,7 +205,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.3
+codex plugin marketplace add tydandou/tracebook --ref v4.0.4
 codex plugin add tracebook@tracebook
 ```
 
@@ -439,8 +439,9 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" recover-transactions \
 
 ### 捕获
 
-通过 stdin（`--request -`）把捕获请求交给 Runner，避免为临时请求文件选择位置或清理。
-请求体示例：
+捕获请求应先转换为带版本号的 ASCII 安全信封，再通过 stdin（`--request -`）交给
+Runner。信封保留原始 UTF-8 字节并用 SHA-256 校验，因此不依赖控制台代码页，同一请求
+可用于 Windows PowerShell 5.1/7、Bash 和 Zsh。请求体示例：
 
 ```json
 {
@@ -459,14 +460,32 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" recover-transactions \
 }
 ```
 
-然后在运行下列命令时把该 JSON 写入进程 stdin：
+Linux 与 macOS（Bash 或 Zsh）使用：
 
-```sh
-python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
-  --root "$TRACEBOOK_ROOT" \
-  --cwd . \
-  --request -
+```bash
+{
+  python "$SKILL_DIR/scripts/tracebook_request_envelope.py" --request - <<'JSON'
+{"operation":"create","knowledge_id":"order-retry-eligibility","scope":"project","kind":"business-rule","title":"订单重试资格","body":"只有可重试状态的订单才能重新进入履约。","evidence":["src/order.py:L20-L38"]}
+JSON
+} | python "$SKILL_DIR/scripts/tracebook_runner.py" capture \
+  --root "$TRACEBOOK_ROOT" --cwd . --request -
 ```
+
+Windows PowerShell 5.1 或 7 使用：
+
+```powershell
+$request = @'
+{"operation":"create","knowledge_id":"order-retry-eligibility","scope":"project","kind":"business-rule","title":"订单重试资格","body":"只有可重试状态的订单才能重新进入履约。","evidence":["src/order.py:L20-L38"]}
+'@
+& "$SKILL_DIR/scripts/New-TracebookRequestEnvelope.ps1" -Json $request |
+  python "$SKILL_DIR/scripts/tracebook_runner.py" capture `
+    --root "$env:TRACEBOOK_ROOT" --cwd . --request -
+```
+
+为保持兼容，Runner 仍接受原始 UTF-8 JSON。不要从 Windows PowerShell 5.1 直接把含
+非 ASCII 字符的原始 JSON 管道给 Python：其原生命令管道默认使用 ASCII，字符到达
+Python 前就会被不可逆地替换。系统会在任何知识写入前拒绝替换字符、常见乱码标记或
+连续 ASCII `?`；只有原文确实需要这些字符时才使用 `--allow-suspicious-encoding`。
 
 `--request <path>` 仍可读取知识根和业务仓库之外的既有文件；位于任一受治理目录内的请求
 文件都会被拒绝，不要在这些目录中创建临时请求。
@@ -669,7 +688,7 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v4.0.3` 版本。
+`v4.0.4` 版本。
 
 ## 稳定范围与保证
 

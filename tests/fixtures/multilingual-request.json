@@ -1,0 +1,12 @@
+{
+  "operation": "create",
+  "knowledge_id": "multilingual-transport-smoke",
+  "scope": "project",
+  "kind": "decision",
+  "title": "Unicode transport: 中文・日本語・العربية؟・English 🚀",
+  "body": "Preserve composed café and decomposed café text without normalization.",
+  "evidence": ["README.md:L1"],
+  "status": "Current",
+  "write_intent": "durable",
+  "content_kind": "knowledge"
+}
