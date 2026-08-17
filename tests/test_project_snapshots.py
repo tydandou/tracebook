@@ -224,6 +224,8 @@ class ProjectSnapshotTest(unittest.TestCase):
                     date(2026, 7, 23),
                 )
             self.assertFalse(second.skipped)
+            self.assertTrue(second.warnings)
+            self.assertIn("locked by scanner", second.warnings[0])
             self.assertEqual(2, read_context_for_path(root, repo, "Version two")["current_context"][0]["version"])
 
             with patch.object(snapshots, "_remove_tree", side_effect=OSError("in use")):
@@ -234,9 +236,10 @@ class ProjectSnapshotTest(unittest.TestCase):
                     date(2026, 7, 23),
                 )
             self.assertFalse(third.skipped)
+            self.assertEqual((), third.warnings)
             self.assertEqual(3, read_context_for_path(root, repo, "Version three")["current_context"][0]["version"])
-            # Neither injected failure collected anything, so the store is intact
-            # and the live pointer still resolves.
+            # Both cleanup failures are non-fatal, so the durable store remains
+            # intact and the live pointer still resolves.
             self.assertTrue([item for item in versions.iterdir() if item.is_dir()])
             self.assertEqual("snapshot", project_knowledge_root(root, context.record, operation="test")[1])
 

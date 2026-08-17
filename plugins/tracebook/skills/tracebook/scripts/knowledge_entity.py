@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 
 from .locking import file_lock
+from .knowledge_schema import LIFECYCLE_STATUSES
 from .project_registry import ProjectRecord, project_lock_name
 from .snapshots import prepare_project_snapshot_updates, prune_project_snapshots
 from .transaction import commit_updates
@@ -31,6 +32,7 @@ class EntityResult:
     new_paths: tuple[Path, ...]
     skipped: bool
     event_id: str
+    warnings: tuple[str, ...] = ()
 
 
 def _error(field: str, message: str) -> EntityError:
@@ -39,7 +41,7 @@ def _error(field: str, message: str) -> EntityError:
 
 def _status(value: str) -> str:
     normalized = value.strip().casefold()
-    if normalized not in {"current", "pending", "deprecated", "superseded"}:
+    if normalized not in LIFECYCLE_STATUSES:
         raise _error("status", "is unsupported")
     return normalized
 
@@ -286,10 +288,17 @@ def capture_entity(root: Path, record: ProjectRecord, request: object, today: da
             transaction_updates,
             final_targets=final_targets,
         )
+        warnings: tuple[str, ...] = ()
         if getattr(request, "scope") == "project":
             # Best-effort GC of superseded snapshots, still under the project lock
-            # and after the pointer committed. Its failure list is intentionally
-            # dropped: the capture is already durable, and an orphaned version
-            # directory only costs disk. prune_project_snapshots never raises.
-            prune_project_snapshots(root, record)
-        return EntityResult(tuple(updates), (path,) if not exists else (), False, event_id)
+            # and after the pointer committed. Failures are non-fatal because the
+            # capture is already durable; return them as warnings so disk growth
+            # is observable without changing the successful write result.
+            warnings = tuple(prune_project_snapshots(root, record))
+        return EntityResult(
+            tuple(updates),
+            (path,) if not exists else (),
+            False,
+            event_id,
+            warnings,
+        )

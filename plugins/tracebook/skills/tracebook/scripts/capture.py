@@ -34,6 +34,7 @@ class CaptureResult:
     skipped: bool = False
     health_scope: str | None = None
     event_id: str | None = None
+    warnings: tuple[str, ...] = ()
 
 
 LINE_SUFFIX = re.compile(r":L\d+(?:-L\d+)?$")
@@ -119,4 +120,5 @@ def capture_knowledge(
         skipped=result.skipped,
         health_scope=request.scope,
         event_id=result.event_id,
+        warnings=result.warnings,
     )

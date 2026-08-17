@@ -128,6 +128,7 @@ class DeepAuditTest(unittest.TestCase):
                 project / "index.md",
                 project / "project-status.md",
                 project / "health-status.md",
+                project / "health-logs" / "2026-08.md",
                 project / "logs" / "2026-07.md",
                 project / "archive" / "business-rules.md",
             )

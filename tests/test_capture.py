@@ -94,6 +94,23 @@ class CaptureTest(unittest.TestCase):
 
             locked.assert_not_called()
 
+    def test_snapshot_prune_failure_is_forwarded_as_nonfatal_warning(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            context = resolve(base / "knowledge", repo)
+
+            with patch.object(
+                knowledge_entity,
+                "prune_project_snapshots",
+                return_value=["snapshot cleanup blocked"],
+            ):
+                result = capture(context, self._request(), date(2026, 7, 13))
+
+            self.assertFalse(result.skipped)
+            self.assertEqual(("snapshot cleanup blocked",), result.warnings)
+
     def test_capture_requires_non_empty_title_and_body(self) -> None:
         for overrides, message in (
             ({"title": ""}, "title"),

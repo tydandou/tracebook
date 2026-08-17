@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 
 from .knowledge_parse import current_evidence_paths, invalid_current_file_evidence
+from .knowledge_schema import LIFECYCLE_STATUSES
 from .request_transport import suspicious_text_findings
 
 
@@ -29,6 +30,16 @@ class ReviewCandidate:
     def render(self) -> str:
         return f"[{self.severity}] {self.path} ({self.knowledge_id}): {self.reason} - {self.detail}"
 
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "path": self.path,
+            "knowledge_id": self.knowledge_id,
+            "title": self.title,
+            "reason": self.reason,
+            "severity": self.severity,
+            "detail": self.detail,
+        }
+
 
 @dataclass
 class CheckReport:
@@ -45,6 +56,23 @@ class CheckReport:
     entity_issues: list[str]
     content_integrity_issues: list[str] = field(default_factory=list)
     review_candidates: list[ReviewCandidate] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "check_type": self.check_type,
+            "trigger_reasons": list(self.trigger_reasons),
+            "broken_links": list(self.broken_links),
+            "ambiguous_wikilinks": list(self.ambiguous_wikilinks),
+            "orphan_pages": list(self.orphan_pages),
+            "missing_sources": list(self.missing_sources),
+            "outdated_paths": list(self.outdated_paths),
+            "pending_confirmations": list(self.pending_confirmations),
+            "duplicate_pages": list(self.duplicate_pages),
+            "log_growth": list(self.log_growth),
+            "entity_issues": list(self.entity_issues),
+            "content_integrity_issues": list(self.content_integrity_issues),
+            "review_candidates": [item.to_dict() for item in self.review_candidates],
+        }
 
     def to_markdown(self) -> str:
         sections = [
@@ -76,6 +104,14 @@ class DeepAuditReport:
     missing_source_paths: list[str]
     root_cause_candidates: list[str]
     status_log_drift: list[str]
+
+    def to_dict(self) -> dict[str, list[str]]:
+        return {
+            "fact_candidates": list(self.fact_candidates),
+            "missing_source_paths": list(self.missing_source_paths),
+            "root_cause_candidates": list(self.root_cause_candidates),
+            "status_log_drift": list(self.status_log_drift),
+        }
 
     def to_markdown(self) -> str:
         sections = [
@@ -354,7 +390,7 @@ def _entity_fields(content: str) -> dict[str, str] | None:
 
 
 def _index_entry_issues(root: Path, pages: PageContents) -> list[str]:
-    """Report index files that link one entity page more than once.
+    """Report missing, stale, or repeated authority links in generated indexes.
 
     A revise may change an entity's title, and an index keyed on the rendered
     `- [title](link)` line accumulated one entry per title. The result counts a
@@ -369,22 +405,38 @@ def _index_entry_issues(root: Path, pages: PageContents) -> list[str]:
     for page, content in pages.items():
         if page.name != "index.md":
             continue
+        knowledge_root = (page.parent / "knowledge").resolve()
+        authorities = {
+            candidate: fields
+            for candidate, candidate_content in pages.items()
+            if candidate.is_relative_to(knowledge_root)
+            and (fields := _entity_fields(candidate_content)) is not None
+        }
+        if not authorities:
+            continue
         counts: dict[Path, tuple[str, int]] = {}
         for line in content.splitlines():
             if not line.startswith("- ["):
                 continue
-            match = re.search(r"\]\(([^)]+)\)\s*$", line)
+            match = re.fullmatch(r"- \[(.*)\]\(([^)]+)\)\s*", line)
             if match is None:
                 continue
-            link = match.group(1).strip().split("#", 1)[0]
+            rendered_title = match.group(1)
+            link = match.group(2).strip().split("#", 1)[0]
             if not link.endswith(".md") or "://" in link:
                 continue
             target = (page.parent / link).resolve()
-            target_content = pages.get(target)
-            if target_content is None or _entity_fields(target_content) is None:
+            fields = authorities.get(target)
+            if fields is None:
                 continue
             first_link, count = counts.get(target, (link, 0))
             counts[target] = (first_link, count + 1)
+            authority_title = fields.get("title", "")
+            if authority_title and rendered_title != authority_title:
+                issues.append(
+                    f"{_relative(root, page)}: index title `{rendered_title}` for "
+                    f"{link} does not match authority title `{authority_title}`"
+                )
         for _, (link, count) in sorted(
             counts.items(), key=lambda item: item[0].as_posix()
         ):
@@ -393,6 +445,11 @@ def _index_entry_issues(root: Path, pages: PageContents) -> list[str]:
                     f"{_relative(root, page)}: {count} entries link {link}; "
                     "one entity is listed several times, likely under stale titles"
                 )
+        for authority in sorted(set(authorities) - set(counts)):
+            link = authority.relative_to(page.parent).as_posix()
+            issues.append(
+                f"{_relative(root, page)}: authority {link} is missing from the index"
+            )
     return issues
 
 
@@ -411,6 +468,11 @@ def _schema_v2_entity_issues(root: Path, pages: PageContents) -> list[str]:
         if missing or ENTITY_SLUG.fullmatch(knowledge_id) is None:
             issues.append(f"{relative}: invalid schema-v2 frontmatter")
             continue
+        status = fields["status"]
+        if status not in LIFECYCLE_STATUSES:
+            issues.append(
+                f"{relative}: unsupported lifecycle status `{status}`"
+            )
         try:
             version = int(fields["version"])
         except ValueError:
@@ -551,7 +613,7 @@ def _has_evidence(content: str) -> bool:
     return False
 
 DEEP_EXCLUDED_PAGES = {"index.md", "project-status.md", "health-status.md"}
-DEEP_EXCLUDED_DIRECTORIES = {"archive", "logs"}
+DEEP_EXCLUDED_DIRECTORIES = {"archive", "health-logs", "logs"}
 
 
 def _deep_pages(scope_dir: Path) -> list[Path]:

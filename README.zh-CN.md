@@ -41,7 +41,7 @@
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.4
+codex plugin marketplace add tydandou/tracebook --ref v4.0.5
 codex plugin add tracebook@tracebook
 ```
 
@@ -160,9 +160,21 @@ Agent 看到的所有内容。
 - 对其他 Open Agent Skills host，按其文档规定的方式安装完整 Skill 目录；同样需要满足
   上述 Python runtime 要求。
 
+PowerShell 传输兼容性按证据等级声明：
+
+- Windows PowerShell 5.1 已通过真实原生命令管道做发布实测；v4.0.5 本地验证版本为
+  5.1.26100.9168。
+- PowerShell 7.x 由 Windows CI 的 `pwsh` 冒烟任务覆盖，并输出 hosted runner 的精确
+  版本；v4.0.5 本地还实测了 7.6.4。辅助脚本只使用长期稳定的 PowerShell 语法及 .NET
+  UTF-8、Base64、SHA-256 API，因此 7.4、7.5、7.6 均属于设计兼容范围；这不等于每次
+  CI 都分别固定执行每个补丁版本。
+- PowerShell 8 及未来版本在发布前无法声明“已实测”。由于原生命令管道只接收 ASCII，
+  且脚本不依赖 7.x 专属能力，设计上预期可以向前兼容；升级后必须重新运行 PowerShell
+  传输冒烟测试，才能把该引擎标记为已验证。
+
 ## 安装
 
-`4.0.4` 已发布，对应 `v4.0.4` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.5` 已发布，对应 `v4.0.5` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -170,7 +182,7 @@ Agent 看到的所有内容。
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.4
+codex plugin marketplace add tydandou/tracebook --ref v4.0.5
 codex plugin add tracebook@tracebook
 ```
 
@@ -196,7 +208,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.4
+codex plugin marketplace add tydandou/tracebook --ref v4.0.5
 codex plugin add tracebook@tracebook
 ```
 
@@ -205,7 +217,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.4
+codex plugin marketplace add tydandou/tracebook --ref v4.0.5
 codex plugin add tracebook@tracebook
 ```
 
@@ -263,6 +275,9 @@ claude plugin install tracebook@tracebook
 
 知识默认保存在 `~/.tracebook`。如需选择其他外部根目录，请在启动 Agent 前设置
 `TRACEBOOK_ROOT`。下面的示例只读取现有的用户主目录值，不会替换或赋值 `HOME`。
+`preflight` 与 `resolve` 响应会说明根目录来自 `--root`、`TRACEBOOK_ROOT` 还是默认值。
+显式 `--root` 与 `TRACEBOOK_ROOT` 不一致时仍以参数为准，但会返回 warning，避免把第二个
+空知识根误认为预期存储位置。
 
 POSIX shell：
 
@@ -441,7 +456,7 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" recover-transactions \
 
 捕获请求应先转换为带版本号的 ASCII 安全信封，再通过 stdin（`--request -`）交给
 Runner。信封保留原始 UTF-8 字节并用 SHA-256 校验，因此不依赖控制台代码页，同一请求
-可用于 Windows PowerShell 5.1/7、Bash 和 Zsh。请求体示例：
+可用于 Windows PowerShell 5.1/7.x、Bash 和 Zsh。请求体示例：
 
 ```json
 {
@@ -471,7 +486,7 @@ JSON
   --root "$TRACEBOOK_ROOT" --cwd . --request -
 ```
 
-Windows PowerShell 5.1 或 7 使用：
+Windows PowerShell 5.1 或 PowerShell 7.x 使用：
 
 ```powershell
 $request = @'
@@ -568,8 +583,8 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" audit \
 
 | 命令 | 返回字段 | 含义 |
 | --- | --- | --- |
-| `resolve` | `root`、`project`、`read_paths` | 已配置根目录、按 `project_id` 解析的项目记录和聚焦上下文路径 |
-| `preflight` | `target`、`registered`、`project`、`read_paths` | 只读检查目标；不初始化、不注册 |
+| `resolve` | `root`、`root_source`、`root_existed`、`root_created`、`root_initialized_before`、`root_initialized`、`project`、`read_paths` | 根目录来源和初始化结果、按 `project_id` 解析的项目记录与聚焦上下文路径 |
+| `preflight` | `root_source`、`root_existed`、`root_initialized`、`target`、`registered`、`project`、`read_paths` | 只读检查根目录与目标；不初始化、不注册 |
 | `project-search` | `projects` | 按名称、ID 或已登记信号查找项目候选项 |
 | `context-read` | `current_context`、`historical_context`、`warnings`、`truncated` | 不激活目标项目，仅读取选定的已登记项目 |
 | `context-read-path` | `current_context`、`historical_context`、`warnings`、`truncated` | 无锁读取已激活目标的最近一次完整项目快照 |
@@ -580,12 +595,14 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" audit \
 | `system-relate` | `system` | 为两个系统成员登记有向关系 |
 | `transactions` | `root`、`transactions` | 只读事务诊断与每个事务的处置状态 |
 | `recover-transactions` | `recovered_paths` | 显式安全恢复结果；绝不执行丢弃或隔离 |
-| `capture` | `changed_paths`、`new_paths`、`skipped`、`health_scope`、`event_id` | 知识事务结果，以及后续检查必须使用的范围 |
-| `check` | `check_type`、`changed_paths`、`report` | 要求的健康级别、已持久化健康路径和 Markdown 报告 |
-| `audit` | `changed_paths`、`report` | 已持久化 Deep 健康路径和 Markdown 审计报告 |
+| `capture` | `changed_paths`、`new_paths`、`skipped`、`health_scope`、`event_id`、`warnings` | 知识事务结果、非致命清理告警，以及后续检查必须使用的范围 |
+| `check` | `check_type`、`changed_paths`、`report`、`findings` | 要求的健康级别、已持久化健康路径、Markdown 报告与结构化发现 |
+| `audit` | `changed_paths`、`report`、`findings` | 已持久化 Deep 健康路径、Markdown 审计报告与结构化发现 |
 
 当 `event_id` 可用时，它标识幂等的捕获事件。`skipped: true` 表示 capture 没有产生新的
-知识写入。消费者只能使用对应命令实际返回的字段。
+知识写入。capture 的 `warnings` 不会回滚已经持久化的写入，例如尽力而为的快照剪枝失败
+会在这里报告。`report` 是面向人的 Markdown，`findings` 是供自动化消费的稳定 JSON。
+消费者只能使用对应命令实际返回的字段。
 
 ## 知识目录与多项目隔离
 
@@ -656,7 +673,8 @@ Wikilink 作为兼容输入，用于手工编辑的 Obsidian 知识。健康检�
   `git remote get-url origin`；路径与 remote 指向不同项目时，使用 `project-update` 或
   `project-bind-remote` 显式处理。
 - **知识出现在意外位置：** 检查启动 Agent 的环境中的 `TRACEBOOK_ROOT`。若未设置，
-  根目录为 `~/.tracebook`。
+  根目录为 `~/.tracebook`。写入前检查 `preflight` 或 `resolve` 返回的 `root_source`、
+  `root_initialized` 和可选 `root_warning`。
 - **Capture 被拒绝：** 检查 `write_intent: durable`、`content_kind: knowledge`、允许的
   scope/kind 组合，以及 `Current` 知识的证据。`Pending` 只用于持久但未解决的条目。
 - **Capture 后的检查没有范围：** 将缺失或无效的 `health_scope` 视为不完整 runner
@@ -688,7 +706,7 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v4.0.4` 版本。
+`v4.0.5` 版本。
 
 ## 稳定范围与保证
 

@@ -140,6 +140,13 @@ class SkillWorkflowTest(unittest.TestCase):
         self.assertIn("normal lock-free read", skill)
         self.assertIn("PROJECT_ACTIVATION_REQUIRED", skill)
 
+    def test_skill_discovers_local_project_docs_independently_of_git(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("ignored or\nuntracked by Git", skill)
+        self.assertIn("from the filesystem", skill)
+        self.assertIn("not a truth or relevance boundary", skill)
+
     def test_repository_agents_file_is_optional_in_skill_and_templates(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         english = (

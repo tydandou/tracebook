@@ -47,7 +47,7 @@ new agent session:
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.4
+codex plugin marketplace add tydandou/tracebook --ref v4.0.5
 codex plugin add tracebook@tracebook
 ```
 
@@ -185,9 +185,23 @@ depend on how often knowledge is reused versus the one-time capture cost.
 - For another Open Agent Skills host, follow its documented method to install
   the complete Skill directory. The same Python runtime requirement applies.
 
+PowerShell transport compatibility is stated by evidence level:
+
+- Windows PowerShell 5.1 is release-tested through a real native-command
+  pipeline; v4.0.5 local validation used 5.1.26100.9168.
+- PowerShell 7.x is covered by the Windows CI `pwsh` smoke job, which prints the
+  exact hosted-runner version. v4.0.5 local validation also used 7.6.4. The
+  helper uses only long-stable PowerShell syntax plus .NET UTF-8, Base64, and
+  SHA-256 APIs, so 7.4, 7.5, and 7.6 are within its compatibility contract;
+  this is not a claim that every patch release runs in every CI build.
+- PowerShell 8 and later cannot be claimed as tested before release. Because
+  the native pipeline receives ASCII only and the helper has no 7.x-specific
+  dependency, forward compatibility is expected, but an upgrade must rerun the
+  PowerShell transport smoke test before that engine is marked verified.
+
 ## Install
 
-The `4.0.4` release is available as the `v4.0.4` tag. Use the tagged
+The `4.0.5` release is available as the `v4.0.5` tag. Use the tagged
 installation commands for the stable release, or use the local development
 loading instructions when working from a clone.
 
@@ -196,7 +210,7 @@ loading instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.4
+codex plugin marketplace add tydandou/tracebook --ref v4.0.5
 codex plugin add tracebook@tracebook
 ```
 
@@ -224,7 +238,7 @@ Removing a plugin never touches its knowledge root. If
 `codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.4
+codex plugin marketplace add tydandou/tracebook --ref v4.0.5
 codex plugin add tracebook@tracebook
 ```
 
@@ -233,7 +247,7 @@ To move to a different tagged source, replace the marketplace first:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.4
+codex plugin marketplace add tydandou/tracebook --ref v4.0.5
 codex plugin add tracebook@tracebook
 ```
 
@@ -295,6 +309,11 @@ by the target agent, then start a new session. Keep `SKILL.md`, `references/`,
 By default, knowledge is stored at `~/.tracebook`. To select another external
 root, set `TRACEBOOK_ROOT` before starting the agent. These examples read the
 existing user-home value; they do not replace or assign `HOME`.
+The `preflight` and `resolve` responses identify whether the selected root came
+from `--root`, `TRACEBOOK_ROOT`, or the default. An explicit `--root` that
+differs from `TRACEBOOK_ROOT` remains authoritative but returns a warning, so a
+second empty knowledge root is visible instead of being silently mistaken for
+the intended store.
 
 POSIX shell:
 
@@ -504,7 +523,7 @@ unrecoverable.
 
 Send capture requests through the versioned ASCII-safe envelope. It preserves
 the exact UTF-8 bytes and verifies them with SHA-256 before parsing, so the same
-request works through Windows PowerShell 5.1/7, Bash, and Zsh without depending
+request works through Windows PowerShell 5.1/7.x, Bash, and Zsh without depending
 on the active console code page. Example request body:
 
 ```json
@@ -542,7 +561,7 @@ JSON
   --root "$TRACEBOOK_ROOT" --cwd . --request -
 ```
 
-On Windows PowerShell 5.1 or 7:
+On Windows PowerShell 5.1 or PowerShell 7.x:
 
 ```powershell
 $request = @'
@@ -685,8 +704,8 @@ evidence before any finding becomes a durable conclusion.
 
 | Command | Emitted fields | Meaning |
 | --- | --- | --- |
-| `resolve` | `root`, `project`, `read_paths` | Configured root, project record resolved by `project_id`, and focused context paths |
-| `preflight` | `target`, `registered`, `project`, `read_paths` | Read-only target inspection; does not initialize or register |
+| `resolve` | `root`, `root_source`, `root_existed`, `root_created`, `root_initialized_before`, `root_initialized`, `project`, `read_paths` | Configured root provenance and initialization result, project record resolved by `project_id`, and focused context paths |
+| `preflight` | `root_source`, `root_existed`, `root_initialized`, `target`, `registered`, `project`, `read_paths` | Read-only root and target inspection; does not initialize or register |
 | `project-search` | `projects` | Deterministic registered-project candidates |
 | `context-read` | `current_context`, `historical_context`, `warnings`, `truncated` | Read selected registered projects without activating a target |
 | `context-read-path` | `current_context`, `historical_context`, `warnings`, `truncated` | Lock-free read of an already activated target's committed project snapshot |
@@ -698,13 +717,16 @@ evidence before any finding becomes a durable conclusion.
 | `transactions` | `root`, `transactions` | Read-only transaction diagnostics and per-transaction disposition |
 | `recover-transactions` | `recovered_paths` | Explicit safe roll-forward results; never a discard or quarantine action |
 | `context` | `current_context`, `historical_context`, `warnings`, `truncated` | Bounded deterministic authority-page retrieval |
-| `capture` | `changed_paths`, `new_paths`, `skipped`, `health_scope`, `event_id` | Versioned entity transaction result and scope required by the following check |
-| `check` | `check_type`, `changed_paths`, `report` | Required health level, persisted health paths, and Markdown report |
-| `audit` | `changed_paths`, `report` | Persisted Deep-health paths and Markdown audit report |
+| `capture` | `changed_paths`, `new_paths`, `skipped`, `health_scope`, `event_id`, `warnings` | Versioned entity transaction result, non-fatal cleanup diagnostics, and scope required by the following check |
+| `check` | `check_type`, `changed_paths`, `report`, `findings` | Required health level, persisted health paths, human-readable Markdown, and structured findings |
+| `audit` | `changed_paths`, `report`, `findings` | Persisted Deep-health paths plus human-readable and structured audit findings |
 
 `event_id` identifies the idempotent capture event when one is available.
 `skipped: true` means the capture made no new knowledge write. Consumers should
-use fields only from the command that emitted them.
+use fields only from the command that emitted them. Capture `warnings` do not
+roll back an already durable write; for example, a failed best-effort
+`snapshot-prune` is reported there. The Markdown `report` remains the human view, while
+`findings` is the stable JSON view for automation.
 
 ## Knowledge Layout and Multi-Project Isolation
 
@@ -789,6 +811,8 @@ may modify business code.
   `project-update` or `project-bind-remote` to resolve a path/remote conflict.
 - **Knowledge is in an unexpected location:** inspect `TRACEBOOK_ROOT` in the
   environment that launched the agent. If unset, the root is `~/.tracebook`.
+  Inspect `root_source`, `root_initialized`, and any `root_warning` in
+  `preflight` or `resolve` before writing.
 - **Capture is rejected:** verify `write_intent: durable`,
   `content_kind: knowledge`, an allowed scope/kind combination, and
   evidence for `Current` knowledge. Use `Pending` only for a durable unresolved
@@ -826,7 +850,7 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v4.0.4` release.
+resolves the published `v4.0.5` release.
 
 ## Stable Scope and Guarantees
 

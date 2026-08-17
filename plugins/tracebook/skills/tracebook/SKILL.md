@@ -121,6 +121,11 @@ For nontrivial software-repository work, default to this read phase even when
 the user did not explicitly request Tracebook. Read the external root
 `AGENTS.md`, health status, current project index, and
 project status in this order. Then select only documents relevant to the task.
+Repository-local design documents are task input even when they are ignored or
+untracked by Git. Discover relevant project documents from the filesystem, not
+from `git ls-files` or an ignore-aware file list alone. Use each document's
+declared status, baseline, and later superseding decisions to judge authority;
+Git tracking is release-review metadata, not a truth or relevance boundary.
 Do not load the knowledge root's own complete logs, raw material, archive
 directories, or `99-archive` without a tracing, audit, deep-health, or
 explicit-user reason. This bounds what is read out of the knowledge base; a log
@@ -347,6 +352,9 @@ After every successful capture, require `changed_paths`, `new_paths`, and
 `health_scope` in its structured JSON. Stop and report an incomplete runner
 response if `health_scope` is absent or is not `project`, `domain`, or
 `pattern`; do not fall back to the default project scope.
+Capture `warnings` are non-fatal cleanup diagnostics emitted after the durable
+transaction, such as a best-effort snapshot-prune failure. Report them and
+continue with the required health check; do not describe the capture as failed.
 
 When a non-skipped capture with changed paths returns `user_summary`, display
 it to the user verbatim in the next user-facing message. Do not defer it to
@@ -361,6 +369,10 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" check --root "$ROOT" --cwd "$CWD
   --source-root "$CWD" --today "$(date +%F)" --scope "<health_scope>" \
   --changed "<changed_paths item>" --new-path "<new_paths item>"
 ```
+
+Use `findings` for deterministic automation and `report` for the human-readable
+Markdown view. They describe the same check or audit result; neither authorizes
+automatic edits to authority pages.
 
 With `--source-root`, the report's `Review Candidates` section flags Current
 knowledge whose evidence files are missing (`source_missing`, strong), changed

@@ -144,8 +144,8 @@ def prune_project_snapshots(root: Path, record: ProjectRecord, *, keep: int = SN
     failure here must not turn a successful write into an error: every step —
     reading the pointer, listing and stat-ing versions, deleting a tree — is
     contained, and any failure is returned as a description. The returned list
-    is diagnostic only; the capture path deliberately ignores it, because an
-    orphaned version directory wastes disk but never corrupts state.
+    is diagnostic only and is returned by capture as a non-fatal warning,
+    because an orphaned version directory wastes disk but never corrupts state.
     """
     try:
         resolved_root = root.resolve()

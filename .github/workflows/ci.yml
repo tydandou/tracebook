@@ -29,28 +29,30 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          Write-Host "PowerShell transport engine: $($PSVersionTable.PSVersion)"
           $request = Get-Content -LiteralPath tests/fixtures/multilingual-request.json -Raw -Encoding UTF8
           & plugins/tracebook/skills/tracebook/scripts/New-TracebookRequestEnvelope.ps1 -Json $request |
-            python plugins/tracebook/skills/tracebook/scripts/tracebook_runner.py capture --root "$env:RUNNER_TEMP/tracebook-pwsh" --cwd "$env:GITHUB_WORKSPACE" --request - --today 2026-08-12
+            python plugins/tracebook/skills/tracebook/scripts/tracebook_runner.py capture --root "$env:RUNNER_TEMP/tracebook-pwsh" --cwd "$env:GITHUB_WORKSPACE" --request - --today 2026-08-17
       - name: Windows PowerShell 5.1 transport smoke test
         if: runner.os == 'Windows'
         shell: powershell
         run: |
+          Write-Host "PowerShell transport engine: $($PSVersionTable.PSVersion)"
           $request = Get-Content -LiteralPath tests/fixtures/multilingual-request.json -Raw -Encoding UTF8
           & plugins/tracebook/skills/tracebook/scripts/New-TracebookRequestEnvelope.ps1 -Json $request |
-            python plugins/tracebook/skills/tracebook/scripts/tracebook_runner.py capture --root "$env:RUNNER_TEMP/tracebook-windows-powershell" --cwd "$env:GITHUB_WORKSPACE" --request - --today 2026-08-12
+            python plugins/tracebook/skills/tracebook/scripts/tracebook_runner.py capture --root "$env:RUNNER_TEMP/tracebook-windows-powershell" --cwd "$env:GITHUB_WORKSPACE" --request - --today 2026-08-17
       - name: Bash transport smoke test
         if: runner.os == 'Linux'
         shell: bash
         run: |
           python plugins/tracebook/skills/tracebook/scripts/tracebook_request_envelope.py --request tests/fixtures/multilingual-request.json |
-            python plugins/tracebook/skills/tracebook/scripts/tracebook_runner.py capture --root "$RUNNER_TEMP/tracebook-bash" --cwd "$GITHUB_WORKSPACE" --request - --today 2026-08-12
+            python plugins/tracebook/skills/tracebook/scripts/tracebook_runner.py capture --root "$RUNNER_TEMP/tracebook-bash" --cwd "$GITHUB_WORKSPACE" --request - --today 2026-08-17
       - name: Zsh transport smoke test
         if: runner.os == 'macOS'
         shell: zsh {0}
         run: |
           python plugins/tracebook/skills/tracebook/scripts/tracebook_request_envelope.py --request tests/fixtures/multilingual-request.json |
-            python plugins/tracebook/skills/tracebook/scripts/tracebook_runner.py capture --root "$RUNNER_TEMP/tracebook-zsh" --cwd "$GITHUB_WORKSPACE" --request - --today 2026-08-12
+            python plugins/tracebook/skills/tracebook/scripts/tracebook_runner.py capture --root "$RUNNER_TEMP/tracebook-zsh" --cwd "$GITHUB_WORKSPACE" --request - --today 2026-08-17
       - name: Validate Skill package
         run: python plugins/tracebook/skills/tracebook/scripts/validate_skill_package.py
       - name: Compile Python sources

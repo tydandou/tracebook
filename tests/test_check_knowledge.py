@@ -190,6 +190,43 @@ class KnowledgeCheckTest(unittest.TestCase):
                 any("outside.txt" in candidate.detail for candidate in report.review_candidates)
             )
 
+    def test_manual_authority_page_with_invalid_lifecycle_status_is_reported(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            project = root / "01-projects" / "sample"
+            page = project / "knowledge" / "decision" / "invalid-status.md"
+            page.parent.mkdir(parents=True)
+            self._health_status(root)
+            page.write_text(
+                "---\n"
+                "schema_version: 2\n"
+                "type: decision\n"
+                "scope: project\n"
+                "project: prj-test\n"
+                "knowledge_id: invalid-status\n"
+                "title: Invalid status\n"
+                "status: active\n"
+                "version: 1\n"
+                "created: 2026-07-01\n"
+                "updated: 2026-07-01\n"
+                "replacement_knowledge_id: null\n"
+                "---\n\n"
+                "# Invalid status\n\n"
+                "## Current\n\nConclusion.\n\n"
+                "Evidence:\n- `src/example.py:L1`\n\n"
+                "<!-- tracebook:event:0123456789abcdef -->\n\n"
+                "## History\n",
+                encoding="utf-8",
+            )
+
+            report = run_check(root, project, [page], date(2026, 7, 14))
+
+            self.assertIn(
+                "01-projects/sample/knowledge/decision/invalid-status.md: "
+                "unsupported lifecycle status `active`",
+                report.entity_issues,
+            )
+
     def test_symlinked_evidence_outside_source_root_is_a_strong_candidate(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp).resolve()
@@ -357,6 +394,61 @@ class KnowledgeCheckTest(unittest.TestCase):
                 report.outdated_paths,
             )
 
+    def test_reports_missing_and_stale_generated_index_entries(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            project = root / "01-projects" / "sample"
+            knowledge = project / "knowledge" / "decision"
+            knowledge.mkdir(parents=True)
+            self._health_status(root)
+            index = project / "index.md"
+            index.write_text(
+                "# Sample\n\n"
+                "- [Old title](knowledge/decision/indexed.md)\n",
+                encoding="utf-8",
+            )
+
+            def authority(knowledge_id: str, title: str) -> str:
+                return (
+                    "---\n"
+                    "schema_version: 2\n"
+                    "type: decision\n"
+                    "scope: project\n"
+                    "project: prj-test\n"
+                    f"knowledge_id: {knowledge_id}\n"
+                    f"title: {title}\n"
+                    "status: current\n"
+                    "version: 1\n"
+                    "created: 2026-07-01\n"
+                    "updated: 2026-07-01\n"
+                    "replacement_knowledge_id: null\n"
+                    "---\n\n"
+                    f"# {title}\n\n"
+                    "## Current\n\nConclusion.\n\n"
+                    "Evidence:\n- `src/example.py:L1`\n\n"
+                    "<!-- tracebook:event:0123456789abcdef -->\n\n"
+                    "## History\n"
+                )
+
+            indexed = knowledge / "indexed.md"
+            missing = knowledge / "missing.md"
+            indexed.write_text(authority("indexed", "Current title"), encoding="utf-8")
+            missing.write_text(authority("missing", "Missing"), encoding="utf-8")
+
+            report = run_check(
+                root,
+                project,
+                [index, indexed, missing],
+                date(2026, 7, 14),
+            )
+
+            self.assertTrue(
+                any("Old title" in issue and "Current title" in issue for issue in report.entity_issues)
+            )
+            self.assertTrue(
+                any("authority knowledge/decision/missing.md is missing" in issue for issue in report.entity_issues)
+            )
+
     def test_regular_and_deep_triggers_take_priority_over_light(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp)
@@ -398,6 +490,11 @@ class KnowledgeCheckTest(unittest.TestCase):
         self.assertIn("- a.md == b.md", rendered)
         self.assertIn("### Log Growth", rendered)
         self.assertIn("- logs/2026-07.md exceeds budget", rendered)
+
+        payload = report.to_dict()
+        self.assertEqual("Regular", payload["check_type"])
+        self.assertEqual(["a.md == b.md"], payload["duplicate_pages"])
+        self.assertEqual([], payload["review_candidates"])
 
 
 if __name__ == "__main__":

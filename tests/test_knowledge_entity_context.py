@@ -96,6 +96,27 @@ class KnowledgeEntityContextTest(unittest.TestCase):
             self.assertEqual(json.dumps(first, ensure_ascii=False), json.dumps(second, ensure_ascii=False))
             self.assertGreaterEqual(first["current_context"][0]["score"], 100)
 
+    def test_truncated_reflects_max_results_cap(self) -> None:
+        # Three entities share the "扣款" query token so all rank as eligible.
+        # A max_results below the eligible count must report truncated=True; the
+        # prior min(len(ranked), max_results) formula reported False here because
+        # len(payload) equalled max_results. Returning the full set is not truncated.
+        with TemporaryDirectory() as temp:
+            resolved = self._context(Path(temp))
+            for index in range(3):
+                capture(resolved, self._request(
+                    knowledge_id=f"retry-rule-{index}",
+                    title=f"订单重试规则 {index}",
+                    body="订单重试防止重复扣款。",
+                    evidence=(f"src/order/retry_{index}.py:L1-L9",),
+                ), date(2026, 7, 22))
+            capped = retrieve_context(resolved, "扣款", max_results=1, max_chars=100000)
+            self.assertEqual(1, len(capped["current_context"]))
+            self.assertTrue(capped["truncated"])
+            full = retrieve_context(resolved, "扣款", max_results=10, max_chars=100000)
+            self.assertEqual(3, len(full["current_context"]))
+            self.assertFalse(full["truncated"])
+
     def _evidence_corpus(self, base: Path):
         repo = base / "svc"; repo.mkdir(); (repo / ".git").mkdir()
         resolved = resolve(base / "knowledge", repo)

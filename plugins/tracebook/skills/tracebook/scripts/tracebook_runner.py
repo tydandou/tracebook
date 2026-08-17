@@ -110,6 +110,49 @@ def default_root() -> Path:
     return Path(configured or "~/.tracebook").expanduser()
 
 
+def _select_root(explicit: str | None) -> tuple[Path, str, str | None]:
+    configured = os.environ.get("TRACEBOOK_ROOT", "").strip()
+    if explicit:
+        selected = Path(explicit).expanduser()
+        warning = None
+        if configured:
+            configured_path = Path(configured).expanduser()
+            if configured_path.resolve() != selected.resolve():
+                warning = (
+                    f"Explicit --root {selected.resolve()} overrides "
+                    f"TRACEBOOK_ROOT {configured_path.resolve()}"
+                )
+        return selected, "argument", warning
+    if configured:
+        return Path(configured).expanduser(), "environment", None
+    return Path("~/.tracebook").expanduser(), "default", None
+
+
+def _root_metadata(
+    root: Path,
+    source: str,
+    existed_before: bool,
+    initialized_before: bool,
+    warning: str | None,
+    *,
+    after_maintenance: bool,
+) -> dict[str, object]:
+    resolved = root.expanduser().resolve()
+    metadata: dict[str, object] = {
+        "root_source": source,
+        "root_existed": existed_before,
+        "root_initialized": (
+            resolved / ".tracebook-state" / "schema.json"
+        ).is_file(),
+    }
+    if after_maintenance:
+        metadata["root_created"] = not existed_before and resolved.exists()
+        metadata["root_initialized_before"] = initialized_before
+    if warning is not None:
+        metadata["root_warning"] = warning
+    return metadata
+
+
 @dataclass(frozen=True)
 class InitializeResult:
     root: Path
@@ -152,14 +195,49 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
         ensure_health_layout(initialized.root, record)
     ensure_project_snapshot(initialized.root, record)
     rebuild_global_health(initialized.root)
-    project = initialized.root / record.relative_path
+    return _health_context(initialized.root, record, remote_warning)
+
+
+def ensure_for_health(root: Path, cwd: Path) -> ResolvedContext:
+    """Prepare the minimal maintenance state check/audit need, without the
+    snapshot seed or the resolve-side global-health rebuild.
+
+    check/audit only consume ``root`` and ``record``. They scan the live tree,
+    not the snapshot, so seeding a snapshot is wasted, and they rebuild the
+    global aggregate themselves in ``finish_health_persistence`` — so the
+    resolve-side rebuild is redundant. ``recover_transactions`` is retained: a
+    scoped health commit does not call ``require_clean_transaction_scope``, so
+    recovery here is what rolls a crashed capture's pending transaction forward
+    before check scans the tree and reports on it. ``ensure_health_layout`` is
+    retained because a health write needs its layout to exist.
+    """
+    repository = repository_root(cwd)
+    resolved_root, repository = validate_external_root(root, repository)
+    recover_transactions(resolved_root)
+    initialized = initialize(resolved_root)
+    record = ensure_project(initialized.root, repository)
+    remote_warning, _ = origin_remote_warning(repository)
+    ensure_health_layout(initialized.root)
+    with file_lock(
+        initialized.root,
+        project_lock_name(record),
+        operation="ensure-for-health",
+    ):
+        ensure_health_layout(initialized.root, record)
+    return _health_context(initialized.root, record, remote_warning)
+
+
+def _health_context(
+    root: Path, record: ProjectRecord, remote_warning: str | None
+) -> ResolvedContext:
+    project = root / record.relative_path
     return ResolvedContext(
-        root=initialized.root,
+        root=root,
         record=record,
-        knowledge_language=language_for_root(initialized.root),
+        knowledge_language=language_for_root(root),
         read_paths=(
-            initialized.root / "AGENTS.md",
-            initialized.root / "00-global" / "health" / "health-status.md",
+            root / "AGENTS.md",
+            root / "00-global" / "health" / "health-status.md",
             project / "index.md",
             project / "project-status.md",
             project / "health-status.md",
@@ -173,7 +251,7 @@ def preflight(root: Path, cwd: Path) -> dict[str, object]:
     """Inspect a target without initializing, registering, or modifying knowledge."""
     target = repository_root(cwd)
     resolved_root, target = validate_external_root(root, target)
-    record = registered_project(resolved_root, target)
+    record = registered_project(resolved_root, target, resolved_repo=True)
     read_paths = [
         resolved_root / "AGENTS.md",
         resolved_root / "00-global" / "health" / "health-status.md",
@@ -471,7 +549,7 @@ def read_context_for_path(
     """Read an already activated target without locks or maintenance writes."""
     target = repository_root(cwd)
     resolved_root, target = validate_external_root(root, target)
-    record = registered_project(resolved_root, target)
+    record = registered_project(resolved_root, target, resolved_repo=True)
     if record is None:
         raise TracebookError(
             "PROJECT_ACTIVATION_REQUIRED",
@@ -956,7 +1034,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
     args = parser.parse_args(argv)
-    root = Path(args.root) if args.root else default_root()
+    root, root_source, root_warning = _select_root(args.root)
+    resolved_selected_root = root.expanduser().resolve()
+    root_existed = resolved_selected_root.exists()
+    root_initialized = (
+        resolved_selected_root / ".tracebook-state" / "schema.json"
+    ).is_file()
     if args.command == "initialize":
         try:
             result = initialize(root)
@@ -988,7 +1071,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "preflight":
         try:
-            _write_payload(preflight(root, Path(args.cwd)))
+            payload = preflight(root, Path(args.cwd))
+            payload.update(
+                _root_metadata(
+                    root,
+                    root_source,
+                    root_existed,
+                    root_initialized,
+                    root_warning,
+                    after_maintenance=False,
+                )
+            )
+            _write_payload(payload)
             return 0
         except TracebookError as error:
             _write_payload(error_payload(error))
@@ -1134,12 +1228,26 @@ def main(argv: list[str] | None = None) -> int:
             return _write_command_error(error)
 
     try:
-        context = resolve(root, Path(args.cwd))
+        prepare_context = (
+            ensure_for_health if args.command in {"check", "audit"} else resolve
+        )
+        context = prepare_context(root, Path(args.cwd))
     except TracebookError as error:
         _write_payload(error_payload(error))
         return 2
     if args.command == "resolve":
-        _write_payload(_context_payload(context))
+        payload = _context_payload(context)
+        payload.update(
+            _root_metadata(
+                root,
+                root_source,
+                root_existed,
+                root_initialized,
+                root_warning,
+                after_maintenance=True,
+            )
+        )
+        _write_payload(payload)
         return 0
 
     if args.command == "context":
@@ -1170,6 +1278,7 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "changed_paths": [str(path) for path in result.changed_paths],
                 "report": result.report.to_markdown(),
+                "findings": result.report.to_dict(),
             }
         )
         return 0
@@ -1186,6 +1295,7 @@ def main(argv: list[str] | None = None) -> int:
             "skipped": result.skipped,
             "health_scope": result.health_scope,
             "event_id": result.event_id,
+            "warnings": list(result.warnings),
             "request_transport": decoded_capture.transport,
             "request_sha256": decoded_capture.sha256,
             "encoding_override": bool(args.allow_suspicious_encoding),
@@ -1213,6 +1323,7 @@ def main(argv: list[str] | None = None) -> int:
             "check_type": result.report.check_type,
             "changed_paths": [str(path) for path in result.changed_paths],
             "report": result.report.to_markdown(),
+            "findings": result.report.to_dict(),
         }
     )
     return 0

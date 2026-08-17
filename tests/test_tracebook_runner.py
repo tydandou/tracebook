@@ -16,6 +16,52 @@ class TracebookRunnerTest(unittest.TestCase):
 
         with patch.dict(os.environ, {"TRACEBOOK_ROOT": ""}):
             self.assertEqual(Path("~/.tracebook").expanduser(), default_root())
+
+    def test_cli_reports_root_provenance_and_explicit_override(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            other = base / "other-knowledge"
+            repo = base / "business"
+            (repo / ".git").mkdir(parents=True)
+            payloads: list[dict[str, object]] = []
+
+            with patch.dict(os.environ, {"TRACEBOOK_ROOT": str(other)}), patch.object(
+                tracebook_runner, "_write_payload", side_effect=payloads.append
+            ):
+                result = tracebook_runner.main(
+                    ["resolve", "--root", str(root), "--cwd", str(repo)]
+                )
+
+            self.assertEqual(0, result)
+            payload = payloads[-1]
+            self.assertEqual("argument", payload["root_source"])
+            self.assertFalse(payload["root_existed"])
+            self.assertTrue(payload["root_created"])
+            self.assertFalse(payload["root_initialized_before"])
+            self.assertTrue(payload["root_initialized"])
+            self.assertIn("overrides TRACEBOOK_ROOT", payload["root_warning"])
+
+    def test_preflight_reports_environment_root_without_creating_it(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            target = base / "new-service"
+            payloads: list[dict[str, object]] = []
+
+            with patch.dict(os.environ, {"TRACEBOOK_ROOT": str(root)}), patch.object(
+                tracebook_runner, "_write_payload", side_effect=payloads.append
+            ):
+                result = tracebook_runner.main(
+                    ["preflight", "--cwd", str(target)]
+                )
+
+            self.assertEqual(0, result)
+            payload = payloads[-1]
+            self.assertEqual("environment", payload["root_source"])
+            self.assertFalse(payload["root_existed"])
+            self.assertFalse(payload["root_initialized"])
+            self.assertFalse(root.exists())
     def test_initialize_repairs_missing_files_without_overwriting_existing_content(self) -> None:
         with TemporaryDirectory() as temp:
             root = (Path(temp) / "knowledge").resolve()
@@ -169,6 +215,57 @@ class TracebookRunnerTest(unittest.TestCase):
             self.assertTrue(
                 (root / context.record.relative_path / "health-status.md").is_file()
             )
+
+    def test_check_and_audit_use_health_preparation_without_seeding_snapshots(self) -> None:
+        for command in ("check", "audit"):
+            with self.subTest(command=command), TemporaryDirectory() as temp:
+                base = Path(temp).resolve()
+                root = base / "knowledge"
+                repo = base / "business"
+                (repo / ".git").mkdir(parents=True)
+                context = resolve(root, repo)
+                versions = (
+                    root
+                    / ".tracebook-state"
+                    / "snapshots"
+                    / context.record.project_id
+                    / "versions"
+                )
+                before = sorted(path.name for path in versions.iterdir())
+
+                payloads: list[dict[str, object]] = []
+                with patch.object(
+                    tracebook_runner,
+                    "ensure_for_health",
+                    wraps=tracebook_runner.ensure_for_health,
+                ) as prepare, patch.object(
+                    tracebook_runner,
+                    "resolve",
+                    side_effect=AssertionError("health commands must not call resolve"),
+                ), patch.object(
+                    tracebook_runner,
+                    "_write_payload",
+                    side_effect=payloads.append,
+                ):
+                    result = tracebook_runner.main(
+                        [
+                            command,
+                            "--root",
+                            str(root),
+                            "--cwd",
+                            str(repo),
+                            "--today",
+                            "2026-08-17",
+                        ]
+                    )
+
+                self.assertEqual(0, result)
+                prepare.assert_called_once_with(root, repo)
+                self.assertIn("findings", payloads[-1])
+                self.assertEqual(
+                    before,
+                    sorted(path.name for path in versions.iterdir()),
+                )
 
 
 if __name__ == "__main__":

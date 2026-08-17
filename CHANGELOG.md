@@ -5,6 +5,47 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.5] - 2026-08-17
+
+### Added
+
+- `preflight` and `resolve` now report root provenance and initialization state,
+  and warn when an explicit `--root` overrides a different `TRACEBOOK_ROOT`.
+- `check` and `audit` now emit structured `findings` beside their existing
+  Markdown reports. Capture returns non-fatal snapshot-prune diagnostics in
+  `warnings` without changing an already durable write to a failure.
+- Added a real-CLI, non-Git end-to-end workflow covering root construction,
+  project/domain/pattern capture and retrieval, idempotency, Pending isolation,
+  revision history, superseding, health checks, audits, and failed-write
+  immutability.
+
+### Changed
+
+- Repository-local design documents are discovered independently of Git ignore
+  and tracking state; their declared status and later decisions determine
+  authority.
+- `check` and `audit` use a health-specific preparation path that retains crash
+  recovery and health layout setup while skipping snapshot seeding and the
+  duplicate resolve-side global-health rebuild.
+- Health checks now report unsupported lifecycle states, missing authority index
+  entries, and index titles that drift from authority frontmatter.
+- PowerShell compatibility documentation now separates executed engine
+  versions, the stable 7.x syntax/API contract, and forward-looking 8+
+  expectations. Windows CI records the exact `pwsh` and Windows PowerShell
+  engine versions used by each transport smoke run.
+- Plugin manifests, tagged installation commands, and the English, Chinese,
+  and machine-readable website surfaces now expose v4.0.5 consistently.
+
+### Fixed
+
+- Context results now set `truncated: true` whenever eligible results were
+  omitted by either result-count or character limits.
+- Deep Audit excludes generated `health-logs/` from authority-page analysis,
+  preventing its own persisted findings from recursively becoming new fact
+  candidates.
+- Per-user `*.local.md` overrides are ignored and the accidentally staged local
+  Claude instruction file is no longer part of the release payload.
+
 ## [4.0.4] - 2026-08-12
 
 ### Added

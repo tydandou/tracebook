@@ -9,6 +9,7 @@ __pycache__/
 .env.*
 !.env.example
 *.local
+*.local.md
 
 # Internal planning and design notes are local by default. Approved release
 # implementation plans are part of their reviewable change sets.

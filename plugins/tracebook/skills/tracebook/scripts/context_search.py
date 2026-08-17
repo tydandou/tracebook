@@ -247,4 +247,8 @@ def context(root: Path, project: Path, project_id: str, name: str, slug: str, qu
         for item in available_history:
             if item.historical and item.fields["knowledge_id"] in ids:
                 historical.append(item.payload(root, _score(item, query)))
-    return {"schema_version": 1, "project": {"project_id": project_id, "name": name, "identity": project_id, "slug": slug}, "queried_projects": [{"project_id": item.project_id, "name": item.name, "slug": item.slug} for item in selected_projects], "query": query, "current_context": payload, "historical_context": historical, "warnings": sorted(set(warnings)), "truncated": len(payload) < min(len(ranked), max_results)}
+    # True whenever fewer candidates are returned than were eligible, covering
+    # both the max_results cap and an earlier max_chars break. The prior
+    # `min(len(ranked), max_results)` reported False when max_results was the
+    # limit (len(payload) == max_results <= len(ranked)), hiding dropped hits.
+    return {"schema_version": 1, "project": {"project_id": project_id, "name": name, "identity": project_id, "slug": slug}, "queried_projects": [{"project_id": item.project_id, "name": item.name, "slug": item.slug} for item in selected_projects], "query": query, "current_context": payload, "historical_context": historical, "warnings": sorted(set(warnings)), "truncated": len(payload) < len(ranked)}

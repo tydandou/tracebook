@@ -400,9 +400,16 @@ def identity_advisory(record: ProjectRecord) -> str | None:
     )
 
 
-def registered_project(knowledge_root: Path, repo: Path) -> ProjectRecord | None:
-    """Resolve an already registered project without changing the knowledge root."""
-    location = repository_root(repo)
+def registered_project(
+    knowledge_root: Path, repo: Path, *, resolved_repo: bool = False
+) -> ProjectRecord | None:
+    """Resolve an already registered project without changing the knowledge root.
+
+    Pass ``resolved_repo=True`` when ``repo`` is already a ``repository_root``
+    result, to skip a redundant ``git rev-parse`` subprocess. It is idempotent
+    (resolving a Git toplevel returns itself), so the flag only avoids the cost.
+    """
+    location = repo if resolved_repo else repository_root(repo)
     root, location = validate_external_root(knowledge_root, location)
     path = registry_path(root)
     records = _load_registry(path, root)

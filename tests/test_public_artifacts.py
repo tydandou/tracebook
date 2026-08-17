@@ -32,6 +32,16 @@ class PublicArtifactsTest(unittest.TestCase):
         self.assertIn('"knowledge_language": "zh"', chinese)
         self.assertIn("第一次执行 `resolve` **之前**", chinese)
 
+    def test_guides_document_root_provenance_and_structured_health_results(self) -> None:
+        english = (ROOT / "README.md").read_text(encoding="utf-8")
+        chinese = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+
+        for token in ("root_source", "root_initialized", "root_warning", "findings"):
+            self.assertIn(token, english)
+            self.assertIn(token, chinese)
+        self.assertIn("snapshot-prune", english)
+        self.assertIn("快照剪枝", chinese)
+
     def test_plugin_manifest_and_marketplace_expose_tracebook(self) -> None:
         manifest = json.loads(
             (ROOT / "plugins" / "tracebook" / ".codex-plugin" / "plugin.json").read_text(
@@ -45,7 +55,7 @@ class PublicArtifactsTest(unittest.TestCase):
         )
 
         self.assertEqual("tracebook", manifest["name"])
-        self.assertEqual("4.0.4", manifest["version"])
+        self.assertEqual("4.0.5", manifest["version"])
         self.assertFalse((ROOT / "plugins" / "tracebook" / "hooks").exists())
         self.assertEqual("./skills/", manifest["skills"])
         self.assertEqual(
@@ -75,11 +85,11 @@ class PublicArtifactsTest(unittest.TestCase):
         )
 
         self.assertEqual("tracebook", manifest["name"])
-        self.assertEqual("4.0.4", manifest["version"])
+        self.assertEqual("4.0.5", manifest["version"])
         self.assertEqual("tracebook", marketplace["name"])
         self.assertIn("evidence-backed project memory", marketplace["description"])
         self.assertEqual("./plugins/tracebook", marketplace["plugins"][0]["source"])
-        self.assertEqual("4.0.4", marketplace["plugins"][0]["version"])
+        self.assertEqual("4.0.5", marketplace["plugins"][0]["version"])
 
     def test_readme_declares_canonical_markdown_link_policy(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -144,8 +154,25 @@ class PublicArtifactsTest(unittest.TestCase):
             "github.event.before",
             'git cat-file -e "$base^{object}"',
             'git diff --check "$base" "$head"',
+            'PowerShell transport engine: $($PSVersionTable.PSVersion)',
         ):
             self.assertIn(required, workflow)
+
+    def test_public_versions_and_powershell_evidence_are_current(self) -> None:
+        english = (ROOT / "README.md").read_text(encoding="utf-8")
+        chinese = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+        site = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
+        chinese_site = (ROOT / "site" / "zh" / "index.html").read_text(encoding="utf-8")
+        llms = (ROOT / "site" / "llms.txt").read_text(encoding="utf-8")
+
+        for artifact in (site, chinese_site, llms):
+            self.assertIn("v4.0.5", artifact)
+            self.assertNotIn("v4.0.3", artifact)
+        self.assertIn('"softwareVersion": "4.0.5"', site)
+        for token in ("5.1.26100.9168", "7.6.4", "7.4", "7.5", "PowerShell 8"):
+            self.assertIn(token, english)
+        for token in ("5.1.26100.9168", "7.6.4", "7.4", "7.5", "PowerShell 8"):
+            self.assertIn(token, chinese)
 
     def test_bilingual_guides_describe_the_release_and_complete_deep_scope(self) -> None:
         english = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -153,7 +180,7 @@ class PublicArtifactsTest(unittest.TestCase):
         normalized_chinese = " ".join(chinese.split())
 
         self.assertNotIn("release candidate", english)
-        self.assertIn("The `4.0.4` release is available", english)
+        self.assertIn("The `4.0.5` release is available", english)
         self.assertIn("marketplace source is absent", english)
         self.assertIn("codex plugin marketplace remove tracebook", english)
         self.assertNotIn("optimized for project core-page", english)
@@ -163,7 +190,7 @@ class PublicArtifactsTest(unittest.TestCase):
         self.assertIn("lock-free snapshot reader", english)
 
         self.assertNotIn("发布候选", chinese)
-        self.assertIn("`4.0.4` 已发布", chinese)
+        self.assertIn("`4.0.5` 已发布", chinese)
         self.assertIn("codex plugin marketplace list", chinese)
         self.assertNotIn("针对 project 核心页面的命名方式优化", chinese)
         self.assertIn("每个活跃的持久 Markdown 页面", normalized_chinese)

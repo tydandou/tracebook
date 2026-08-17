@@ -1,7 +1,7 @@
 {
   "name": "tracebook",
   "description": "Local, evidence-backed project memory that survives across Claude Code sessions.",
-  "version": "4.0.4",
+  "version": "4.0.5",
   "author": {
     "name": "Tracebook Contributors"
   }
