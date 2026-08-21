@@ -1,8 +1,9 @@
-# Website and launch collateral are maintained in the repository but are not
-# part of Tracebook's distributable source archives.
+# Website, launch collateral, and internal design notes are maintained in the
+# repository but are not part of Tracebook's distributable source archives.
 /site export-ignore
 /launch export-ignore
 /demo export-ignore
+/docs/*.md export-ignore
 /.github/workflows/pages.yml export-ignore
 /assets/tracebook-social-preview.svg export-ignore
 /assets/tracebook-social-preview.png export-ignore

@@ -43,7 +43,7 @@ if __package__ in (None, ""):
     from scripts.project_registry import (
         ProjectRecord,
         bind_remote,
-        ensure_project,
+        ensure_project_registration,
         find_projects,
         identity_advisory,
         load_projects,
@@ -54,7 +54,7 @@ if __package__ in (None, ""):
         update_project,
     )
     from scripts.request_transport import DecodedRequest, decode_request
-    from scripts.snapshots import ensure_project_snapshot, project_knowledge_root
+    from scripts.snapshots import ensure_project_snapshot, has_snapshot, project_knowledge_root
     from scripts.system_registry import add_relation, bind_project as bind_system_project, create_system, get_system, load_systems
     from scripts.transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 else:
@@ -89,7 +89,7 @@ else:
     from .project_registry import (
         ProjectRecord,
         bind_remote,
-        ensure_project,
+        ensure_project_registration,
         find_projects,
         identity_advisory,
         load_projects,
@@ -100,7 +100,7 @@ else:
         update_project,
     )
     from .request_transport import DecodedRequest, decode_request
-    from .snapshots import ensure_project_snapshot, project_knowledge_root
+    from .snapshots import ensure_project_snapshot, has_snapshot, project_knowledge_root
     from .system_registry import add_relation, bind_project as bind_system_project, create_system, get_system, load_systems
     from .transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 
@@ -167,6 +167,7 @@ class ResolvedContext:
     read_paths: tuple[Path, ...]
     remote_warning: str | None = None
     identity_advisory: str | None = None
+    refresh_global_health: bool = False
 
 
 def initialize(root: Path, template: Path | None = None) -> InitializeResult:
@@ -184,7 +185,11 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
     resolved_root, repository = validate_external_root(root, repository)
     recover_transactions(resolved_root)
     initialized = initialize(resolved_root)
-    record = ensure_project(initialized.root, repository)
+    record, _ = ensure_project_registration(
+        initialized.root,
+        repository,
+        resolved_repo=True,
+    )
     remote_warning, _ = origin_remote_warning(repository)
     ensure_health_layout(initialized.root)
     with file_lock(
@@ -200,12 +205,17 @@ def resolve(root: Path, cwd: Path) -> ResolvedContext:
 
 def ensure_for_health(root: Path, cwd: Path) -> ResolvedContext:
     """Prepare the minimal maintenance state check/audit need, without the
-    snapshot seed or the resolve-side global-health rebuild.
+    resolve-side global-health rebuild. A first-time project registration is
+    marked so the caller can refresh that aggregate; otherwise the health
+    command's own persistence path owns the rebuild.
 
     check/audit only consume ``root`` and ``record``. They scan the live tree,
-    not the snapshot, so seeding a snapshot is wasted, and they rebuild the
-    global aggregate themselves in ``finish_health_persistence`` — so the
-    resolve-side rebuild is redundant. ``recover_transactions`` is retained: a
+    not the snapshot, so an existing snapshot is not rebuilt. A missing initial
+    snapshot is still seeded to preserve the lock-free reader contract. Health
+    commands rebuild the global aggregate themselves in
+    ``finish_health_persistence``, so the resolve-side rebuild is redundant for
+    existing projects.
+    ``recover_transactions`` is retained: a
     scoped health commit does not call ``require_clean_transaction_scope``, so
     recovery here is what rolls a crashed capture's pending transaction forward
     before check scans the tree and reports on it. ``ensure_health_layout`` is
@@ -215,7 +225,11 @@ def ensure_for_health(root: Path, cwd: Path) -> ResolvedContext:
     resolved_root, repository = validate_external_root(root, repository)
     recover_transactions(resolved_root)
     initialized = initialize(resolved_root)
-    record = ensure_project(initialized.root, repository)
+    record, created = ensure_project_registration(
+        initialized.root,
+        repository,
+        resolved_repo=True,
+    )
     remote_warning, _ = origin_remote_warning(repository)
     ensure_health_layout(initialized.root)
     with file_lock(
@@ -224,11 +238,22 @@ def ensure_for_health(root: Path, cwd: Path) -> ResolvedContext:
         operation="ensure-for-health",
     ):
         ensure_health_layout(initialized.root, record)
-    return _health_context(initialized.root, record, remote_warning)
+    if not has_snapshot(initialized.root, record):
+        ensure_project_snapshot(initialized.root, record)
+    return _health_context(
+        initialized.root,
+        record,
+        remote_warning,
+        refresh_global_health=created,
+    )
 
 
 def _health_context(
-    root: Path, record: ProjectRecord, remote_warning: str | None
+    root: Path,
+    record: ProjectRecord,
+    remote_warning: str | None,
+    *,
+    refresh_global_health: bool = False,
 ) -> ResolvedContext:
     project = root / record.relative_path
     return ResolvedContext(
@@ -244,6 +269,7 @@ def _health_context(
         ),
         remote_warning=remote_warning,
         identity_advisory=identity_advisory(record),
+        refresh_global_health=refresh_global_health,
     )
 
 
@@ -671,7 +697,11 @@ def check(
             selected_new_paths,
             today,
         )
-    persisted = finish_health_persistence(context.root, committed)
+    persisted = finish_health_persistence(
+        context.root,
+        committed,
+        force_rebuild=context.refresh_global_health,
+    )
     return CheckResult(
         report=report,
         changed_paths=persisted,
@@ -702,7 +732,11 @@ def audit(
             report,
             today,
         )
-    persisted = finish_health_persistence(context.root, committed)
+    persisted = finish_health_persistence(
+        context.root,
+        committed,
+        force_rebuild=context.refresh_global_health,
+    )
     return DeepAuditResult(report=report, changed_paths=persisted)
 def _parse_date(value: str | None) -> date:
     return date.fromisoformat(value) if value else date.today()

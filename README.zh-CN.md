@@ -41,7 +41,7 @@
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.5
+codex plugin marketplace add tydandou/tracebook --ref v4.0.6
 codex plugin add tracebook@tracebook
 ```
 
@@ -162,10 +162,10 @@ Agent 看到的所有内容。
 
 PowerShell 传输兼容性按证据等级声明：
 
-- Windows PowerShell 5.1 已通过真实原生命令管道做发布实测；v4.0.5 本地验证版本为
+- Windows PowerShell 5.1 已通过真实原生命令管道做发布实测；v4.0.6 本地验证版本为
   5.1.26100.9168。
 - PowerShell 7.x 由 Windows CI 的 `pwsh` 冒烟任务覆盖，并输出 hosted runner 的精确
-  版本；v4.0.5 本地还实测了 7.6.4。辅助脚本只使用长期稳定的 PowerShell 语法及 .NET
+  版本；v4.0.6 本地还实测了 7.6.5。辅助脚本只使用长期稳定的 PowerShell 语法及 .NET
   UTF-8、Base64、SHA-256 API，因此 7.4、7.5、7.6 均属于设计兼容范围；这不等于每次
   CI 都分别固定执行每个补丁版本。
 - PowerShell 8 及未来版本在发布前无法声明“已实测”。由于原生命令管道只接收 ASCII，
@@ -174,7 +174,7 @@ PowerShell 传输兼容性按证据等级声明：
 
 ## 安装
 
-`4.0.5` 已发布，对应 `v4.0.5` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.6` 已发布，对应 `v4.0.6` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -182,7 +182,7 @@ PowerShell 传输兼容性按证据等级声明：
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.5
+codex plugin marketplace add tydandou/tracebook --ref v4.0.6
 codex plugin add tracebook@tracebook
 ```
 
@@ -208,7 +208,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.5
+codex plugin marketplace add tydandou/tracebook --ref v4.0.6
 codex plugin add tracebook@tracebook
 ```
 
@@ -217,7 +217,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.5
+codex plugin marketplace add tydandou/tracebook --ref v4.0.6
 codex plugin add tracebook@tracebook
 ```
 
@@ -653,7 +653,7 @@ Wikilink 作为兼容输入，用于手工编辑的 Obsidian 知识。健康检�
 
 | 级别 | 典型行为 |
 | --- | --- |
-| Local | 没有更高级别触发条件时，只读取并报告所选范围；不会写入 scope status 或日志，也不会重建全局聚合状态。 |
+| Local | 没有更高级别触发条件时，只读取并报告所选范围；不会写入 scope status 或日志。若命令首次注册了项目，会刷新全局聚合状态，保持注册表与聚合页一致。 |
 | Light | 在知识写入或知识文件变化后执行；检查链接、索引、来源、代码路径和状态。 |
 | Regular | 由时间间隔或累计改动、页面、待确认项、缺失来源触发；增加孤立页面、漂移、重复和日志检查。 |
 | Deep | 达到 Deep 阈值、核心知识页面过大或显式请求审计时执行；对照证据抽样检查持久结论。 |
@@ -706,7 +706,7 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v4.0.5` 版本。
+`v4.0.6` 版本。
 
 ## 稳定范围与保证
 

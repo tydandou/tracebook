@@ -912,8 +912,10 @@ def persist_audit_under_lock(
 def finish_health_persistence(
     root: Path,
     committed_paths: tuple[Path, ...] | None,
+    *,
+    force_rebuild: bool = False,
 ) -> tuple[Path, ...]:
-    if committed_paths is None:
+    if committed_paths is None and not force_rebuild:
         return ()
     try:
         aggregate_before = sha256_file(
@@ -922,10 +924,11 @@ def finish_health_persistence(
         aggregate_path = rebuild_global_health(root)
         aggregate_after = sha256_file(aggregate_path)
     except Exception as error:
-        raise HealthAggregateRebuildError(committed_paths, error) from error
+        raise HealthAggregateRebuildError(committed_paths or (), error) from error
+    changed = committed_paths or ()
     if aggregate_after == aggregate_before:
-        return committed_paths
-    return (*committed_paths, aggregate_path)
+        return changed
+    return (*changed, aggregate_path)
 
 
 def persist_check(

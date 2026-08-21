@@ -4,7 +4,7 @@
 
 Canonical site: https://tydandou.github.io/tracebook/
 Source: https://github.com/tydandou/tracebook
-Stable release: v4.0.5
+Stable release: v4.0.6
 License: Apache-2.0
 Runtime: Python 3.10+
 
@@ -31,7 +31,7 @@ Runtime: Python 3.10+
 
 Codex:
 
-    codex plugin marketplace add tydandou/tracebook --ref v4.0.5
+    codex plugin marketplace add tydandou/tracebook --ref v4.0.6
     codex plugin add tracebook@tracebook
 
 Claude Code:

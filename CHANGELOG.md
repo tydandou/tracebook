@@ -5,6 +5,34 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.6] - 2026-08-21
+
+### Fixed
+
+- A first direct `check` or `audit` now seeds the initial immutable project
+  snapshot before returning, so subsequent lock-free context reads never fall
+  back to the mutable authority tree during the first capture.
+- First-time Local health commands refresh the global aggregate even when no
+  scope status or log is persisted, keeping the project registry and global
+  health page consistent.
+
+### Changed
+
+- Health preparation resolves project identity once, preserves transaction
+  recovery and missing-snapshot repair, and skips the duplicate resolve-side
+  aggregate rebuild. Existing-project health commands do not create another
+  snapshot version.
+- Health command regression coverage and a copied-plugin runtime test verify
+  first direct `check`/`audit` registration, snapshot creation, and aggregate
+  refresh through the distributable plugin tree.
+- CI transport smoke tests derive `--today` from the executing Python runtime
+  instead of a release-specific hard-coded date.
+- Internal implementation plans remain local-only, and tracked design notes,
+  website sources, launch collateral, and demo assets are excluded from formal
+  Release ZIP/TAR archives while required product documentation remains.
+- Plugin manifests, tagged installation commands, and English, Chinese, and
+  machine-readable site surfaces now expose v4.0.6 consistently.
+
 ## [4.0.5] - 2026-08-17
 
 ### Added
@@ -43,8 +71,8 @@ before the matching Git tag is published.
 - Deep Audit excludes generated `health-logs/` from authority-page analysis,
   preventing its own persisted findings from recursively becoming new fact
   candidates.
-- Per-user `*.local.md` overrides are ignored and the accidentally staged local
-  Claude instruction file is no longer part of the release payload.
+- Repository-level `*.local.md` overrides are ignored so local Claude
+  instruction files do not depend on each developer's global ignore settings.
 
 ## [4.0.4] - 2026-08-12
 

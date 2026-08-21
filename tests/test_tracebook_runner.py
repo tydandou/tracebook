@@ -1,11 +1,13 @@
 import os
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from plugins.tracebook.skills.tracebook.scripts import tracebook_runner
+from plugins.tracebook.skills.tracebook.scripts import health_state, tracebook_runner
+from plugins.tracebook.skills.tracebook.scripts.health_state import HealthAggregateRebuildError
 from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import default_root, initialize, preflight, resolve
 
 
@@ -244,6 +246,12 @@ class TracebookRunnerTest(unittest.TestCase):
                     side_effect=AssertionError("health commands must not call resolve"),
                 ), patch.object(
                     tracebook_runner,
+                    "registered_project",
+                    side_effect=AssertionError(
+                        "health preparation must not resolve project identity twice"
+                    ),
+                ), patch.object(
+                    tracebook_runner,
                     "_write_payload",
                     side_effect=payloads.append,
                 ):
@@ -266,6 +274,71 @@ class TracebookRunnerTest(unittest.TestCase):
                     before,
                     sorted(path.name for path in versions.iterdir()),
                 )
+
+    def test_first_direct_health_command_registers_project_in_global_health(self) -> None:
+        for command in ("check", "audit"):
+            with self.subTest(command=command), TemporaryDirectory() as temp:
+                base = Path(temp).resolve()
+                root = base / "knowledge"
+                first_repo = base / "first"
+                second_repo = base / "second"
+                (first_repo / ".git").mkdir(parents=True)
+                (second_repo / ".git").mkdir(parents=True)
+                resolve(root, first_repo)
+                aggregate = root / "00-global" / "health" / "health-status.md"
+                before = aggregate.read_text(encoding="utf-8")
+                self.assertEqual(1, before.count("| project |"))
+                payloads: list[dict[str, object]] = []
+
+                with patch.object(tracebook_runner, "_write_payload", side_effect=payloads.append):
+                    result = tracebook_runner.main(
+                        [
+                            command,
+                            "--root",
+                            str(root),
+                            "--cwd",
+                            str(second_repo),
+                            "--today",
+                            "2026-08-20",
+                        ]
+                    )
+
+                self.assertEqual(0, result)
+                after = aggregate.read_text(encoding="utf-8")
+                self.assertEqual(2, after.count("| project |"))
+                self.assertNotEqual(before, after)
+                self.assertIn(str(aggregate), payloads[-1]["changed_paths"])
+                record = tracebook_runner.registered_project(root, second_repo)
+                self.assertIsNotNone(record)
+                assert record is not None
+                _, mode = tracebook_runner.project_knowledge_root(
+                    root,
+                    record,
+                    operation="test",
+                )
+                self.assertEqual("snapshot", mode)
+
+    def test_first_direct_local_check_aggregate_failure_preserves_original_error(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            first_repo = base / "first"
+            second_repo = base / "second"
+            (first_repo / ".git").mkdir(parents=True)
+            (second_repo / ".git").mkdir(parents=True)
+            resolve(root, first_repo)
+            context = tracebook_runner.ensure_for_health(root, second_repo)
+            failure = RuntimeError("aggregate rebuild failed")
+
+            with patch.object(
+                health_state,
+                "rebuild_global_health",
+                side_effect=failure,
+            ), self.assertRaises(HealthAggregateRebuildError) as raised:
+                tracebook_runner.check(context, [], date(2026, 8, 20))
+
+            self.assertEqual((), raised.exception.committed_paths)
+            self.assertIs(failure, raised.exception.aggregate_error)
 
 
 if __name__ == "__main__":

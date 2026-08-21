@@ -56,6 +56,9 @@ class ReleaseArchiveTest(unittest.TestCase):
                         f"release archive unexpectedly contains {prefix}",
                     )
                 self.assertTrue(self.excluded_files.isdisjoint(paths))
+                self.assertFalse(
+                    any(path.startswith("docs/") and path.endswith(".md") for path in paths)
+                )
                 self.assertIn("plugins/tracebook/skills/tracebook/SKILL.md", paths)
                 self.assertIn("LICENSE", paths)
                 self.assertIn("README.md", paths)

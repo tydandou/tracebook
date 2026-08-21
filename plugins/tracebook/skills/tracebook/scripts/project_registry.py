@@ -652,9 +652,14 @@ def _identity_conflict(location: str, left: ProjectRecord, remote: str, right: P
     )
 
 
-def ensure_project(knowledge_root: Path, repo: Path) -> ProjectRecord:
-    """Resolve or create a project from its location and optional origin remote."""
-    location = repository_root(repo)
+def ensure_project_registration(
+    knowledge_root: Path,
+    repo: Path,
+    *,
+    resolved_repo: bool = False,
+) -> tuple[ProjectRecord, bool]:
+    """Resolve or create a project and report whether it was newly registered."""
+    location = repo if resolved_repo else repository_root(repo)
     root, location = validate_external_root(knowledge_root, location)
     projects_root = root / "01-projects"
     if not projects_root.is_dir():
@@ -673,8 +678,9 @@ def ensure_project(knowledge_root: Path, repo: Path) -> ProjectRecord:
             raise _identity_conflict(location_text, by_location, remote or "", by_remote)
 
         record = by_location or by_remote
+        created = record is None
         changed: set[str] = set()
-        if record is None:
+        if created:
             project_id = _new_project_id(records)
             record = ProjectRecord(
                 project_id=project_id,
@@ -702,7 +708,13 @@ def ensure_project(knowledge_root: Path, repo: Path) -> ProjectRecord:
             _persist_records(root, path, records, changed, operation="resolve")
         _write_minimal_project_files(root, record, language_for_root(root))
         _update_projects_index(root, records, language_for_root(root))
-        return record
+        return record, created
+
+
+def ensure_project(knowledge_root: Path, repo: Path) -> ProjectRecord:
+    """Resolve or create a project from its location and optional origin remote."""
+    record, _ = ensure_project_registration(knowledge_root, repo)
+    return record
 
 
 def update_project(
