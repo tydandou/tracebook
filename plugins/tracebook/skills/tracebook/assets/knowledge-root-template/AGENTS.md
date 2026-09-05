@@ -41,8 +41,10 @@ supplies for analysis is task input and is unaffected.
   `Pending`.
 - Create schema-v2 authority pages with stable `knowledge_id`; revise an
   existing ID rather than creating a duplicate for an updated conclusion.
-- Default retrieval is Current-only. Request history only for an explicit
-  historical question or an `as-of` reconstruction.
+- Default retrieval is Current-only. Request history for an explicit historical
+  question, an `as-of` reconstruction, or a bounded old-term discovery follow-up
+  under the installed Skill's retrieval timing rules; never adopt a historical
+  match as today's fact without reading the eligible current conclusion.
 - Do not store raw chat transcripts or unverified AI inferences as facts.
 - Maintain entry indexes and run local checks after knowledge writes.
 

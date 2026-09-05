@@ -1,6 +1,6 @@
 interface:
   display_name: "Tracebook"
   short_description: "Evidence-backed memory for coding agents"
-  default_prompt: "Use $tracebook to load minimal project context before this repository task and capture only verified durable conclusions afterward."
+  default_prompt: "Use $tracebook to load project knowledge, follow up insufficient results with concrete keys, read complete decisive entities, and capture only verified durable conclusions."
 policy:
   allow_implicit_invocation: true

@@ -14,6 +14,7 @@ class ReleaseArchiveTest(unittest.TestCase):
         "site/",
         "launch/",
         "demo/",
+        "docs/",
     )
     excluded_files = {
         ".github/workflows/pages.yml",
@@ -56,9 +57,6 @@ class ReleaseArchiveTest(unittest.TestCase):
                         f"release archive unexpectedly contains {prefix}",
                     )
                 self.assertTrue(self.excluded_files.isdisjoint(paths))
-                self.assertFalse(
-                    any(path.startswith("docs/") and path.endswith(".md") for path in paths)
-                )
                 self.assertIn("plugins/tracebook/skills/tracebook/SKILL.md", paths)
                 self.assertIn("LICENSE", paths)
                 self.assertIn("README.md", paths)
@@ -73,6 +71,19 @@ class ReleaseArchiveTest(unittest.TestCase):
         self.assertIn("git archive --format=tar.gz", workflow)
         self.assertIn("sha256sum", workflow)
         self.assertIn("gh release upload", workflow)
+
+    def test_public_package_layout(self) -> None:
+        tracked = subprocess.check_output(
+            ("git", "ls-files", "-z"), cwd=ROOT
+        ).decode("utf-8").split("\0")
+        self.assertFalse(any(path.startswith("docs/") for path in tracked))
+        for name in ("tracebook-hero.svg", "tracebook-social-preview.svg", "tracebook-social-preview.png"):
+            self.assertTrue((ROOT / "assets" / name).is_file())
+        ignored = subprocess.run(
+            ("git", "check-ignore", "--no-index", "docs/example.md"),
+            cwd=ROOT, capture_output=True,
+        )
+        self.assertEqual(0, ignored.returncode)
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.6
+codex plugin marketplace add tydandou/tracebook --ref v4.0.7
 codex plugin add tracebook@tracebook
 ```
 
@@ -174,7 +174,7 @@ PowerShell 传输兼容性按证据等级声明：
 
 ## 安装
 
-`4.0.6` 已发布，对应 `v4.0.6` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.7` 已发布，对应 `v4.0.7` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -182,7 +182,7 @@ PowerShell 传输兼容性按证据等级声明：
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.6
+codex plugin marketplace add tydandou/tracebook --ref v4.0.7
 codex plugin add tracebook@tracebook
 ```
 
@@ -208,7 +208,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.6
+codex plugin marketplace add tydandou/tracebook --ref v4.0.7
 codex plugin add tracebook@tracebook
 ```
 
@@ -217,7 +217,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.6
+codex plugin marketplace add tydandou/tracebook --ref v4.0.7
 codex plugin add tracebook@tracebook
 ```
 
@@ -397,6 +397,45 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
 ```
 
 如果返回 `PROJECT_ACTIVATION_REQUIRED`，先在具有写权限的环境执行一次 `resolve`，再重试读取。项目知识写入会生成完整的不可变快照；只有全部页面准备完成后才原子切换指针。因此读取方只能看到旧完整快照或新完整快照，不会看到部分写入。
+
+默认检索只返回匹配的 `current` 权威页。涉及历史、版本、变更、Git 提交、代码演进、回归或“为什么修改”时，使用有界的审计预设；当前工作树的 `git status` 或 `git diff` 检查不要求读取 History，除非任务明确要求历史背景：
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
+  --root "$TRACEBOOK_ROOT" --cwd . \
+  --profile audit --query "为什么重试行为发生变化"
+```
+
+`--profile audit` 允许通过 Current 或 History 发现符合条件的实体，默认上限为 30 个
+实体和 50,000 个结果内容字符。历史命中后返回所选当前版本，并通过 `match_source`、
+`matched_version` 标明命中来源；项目、kind、生命周期和 as-of 边界保持不变。
+单独使用 `--include-history` 仍只附带已命中实体的历史。
+
+对决定结论的实体，读取同一快照中的完整正文和证据：
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
+  --root "$TRACEBOOK_ROOT" --cwd . --knowledge-id order-retry-eligibility \
+  --full-content --include-history
+```
+
+`--full-content` 必须配合 `--knowledge-id`；不同 kind 存在同 ID 时可加 `--kind`。
+完整条目超出预算会明确省略，不静默裁剪正文。默认 `excerpt` 只取前 500 字符，
+`excerpt_truncated` 与结果集合的 `truncated` 分开表示。历史同样受预算限制，不能无条件
+声称已取得完整版本链。`historical`、`version_state` 与实体生命周期 `status` 含义不同。
+domain/pattern 和明确的 legacy fallback 从同一次权威页读取取得正文与元数据；
+`read_snapshots` 只表示项目快照，不承诺跨 scope 的原子快照。
+
+显式上限覆盖预设。`max-results` 限制 current_context 中的实体数，`returned_count` 还包含
+附带的历史版本。`max-chars` 计算 current_context、historical_context、warnings、
+omitted_entities、history_omitted_entities 的紧凑 JSON 数组内容字符数（含条目间逗号）；
+固定外壳、数组括号、请求回显和显式选择的项目来源不计入，因此不是格式化 JSON 整包上限。
+`budget_chars_used` 报告用量；省略样本最多 10 个、携带权威页路径且共享预算，计数保持完整。
+`history_available: null` 表示尚未检查历史，而不是没有历史。
+
+零结果、截断或依据不足时，使用源码路径、ID 或已记录术语定向补查；旧术语可通过 audit 定位。
+组合读取时核对 `read_snapshots` 和版本，采用结论前核验适用性和源码。Skill 限制补查次数与总预算，
+无法确认时说明缺口。只读的 audit 检索预设与会持久化 Deep 健康报告的 `audit` 命令不同。
 
 ### 更新项目位置或 remote
 
@@ -586,8 +625,8 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" audit \
 | `resolve` | `root`、`root_source`、`root_existed`、`root_created`、`root_initialized_before`、`root_initialized`、`project`、`read_paths` | 根目录来源和初始化结果、按 `project_id` 解析的项目记录与聚焦上下文路径 |
 | `preflight` | `root_source`、`root_existed`、`root_initialized`、`target`、`registered`、`project`、`read_paths` | 只读检查根目录与目标；不初始化、不注册 |
 | `project-search` | `projects` | 按名称、ID 或已登记信号查找项目候选项 |
-| `context-read` | `current_context`、`historical_context`、`warnings`、`truncated` | 不激活目标项目，仅读取选定的已登记项目 |
-| `context-read-path` | `current_context`、`historical_context`、`warnings`、`truncated` | 无锁读取已激活目标的最近一次完整项目快照 |
+| `context-read` | `current_context`、`historical_context`、`warnings`、`truncated` 及结果/截断元数据 | 不激活目标项目，仅读取选定的已登记项目 |
+| `context-read-path` | `current_context`、`historical_context`、`warnings`、`truncated` 及结果/截断元数据 | 无锁读取已激活目标的最近一次完整项目快照 |
 | `project-update` | `project` | 显式更新项目名称或完整 location 列表 |
 | `project-bind-remote` | `project` | 将一个规范化 remote 绑定到既有项目 |
 | `system-create` | `system` | 创建显式的多项目系统 |
@@ -706,7 +745,7 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v4.0.6` 版本。
+`v4.0.7` 版本。
 
 ## 稳定范围与保证
 

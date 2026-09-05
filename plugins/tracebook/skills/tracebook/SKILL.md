@@ -142,6 +142,27 @@ stemming or synonyms, so prefer words that actually appear in the knowledge —
 if a query returns nothing, retry with terms from the project index or an exact
 `knowledge_id` rather than a paraphrase.
 
+When the task asks about history, versions, changes, Git commits, code
+evolution, regression, or why a decision changed, use `--profile audit` before
+concluding. It can discover eligible entities through old terms in History,
+but returns the selected Current version with `match_source` and `matched_version`.
+`--include-history` alone only attaches history to entities already found.
+A current-worktree `git
+status` or `git diff` check does not require History unless historical context
+is requested. Audit is still bounded and local; it does not widen the selected
+project or system scope.
+
+An empty, truncated, or merely related result is not enough to establish a
+conclusion. Use a concrete new key for bounded follow-up and read the complete
+Current body and evidence of decisive entities with `--knowledge-id <id>
+--full-content`. This remains a lock-free snapshot read and never silently clips
+the body. Check result/omission counts; compare `read_snapshots` and versions when
+combining reads. A 500-character `excerpt` is a discovery aid, not a full fact.
+Shared domain/pattern pages retain their existing authority-read semantics;
+project snapshot provenance does not claim a cross-scope atomic snapshot.
+Follow [retrieval timing rules](references/retrieval-timing-rules.md) for when to
+broaden the search to History and when to stop.
+
 To find knowledge from a source file — a path in a stack trace or a log the user
 supplied — pass `--evidence-path <repo-relative-or-project-absolute path>`,
 repeating it per file, with or without `--query`. Entities listing that file as

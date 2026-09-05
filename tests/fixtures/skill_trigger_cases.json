@@ -6,12 +6,19 @@
     "Change the deployment configuration and run the tests.",
     "Fix the CI/CD build failure and publish the release.",
     "Diagnose this production incident using logs and source evidence.",
-    "Create D:\\AIWorks\\image-gen-agent as a new project and reuse the selected architecture."
+    "Create D:\\Workspaces\\sample-app as a new project and reuse the selected architecture.",
+    "Analyze this repository, but do not write project knowledge."
   ],
   "negative": [
     "Explain what a Python decorator is without inspecting a repository.",
-    "Summarize this raw log only; do not write project knowledge.",
+    "Translate this greeting without inspecting any project.",
     "Answer this general technology question.",
-    "Do not write to Tracebook for this task."
-  ]
+    "Calculate seven times eight without inspecting any project."
+  ],
+  "write_gate_negative": [
+    "Analyze this repository, but do not write project knowledge.",
+    "Summarize the supplied log only; do not persist unverified conclusions.",
+    "Review this code without capturing any knowledge."
+  ],
+  "verification_level": "Authored expectations only; not measured host invocation results."
 }

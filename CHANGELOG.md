@@ -5,6 +5,44 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.7] - 2026-09-05
+
+### Added
+
+- The read-only `audit` retrieval profile discovers eligible knowledge through
+  historical terminology, returning the selected current/as-of version with an
+  explicit match source and matched version. Plain `--include-history` continues
+  to attach history only to already-matched entities.
+- Exact `--knowledge-id` lookup with `--full-content` reads complete bodies and
+  evidence from the same committed snapshot. Oversized complete items are omitted
+  explicitly rather than silently clipped. Read results expose snapshot provenance,
+  excerpt truncation, version state, result counts, and bounded omission samples.
+- Source and copied-package CLI regressions cover non-Git directories, Git without
+  a remote, equivalent HTTPS/SSH remotes, build/capture/check/read, idempotence,
+  revisions, historical discovery, as-of, rejected writes, lifecycle replacements,
+  domain/pattern scopes, evidence follow-ups, and read-only fingerprints.
+
+### Fixed
+
+- Result-content character limits cover Current and History items, warnings and
+  omission samples using compact JSON character lengths. Metadata samples cannot
+  grow with the full corpus; counts remain complete and uninspected history is
+  reported as unknown rather than absent.
+
+### Changed
+
+- The Skill follows insufficient retrieval with concrete new keys, reads complete
+  decisive entities, verifies applicability, and bounds follow-ups and aggregate
+  output. English/Chinese initialization rules and public guides align with this
+  workflow without rewriting existing external knowledge-root rules.
+- Default Current-only reads skip unused History parsing. No persistent index,
+  daemon, vector service, process cache, Git-evidence dependency, or business-specific
+  conflict heuristic is introduced. Project identity and snapshot contracts remain
+  unchanged; historical version state is not entity lifecycle status.
+- Plugin manifests and tagged installation/site surfaces identify v4.0.7. An
+  already-installed older plugin must still be updated by its host; publishing a
+  repository release does not silently replace an installed cache.
+
 ## [4.0.6] - 2026-08-21
 
 ### Fixed

@@ -47,7 +47,7 @@ new agent session:
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.6
+codex plugin marketplace add tydandou/tracebook --ref v4.0.7
 codex plugin add tracebook@tracebook
 ```
 
@@ -201,7 +201,7 @@ PowerShell transport compatibility is stated by evidence level:
 
 ## Install
 
-The `4.0.6` release is available as the `v4.0.6` tag. Use the tagged
+The `4.0.7` release is available as the `v4.0.7` tag. Use the tagged
 installation commands for the stable release, or use the local development
 loading instructions when working from a clone.
 
@@ -210,7 +210,7 @@ loading instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.6
+codex plugin marketplace add tydandou/tracebook --ref v4.0.7
 codex plugin add tracebook@tracebook
 ```
 
@@ -238,7 +238,7 @@ Removing a plugin never touches its knowledge root. If
 `codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.6
+codex plugin marketplace add tydandou/tracebook --ref v4.0.7
 codex plugin add tracebook@tracebook
 ```
 
@@ -247,7 +247,7 @@ To move to a different tagged source, replace the marketplace first:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.6
+codex plugin marketplace add tydandou/tracebook --ref v4.0.7
 codex plugin add tracebook@tracebook
 ```
 
@@ -612,8 +612,55 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" context \
 Default results contain only matching `current` authority pages. Add
 `--include-history` for prior versions, or `--as-of YYYY-MM-DD` to reconstruct
 what was current on a date. The JSON includes stable IDs, score, evidence,
-status, update date, and a short summary; it is not a vector database or a
-claim that the returned result is business truth.
+status, version state, update date, and a deterministic excerpt; it is not a vector
+database or a claim that the returned result is business truth. For history,
+version, change, regression, Git-commit, code-evolution, or change-rationale
+questions, use the bounded audit preset. A current-worktree status or diff check
+does not require History unless requested:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
+  --root "$TRACEBOOK_ROOT" --cwd . \
+  --profile audit --query "why retry behavior changed"
+```
+
+`--profile audit` discovers eligible entities through Current or History and
+defaults to 30 selected entities / 50,000 result-content characters. A historical
+match returns the selected current version, identified by `match_source` and
+`matched_version`; it does not override status, kind, project, or as-of filters.
+`--include-history` alone retains its attachment-only discovery behavior.
+
+For a decisive entity, read its complete body and evidence from the same snapshot:
+
+```sh
+python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
+  --root "$TRACEBOOK_ROOT" --cwd . --knowledge-id order-retry-eligibility \
+  --full-content --include-history
+```
+
+`--full-content` requires `--knowledge-id`; use `--kind` when IDs exist in multiple
+project collections. Complete items that do not fit are omitted, never silently
+clipped. Without it, `excerpt` is a 500-character prefix; `excerpt_truncated` is
+independent of result-set `truncated`. History can still be truncated, so this is
+not an unconditional complete-version-chain guarantee.
+Domain/pattern and explicit legacy fallback read the body and metadata from one
+authority-page read; `read_snapshots` covers projects, not a cross-scope snapshot.
+
+Explicit limits override presets. `max-results` limits entities in current_context;
+`returned_count` also counts attached versions. `max-chars` budgets compact JSON
+array contents (including separators) for current_context, historical_context,
+warnings, omitted_entities and history_omitted_entities. Fixed envelope/brackets,
+request echoes and selected-project provenance are excluded, so it is not a whole
+pretty-printed JSON size limit. `budget_chars_used` reports usage. Omission samples
+contain at most 10 path-qualified entities and share that budget; counts remain
+complete. `history_available: null` means history was not inspected.
+
+For zero, truncated or insufficient results, follow up with concrete source paths,
+IDs or recorded terminology; audit can recover terms present only in History.
+Compare `read_snapshots` and versions when combining reads, and verify applicability
+against source before adopting a conclusion. The Skill bounds follow-ups and
+discloses remaining gaps. The read-only audit profile is distinct from the `audit`
+command, which persists a Deep health report.
 
 ### Read related microservices deliberately
 
@@ -707,8 +754,8 @@ evidence before any finding becomes a durable conclusion.
 | `resolve` | `root`, `root_source`, `root_existed`, `root_created`, `root_initialized_before`, `root_initialized`, `project`, `read_paths` | Configured root provenance and initialization result, project record resolved by `project_id`, and focused context paths |
 | `preflight` | `root_source`, `root_existed`, `root_initialized`, `target`, `registered`, `project`, `read_paths` | Read-only root and target inspection; does not initialize or register |
 | `project-search` | `projects` | Deterministic registered-project candidates |
-| `context-read` | `current_context`, `historical_context`, `warnings`, `truncated` | Read selected registered projects without activating a target |
-| `context-read-path` | `current_context`, `historical_context`, `warnings`, `truncated` | Lock-free read of an already activated target's committed project snapshot |
+| `context-read` | `current_context`, `historical_context`, `warnings`, `truncated`, result/truncation metadata | Read selected registered projects without activating a target |
+| `context-read-path` | `current_context`, `historical_context`, `warnings`, `truncated`, result/truncation metadata | Lock-free read of an already activated target's committed project snapshot |
 | `project-update` | `project` | Explicitly update a project name or complete location list |
 | `project-bind-remote` | `project` | Bind a normalized remote to an existing project |
 | `system-create` | `system` | Create an explicit multi-project system |
@@ -716,7 +763,7 @@ evidence before any finding becomes a durable conclusion.
 | `system-relate` | `system` | Add a directed relationship between two system members |
 | `transactions` | `root`, `transactions` | Read-only transaction diagnostics and per-transaction disposition |
 | `recover-transactions` | `recovered_paths` | Explicit safe roll-forward results; never a discard or quarantine action |
-| `context` | `current_context`, `historical_context`, `warnings`, `truncated` | Bounded deterministic authority-page retrieval |
+| `context` | `current_context`, `historical_context`, `warnings`, `truncated`, result/truncation metadata | Bounded deterministic authority-page retrieval |
 | `capture` | `changed_paths`, `new_paths`, `skipped`, `health_scope`, `event_id`, `warnings` | Versioned entity transaction result, non-fatal cleanup diagnostics, and scope required by the following check |
 | `check` | `check_type`, `changed_paths`, `report`, `findings` | Required health level, persisted health paths, human-readable Markdown, and structured findings |
 | `audit` | `changed_paths`, `report`, `findings` | Persisted Deep-health paths plus human-readable and structured audit findings |
@@ -850,7 +897,7 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v4.0.6` release.
+resolves the published `v4.0.7` release.
 
 ## Stable Scope and Guarantees
 

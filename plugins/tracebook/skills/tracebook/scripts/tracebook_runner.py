@@ -105,6 +105,34 @@ else:
     from .transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 
 
+RETRIEVAL_PROFILES = {"default", "reference", "audit"}
+
+
+def _retrieval_options(
+    profile: str,
+    include_history: bool,
+    max_results: int | None,
+    max_chars: int | None,
+) -> tuple[bool, int, int]:
+    """Resolve bounded retrieval presets without changing default behavior.
+
+    `audit` expands version visibility and the default result budget, but never
+    widens the selected project or system boundary.
+    """
+    if profile not in RETRIEVAL_PROFILES:
+        raise ValueError("INVALID_REQUEST: profile is unsupported")
+    if profile == "audit":
+        include_history = True
+        max_results = 30 if max_results is None else max_results
+        max_chars = 50000 if max_chars is None else max_chars
+    else:
+        max_results = 10 if max_results is None else max_results
+        max_chars = 20000 if max_chars is None else max_chars
+    if max_results < 1 or max_chars < 1:
+        raise ValueError("INVALID_REQUEST: result limits must be positive")
+    return include_history, max_results, max_chars
+
+
 def default_root() -> Path:
     configured = os.environ.get("TRACEBOOK_ROOT", "~/.tracebook").strip()
     return Path(configured or "~/.tracebook").expanduser()
@@ -366,11 +394,14 @@ def retrieve_context(
     system_ids: tuple[str, ...] = (),
     profile: str = "default",
     scope: str = "project",
-    max_results: int = 10,
-    max_chars: int = 20000,
+    max_results: int | None = None,
+    max_chars: int | None = None,
+    knowledge_id: str | None = None,
+    full_content: bool = False,
 ) -> dict[str, object]:
-    if profile not in {"default", "reference"}:
-        raise ValueError("INVALID_REQUEST: profile is unsupported")
+    include_history, max_results, max_chars = _retrieval_options(
+        profile, include_history, max_results, max_chars
+    )
     known = {record.project_id: record for record in load_projects(resolved.root)}
     selected: list[ProjectRecord] = [resolved.record]
     selected_ids = {resolved.record.project_id}
@@ -419,11 +450,19 @@ def retrieve_context(
         max_results=max_results,
         max_chars=max_chars,
         project_knowledge_roots=knowledge_roots,
+        knowledge_id=knowledge_id,
+        full_content=full_content,
+        discover_history=profile == "audit",
+        query_warnings=("legacy snapshot fallback: " + ", ".join(sorted(legacy_projects)),)
+        if legacy_projects else (),
     )
-    if legacy_projects:
-        payload["warnings"].append(
-            "legacy snapshot fallback: " + ", ".join(sorted(legacy_projects))
-        )
+    payload["read_snapshots"] = {
+        identity: None if identity in legacy_projects else directory.parent.name
+        for identity, directory in knowledge_roots.items()
+    }
+    payload["profile"] = profile
+    payload["history_requested"] = include_history
+    payload["knowledge_id"] = knowledge_id
     return payload
 
 
@@ -438,20 +477,23 @@ def read_context(
     kind: str | None = None,
     profile: str = "default",
     scope: str = "project",
-    max_results: int = 10,
-    max_chars: int = 20000,
+    max_results: int | None = None,
+    max_chars: int | None = None,
+    knowledge_id: str | None = None,
+    full_content: bool = False,
     evidence_paths: tuple[str, ...] = (),
     evidence_source_root: Path | None = None,
 ) -> dict[str, object]:
     """Read explicitly registered project knowledge without activating a target."""
     if not project_ids:
         raise ValueError("INVALID_REQUEST: at least one project_id is required")
-    if profile not in {"default", "reference"}:
-        raise ValueError("INVALID_REQUEST: profile is unsupported")
+    include_history, max_results, max_chars = _retrieval_options(
+        profile, include_history, max_results, max_chars
+    )
     selected_evidence_paths = tuple(
         value for value in evidence_paths if value.strip()
     )
-    if not query.strip() and not selected_evidence_paths:
+    if not query.strip() and not selected_evidence_paths and not knowledge_id:
         raise ValueError("INVALID_REQUEST: query or evidence-path is required")
     if selected_evidence_paths and (scope != "project" or as_of is not None):
         raise ValueError("INVALID_REQUEST: evidence-path supports only project scope at the current snapshot")
@@ -496,19 +538,19 @@ def read_context(
             evidence_keys.append(key)
         if warning is not None:
             evidence_warnings.append(warning)
-    if selected_evidence_paths and not evidence_keys and not query.strip():
+    if selected_evidence_paths and not evidence_keys and not query.strip() and not knowledge_id:
         # Every evidence-path failed to parse and no query remains; return the
         # warnings without a full-corpus scan rather than raising.
-        return {
-            "schema_version": 1,
-            "project": {"project_id": primary.project_id, "name": primary.name, "identity": primary.project_id, "slug": primary.slug},
-            "queried_projects": [{"project_id": item.project_id, "name": item.name, "slug": item.slug} for item in selected],
-            "query": query,
-            "current_context": [],
-            "historical_context": [],
-            "warnings": sorted(set(evidence_warnings)),
-            "truncated": False,
-        }
+        payload = build_context(
+            resolved_root, resolved_root / primary.relative_path,
+            primary.project_id, primary.name, primary.slug, query,
+            projects=tuple(selected), max_results=max_results, max_chars=max_chars,
+            query_warnings=tuple(evidence_warnings), full_content=full_content,
+            include_history=include_history, discover_history=profile == "audit",
+        )
+        payload.update(profile=profile, history_requested=include_history,
+                       knowledge_id=knowledge_id, read_snapshots={})
+        return payload
     payload: dict[str, object] | None = None
     legacy_projects: list[str] = []
     for attempt in range(3):
@@ -543,6 +585,13 @@ def read_context(
                 max_chars=max_chars,
                 project_knowledge_roots=knowledge_roots,
                 evidence_keys=tuple(evidence_keys),
+                knowledge_id=knowledge_id,
+                full_content=full_content,
+                discover_history=profile == "audit",
+                query_warnings=tuple(evidence_warnings) + (
+                    ("legacy snapshot fallback: " + ", ".join(sorted(legacy_projects)),)
+                    if legacy_projects else ()
+                ),
             )
         except OSError:
             if attempt < 2 and any(not root.is_dir() for root in snapshot_roots):
@@ -557,12 +606,13 @@ def read_context(
             "Project snapshot changed repeatedly while context was being read; retry the command",
             "context-read",
         )
-    if legacy_projects:
-        payload["warnings"].append(
-            "legacy snapshot fallback: " + ", ".join(sorted(legacy_projects))
-        )
-    if evidence_warnings:
-        payload["warnings"] = sorted(set(payload["warnings"]) | set(evidence_warnings))
+    payload["read_snapshots"] = {
+        identity: None if identity in legacy_projects else directory.parent.name
+        for identity, directory in knowledge_roots.items()
+    }
+    payload["profile"] = profile
+    payload["history_requested"] = include_history
+    payload["knowledge_id"] = knowledge_id
     return payload
 
 
@@ -978,29 +1028,33 @@ def main(argv: list[str] | None = None) -> int:
     context_read_parser.add_argument("--root")
     context_read_parser.add_argument("--project-id", action="append", required=True)
     context_read_parser.add_argument("--query", default="")
+    context_read_parser.add_argument("--knowledge-id")
+    context_read_parser.add_argument("--full-content", action="store_true")
     context_read_parser.add_argument("--evidence-path", action="append", default=[])
     context_read_parser.add_argument("--include-history", action="store_true")
     context_read_parser.add_argument("--as-of")
     context_read_parser.add_argument("--status", default="current")
     context_read_parser.add_argument("--kind")
-    context_read_parser.add_argument("--profile", choices=("default", "reference"), default="default")
+    context_read_parser.add_argument("--profile", choices=("default", "reference", "audit"), default="default")
     context_read_parser.add_argument("--scope", choices=("project", "domain", "pattern", "all"), default="project")
-    context_read_parser.add_argument("--max-results", type=int, default=10)
-    context_read_parser.add_argument("--max-chars", type=int, default=20000)
+    context_read_parser.add_argument("--max-results", type=int, default=None)
+    context_read_parser.add_argument("--max-chars", type=int, default=None)
 
     context_read_path_parser = commands.add_parser("context-read-path")
     context_read_path_parser.add_argument("--root")
     context_read_path_parser.add_argument("--cwd", required=True)
     context_read_path_parser.add_argument("--query", default="")
+    context_read_path_parser.add_argument("--knowledge-id")
+    context_read_path_parser.add_argument("--full-content", action="store_true")
     context_read_path_parser.add_argument("--evidence-path", action="append", default=[])
     context_read_path_parser.add_argument("--include-history", action="store_true")
     context_read_path_parser.add_argument("--as-of")
     context_read_path_parser.add_argument("--status", default="current")
     context_read_path_parser.add_argument("--kind")
-    context_read_path_parser.add_argument("--profile", choices=("default", "reference"), default="default")
+    context_read_path_parser.add_argument("--profile", choices=("default", "reference", "audit"), default="default")
     context_read_path_parser.add_argument("--scope", choices=("project", "domain", "pattern", "all"), default="project")
-    context_read_path_parser.add_argument("--max-results", type=int, default=10)
-    context_read_path_parser.add_argument("--max-chars", type=int, default=20000)
+    context_read_path_parser.add_argument("--max-results", type=int, default=None)
+    context_read_path_parser.add_argument("--max-chars", type=int, default=None)
 
     for name in ("resolve", "capture", "check", "audit", "context"):
         command = commands.add_parser(name)
@@ -1037,17 +1091,19 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     context_parser = commands.choices["context"]
-    context_parser.add_argument("--query", required=True)
+    context_parser.add_argument("--query", default="")
+    context_parser.add_argument("--knowledge-id")
+    context_parser.add_argument("--full-content", action="store_true")
     context_parser.add_argument("--include-history", action="store_true")
     context_parser.add_argument("--as-of")
     context_parser.add_argument("--status", default="current")
     context_parser.add_argument("--kind")
     context_parser.add_argument("--project-id", action="append", default=[])
     context_parser.add_argument("--system-id", action="append", default=[])
-    context_parser.add_argument("--profile", choices=("default", "reference"), default="default")
+    context_parser.add_argument("--profile", choices=("default", "reference", "audit"), default="default")
     context_parser.add_argument("--scope", choices=("project", "domain", "pattern", "all"), default="project")
-    context_parser.add_argument("--max-results", type=int, default=10)
-    context_parser.add_argument("--max-chars", type=int, default=20000)
+    context_parser.add_argument("--max-results", type=int, default=None)
+    context_parser.add_argument("--max-chars", type=int, default=None)
 
     check_parser = commands.choices["check"]
     check_parser.add_argument("--changed", action="append", default=[])
@@ -1157,6 +1213,8 @@ def main(argv: list[str] | None = None) -> int:
                 tuple(args.project_id),
                 args.query,
                 include_history=args.include_history,
+                knowledge_id=args.knowledge_id,
+                full_content=args.full_content,
                 as_of=_parse_date(args.as_of) if args.as_of else None,
                 status=args.status,
                 kind=args.kind,
@@ -1177,6 +1235,8 @@ def main(argv: list[str] | None = None) -> int:
                 Path(args.cwd),
                 args.query,
                 include_history=args.include_history,
+                knowledge_id=args.knowledge_id,
+                full_content=args.full_content,
                 as_of=_parse_date(args.as_of) if args.as_of else None,
                 status=args.status,
                 kind=args.kind,
@@ -1293,6 +1353,8 @@ def main(argv: list[str] | None = None) -> int:
                 project_ids=tuple(args.project_id), system_ids=tuple(args.system_id),
                 profile=args.profile, scope=args.scope,
                 max_results=args.max_results, max_chars=args.max_chars,
+                knowledge_id=args.knowledge_id,
+                full_content=args.full_content,
             ))
             return 0
         except (TracebookError, ValueError) as error:

@@ -21,7 +21,35 @@ cheap enough that querying when unsure is the cheaper mistake than skipping.
 Routine work with no durable question — a typo fix, a single test run, a pure
 language question — normally needs none.
 
-## Examples, not an enumeration
+## Insufficient evidence and bounded follow-up
+
+Zero results, truncated results, omitted warnings, an incomplete decisive excerpt,
+or competing applicable conclusions require attention before answering. An empty
+query result means no match for that key, not that no relevant knowledge exists.
+
+- Use paths, IDs or terms obtained from source/index navigation for a targeted
+  follow-up; whole English words and CJK bigrams do not imply synonyms, stemming
+  or translation. Do not manufacture a business synonym dictionary.
+- If a previous name or rule may have disappeared from Current, explicitly use
+  profile audit. A History hit discovers an eligible entity; read its selected
+  version, not the historical match as today's fact. Preserve project/kind/status
+  filters. Never automatically search all projects or resurrect retired entities.
+- Read a few decisive entities with knowledge-id and full-content. If read_snapshots
+  or versions changed between queries, reassess using the new complete version;
+  do not splice incompatible read generations into one claimed fact.
+- Normally allow at most two targeted discovery follow-ups after the opening
+  query, with an aggregate 100,000-character result-content budget including
+  decisive full reads. A task explicitly requiring deeper historical analysis
+  can justify a stated larger budget. Stop earlier when evidence is sufficient
+  or no new key remains; repeated state changes or exhausted budgets are disclosed
+  limitations, not reasons for unlimited retries.
+
+Before adopting a conclusion, verify applicability and evidence. Recency only
+breaks score ties; neither the first result nor entity status proves business
+truth. Revise the existing ID for a changed fact; use a separate successor and
+change-status only for a verified replacement, never merely because it is newer.
+
+## Examples, not a quota
 
 - A stack trace or backend log resolves to a set of source files: reverse-query
   them with `--evidence-path` (see below).

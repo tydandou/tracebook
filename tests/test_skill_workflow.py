@@ -111,6 +111,10 @@ class SkillWorkflowTest(unittest.TestCase):
             self.assertIn(term, description)
         self.assertGreaterEqual(len(cases["positive"]), 6)
         self.assertGreaterEqual(len(cases["negative"]), 4)
+        self.assertGreaterEqual(len(cases["write_gate_negative"]), 3)
+        self.assertIn("not measured host invocation", cases["verification_level"])
+        # Read activation and permission to capture are independent contracts.
+        self.assertIn(cases["write_gate_negative"][0], cases["positive"])
 
     def test_skill_defines_deterministic_capture_gate_and_soft_reporting(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")

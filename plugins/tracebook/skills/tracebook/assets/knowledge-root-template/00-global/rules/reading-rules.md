@@ -38,4 +38,9 @@ Keep `AGENTS.md`, root indexes, project indexes, project status, and health
 status under 100 lines when possible. Keep `source-map.md` under 150 lines.
 
 Do not scan or load every entity by default. Context is Current-only unless a
-user asks for historical reasoning; use `--include-history` or `--as-of` then.
+user asks for historical reasoning or a bounded follow-up needs old terminology.
+Use `--profile audit` for historical discovery; `--include-history` only attaches
+history to matched entities, and `--as-of` selects a prior date. Read complete
+decisive entities with `--knowledge-id <id> --full-content`; excerpts are not full
+facts. Follow the installed Skill's retrieval timing rules for new keys, budgets,
+snapshot/version checks, lifecycle boundaries, and explicit unresolved gaps.

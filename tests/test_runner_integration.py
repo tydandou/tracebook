@@ -217,7 +217,7 @@ class RunnerIntegrationTest(unittest.TestCase):
         with TemporaryDirectory() as temp:
             base = Path(temp).resolve()
             root = base / "knowledge"
-            uncreated = base / "image-gen-agent"
+            uncreated = base / "sample-app"
             self.assertFalse(
                 self._run_runner(base, "preflight", "--root", str(root), "--cwd", str(uncreated))["registered"]
             )
@@ -283,6 +283,23 @@ class RunnerIntegrationTest(unittest.TestCase):
             self.assertEqual(1, iteration["historical_context"][0]["version"])
             self.assertEqual(payment_id, iteration["historical_context"][0]["source_project"]["project_id"])
             self.assertEqual(payment["project"]["name"], iteration["historical_context"][0]["source_project"]["name"])
+
+            by_id = self._run_runner(
+                base,
+                "context",
+                "--root",
+                str(root),
+                "--cwd",
+                str(payment_path),
+                "--knowledge-id",
+                "payment-retry-policy",
+                "--include-history",
+            )
+            self.assertEqual(
+                ["payment-retry-policy"],
+                [item["knowledge_id"] for item in by_id["current_context"]],
+            )
+            self.assertEqual(1, len(by_id["historical_context"]))
 
     def test_runner_accepts_utf8_bom_capture_requests_and_reports_legacy_roots(self) -> None:
         with TemporaryDirectory() as temp:

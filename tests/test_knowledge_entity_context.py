@@ -117,6 +117,105 @@ class KnowledgeEntityContextTest(unittest.TestCase):
             self.assertEqual(3, len(full["current_context"]))
             self.assertFalse(full["truncated"])
 
+    def test_history_payload_is_explicit_and_history_consumes_result_budget(self) -> None:
+        with TemporaryDirectory() as temp:
+            resolved = self._context(Path(temp))
+            capture(resolved, self._request(body="old conclusion"), date(2026, 7, 22))
+            capture(resolved, self._request(
+                operation="revise", expected_version=1,
+                body="new conclusion",
+            ), date(2026, 7, 23))
+
+            result = retrieve_context(
+                resolved, "conclusion", include_history=True, max_chars=5000
+            )
+
+            current = result["current_context"][0]
+            self.assertFalse(current["historical"])
+            self.assertEqual("current", current["version_state"])
+            self.assertEqual(2, current["latest_version"])
+            self.assertEqual(1, len(result["historical_context"]))
+            historical = result["historical_context"][0]
+            self.assertTrue(historical["historical"])
+            self.assertEqual("historical", historical["version_state"])
+            self.assertEqual(2, historical["latest_version"])
+            self.assertEqual("current", historical["status"])
+            self.assertEqual(2, result["returned_count"])
+            self.assertEqual([], result["truncation_reason"])
+
+    def test_history_truncation_reports_omitted_versions(self) -> None:
+        with TemporaryDirectory() as temp:
+            resolved = self._context(Path(temp))
+            capture(resolved, self._request(body="version 1"), date(2026, 7, 22))
+            for version in range(2, 5):
+                capture(resolved, self._request(
+                    operation="revise", expected_version=version - 1,
+                    body=f"version {version}",
+                ), date(2026, 7, 22 + version))
+
+            result = retrieve_context(
+                resolved, "version", include_history=True, max_chars=900
+            )
+
+            self.assertTrue(result["truncated"])
+            self.assertIn("max_chars", result["truncation_reason"])
+            self.assertGreater(result["history_available_count"], result["returned_history_count"])
+            self.assertGreater(result["omitted_history_count"], 0)
+            self.assertLessEqual(result["budget_chars_used"], 900)
+            self.assertTrue(
+                result["history_omitted_entities"]
+                or result["history_omitted_samples_truncated"]
+            )
+
+    def test_max_chars_does_not_return_an_over_budget_first_item(self) -> None:
+        with TemporaryDirectory() as temp:
+            resolved = self._context(Path(temp))
+            capture(resolved, self._request(body="x" * 1000), date(2026, 7, 22))
+
+            result = retrieve_context(resolved, "retry", max_chars=1)
+
+            self.assertEqual([], result["current_context"])
+            self.assertTrue(result["truncated"])
+            self.assertEqual(["max_chars"], result["truncation_reason"])
+
+    def test_audit_profile_enables_history_and_has_larger_defaults(self) -> None:
+        with TemporaryDirectory() as temp:
+            resolved = self._context(Path(temp))
+            capture(resolved, self._request(body="old conclusion"), date(2026, 7, 22))
+            capture(resolved, self._request(
+                operation="revise", expected_version=1,
+                body="new conclusion",
+            ), date(2026, 7, 23))
+
+            result = retrieve_context(resolved, "conclusion", profile="audit")
+
+            self.assertEqual("audit", result["profile"])
+            self.assertTrue(result["history_requested"])
+            self.assertEqual(1, len(result["historical_context"]))
+
+    def test_knowledge_id_lookup_can_read_a_full_entity_history(self) -> None:
+        with TemporaryDirectory() as temp:
+            resolved = self._context(Path(temp))
+            capture(resolved, self._request(body="version 1"), date(2026, 7, 22))
+            capture(resolved, self._request(
+                operation="revise", expected_version=1,
+                body="version 2",
+            ), date(2026, 7, 23))
+
+            result = retrieve_context(
+                resolved,
+                "",
+                knowledge_id="order-retry-idempotency",
+                include_history=True,
+                max_chars=5000,
+            )
+
+            self.assertEqual(
+                ["order-retry-idempotency"],
+                [item["knowledge_id"] for item in result["current_context"]],
+            )
+            self.assertEqual(1, len(result["historical_context"]))
+
     def _evidence_corpus(self, base: Path):
         repo = base / "svc"; repo.mkdir(); (repo / ".git").mkdir()
         resolved = resolve(base / "knowledge", repo)
