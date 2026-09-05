@@ -24,6 +24,10 @@ before the matching Git tag is published.
 
 ### Fixed
 
+- Concurrent first-time initialization validates the knowledge schema under the
+  maintenance lock, so an active initializer's unfinished templates are not
+  mistaken for a legacy root. Unsupported schemas remain rejected, lock timeouts
+  remain explicit, and normal context reads remain lock-free.
 - Result-content character limits cover Current and History items, warnings and
   omission samples using compact JSON character lengths. Metadata samples cannot
   grow with the full corpus; counts remain complete and uninspected history is

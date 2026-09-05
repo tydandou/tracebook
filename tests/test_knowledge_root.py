@@ -1,13 +1,112 @@
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from functools import partial
 import json
 from tempfile import TemporaryDirectory
+from threading import Event
 import unittest
+from unittest.mock import patch
 
 from plugins.tracebook.skills.tracebook.scripts import knowledge_root
 from plugins.tracebook.skills.tracebook.scripts.errors import TracebookError
+from plugins.tracebook.skills.tracebook.scripts.locking import file_lock
 
 
 class KnowledgeRootTest(unittest.TestCase):
+    def test_concurrent_initializer_waits_for_schema_publication(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp) / "knowledge"
+            writing, resume, attempted = Event(), Event(), Event()
+            original_write = knowledge_root.atomic_write_text
+
+            def pause_first_write(*args, **kwargs):
+                if not writing.is_set():
+                    writing.set()
+                    if not resume.wait(10):
+                        raise TimeoutError("Initializer barrier timed out")
+                return original_write(*args, **kwargs)
+
+            @contextmanager
+            def observe_lock(*args, **kwargs):
+                if writing.is_set():
+                    attempted.set()
+                with file_lock(*args, **kwargs):
+                    yield
+
+            with patch.object(knowledge_root, "atomic_write_text", side_effect=pause_first_write), \
+                    patch.object(knowledge_root, "file_lock", observe_lock), \
+                    ThreadPoolExecutor(max_workers=2) as executor:
+                first = executor.submit(knowledge_root.repair_knowledge_root, root)
+                try:
+                    self.assertTrue(writing.wait(5))
+                    self.assertTrue((root / "00-global").is_dir())
+                    self.assertFalse((root / ".tracebook-state/schema.json").exists())
+                    second = executor.submit(knowledge_root.repair_knowledge_root, root)
+                    second.add_done_callback(lambda future: attempted.set())
+                    self.assertTrue(attempted.wait(5))
+                    self.assertFalse(second.done(), "Initializer must wait for the active writer")
+                finally:
+                    resume.set()
+                self.assertTrue(first.result(timeout=10))
+                self.assertEqual((), second.result(timeout=10))
+            self.assertEqual(2, knowledge_root.schema_for_root(root))
+
+    def test_schema_is_checked_after_waiting_for_maintenance(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp) / "knowledge"
+            attempted = Event()
+
+            @contextmanager
+            def observe_lock(*args, **kwargs):
+                attempted.set()
+                with file_lock(*args, **kwargs):
+                    yield
+
+            with patch.object(knowledge_root, "file_lock", observe_lock), \
+                    ThreadPoolExecutor(max_workers=1) as executor:
+                with file_lock(root, "maintenance"):
+                    future = executor.submit(knowledge_root.repair_knowledge_root, root)
+                    self.assertTrue(attempted.wait(5))
+                    (root / ".tracebook-state/schema.json").write_text('{"version": 1}', encoding="utf-8")
+                with self.assertRaises(TracebookError) as raised:
+                    future.result(timeout=10)
+            self.assertEqual("UNSUPPORTED_SCHEMA", raised.exception.code)
+            self.assertFalse((root / "00-global").exists())
+
+    def test_legacy_and_invalid_schema_are_not_repaired_or_migrated(self) -> None:
+        for config, expected in ((None, "UNSUPPORTED_SCHEMA"), ('{"version": 1}', "UNSUPPORTED_SCHEMA"),
+                                 ('invalid', "INVALID_SCHEMA_CONFIG")):
+            with self.subTest(config=config), TemporaryDirectory() as temp:
+                root = Path(temp) / "knowledge"
+                page = root / "01-projects/retained.md"
+                page.parent.mkdir(parents=True)
+                page.write_bytes(b"Existing knowledge\r\n")
+                schema = root / ".tracebook-state/schema.json"
+                if config is not None:
+                    schema.parent.mkdir()
+                    schema.write_text(config, encoding="utf-8")
+                with self.assertRaises(TracebookError) as raised:
+                    knowledge_root.repair_knowledge_root(root)
+                self.assertEqual(expected, raised.exception.code)
+                self.assertEqual(b"Existing knowledge\r\n", page.read_bytes())
+                self.assertFalse((root / "AGENTS.md").exists())
+                self.assertEqual(config, schema.read_text(encoding="utf-8") if schema.exists() else None)
+
+    def test_contended_initialization_retains_explicit_lock_timeout(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp) / "knowledge"
+            knowledge_root.repair_knowledge_root(root)
+            before = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            with file_lock(root, "maintenance"), \
+                    patch.object(knowledge_root, "file_lock", partial(file_lock, timeout=0.05)), \
+                    ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(knowledge_root.repair_knowledge_root, root)
+                with self.assertRaises(TracebookError) as raised:
+                    future.result(timeout=5)
+            self.assertEqual("LOCK_TIMEOUT", raised.exception.code)
+            self.assertEqual(before, {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
     def test_language_config_defaults_to_english_and_accepts_manual_zh_selection(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp) / "tracebook"

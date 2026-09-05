@@ -131,11 +131,12 @@ def repair_knowledge_root(
 ) -> tuple[Path, ...]:
     """Atomically restore missing templates without overwriting existing content."""
     target = target.expanduser().resolve()
-    schema_for_root(target)
-    sources = _template_sources(target, template)
-
     created: list[Path] = []
     with file_lock(target, "maintenance", operation="initialize"):
+        # Validate only after an active initializer has published its schema.
+        # Template directories alone are not evidence of a legacy root mid-write.
+        schema_for_root(target)
+        sources = _template_sources(target, template)
         for relative, source in sorted(sources.items()):
             destination = target / relative
             if source.is_dir():
