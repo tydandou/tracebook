@@ -55,7 +55,7 @@ class PublicArtifactsTest(unittest.TestCase):
         )
 
         self.assertEqual("tracebook", manifest["name"])
-        self.assertEqual("4.0.7", manifest["version"])
+        self.assertEqual("4.0.8", manifest["version"])
         self.assertFalse((ROOT / "plugins" / "tracebook" / "hooks").exists())
         self.assertEqual("./skills/", manifest["skills"])
         self.assertEqual(
@@ -85,11 +85,11 @@ class PublicArtifactsTest(unittest.TestCase):
         )
 
         self.assertEqual("tracebook", manifest["name"])
-        self.assertEqual("4.0.7", manifest["version"])
+        self.assertEqual("4.0.8", manifest["version"])
         self.assertEqual("tracebook", marketplace["name"])
         self.assertIn("evidence-backed project memory", marketplace["description"])
         self.assertEqual("./plugins/tracebook", marketplace["plugins"][0]["source"])
-        self.assertEqual("4.0.7", marketplace["plugins"][0]["version"])
+        self.assertEqual("4.0.8", marketplace["plugins"][0]["version"])
 
     def test_readme_declares_canonical_markdown_link_policy(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -176,9 +176,9 @@ class PublicArtifactsTest(unittest.TestCase):
         llms = (ROOT / "site" / "llms.txt").read_text(encoding="utf-8")
 
         for artifact in (site, chinese_site, llms):
-            self.assertIn("v4.0.7", artifact)
+            self.assertIn("v4.0.8", artifact)
             self.assertNotIn("v4.0.3", artifact)
-        self.assertIn('"softwareVersion": "4.0.7"', site)
+        self.assertIn('"softwareVersion": "4.0.8"', site)
         for token in ("5.1.26100.9168", "7.6.5", "7.4", "7.5", "PowerShell 8"):
             self.assertIn(token, english)
         for token in ("5.1.26100.9168", "7.6.5", "7.4", "7.5", "PowerShell 8"):
@@ -190,7 +190,7 @@ class PublicArtifactsTest(unittest.TestCase):
         normalized_chinese = " ".join(chinese.split())
 
         self.assertNotIn("release candidate", english)
-        self.assertIn("The `4.0.7` release is available", english)
+        self.assertIn("The `4.0.8` release is available", english)
         self.assertIn("marketplace source is absent", english)
         self.assertIn("codex plugin marketplace remove tracebook", english)
         self.assertNotIn("optimized for project core-page", english)
@@ -198,14 +198,18 @@ class PublicArtifactsTest(unittest.TestCase):
         self.assertIn("each level-two knowledge entry", english)
         self.assertIn("version mismatch is an explicit conflict", english)
         self.assertIn("lock-free snapshot reader", english)
+        self.assertIn("`adaptive` profile searches Current first", english)
+        self.assertIn("`adaptive_history_fallback`", english)
 
         self.assertNotIn("发布候选", chinese)
-        self.assertIn("`4.0.7` 已发布", chinese)
+        self.assertIn("`4.0.8` 已发布", chinese)
         self.assertIn("codex plugin marketplace list", chinese)
         self.assertNotIn("针对 project 核心页面的命名方式优化", chinese)
         self.assertIn("每个活跃的持久 Markdown 页面", normalized_chinese)
         self.assertIn("每个二级标题知识条目", normalized_chinese)
         self.assertIn("内容事件幂等", chinese)
+        self.assertIn("`adaptive` 先检索 Current", chinese)
+        self.assertIn("`adaptive_history_fallback`", chinese)
     def test_license_is_apache_2_0(self) -> None:
         license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
 

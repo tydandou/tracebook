@@ -22,7 +22,7 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" preflight --root "$ROOT" --cwd "
 # 2. Load task context (lock-free read). Add --evidence-path <file> to find
 #    knowledge backed by a specific source file.
 python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
-  --root "$ROOT" --cwd "$CWD" --query "<task text>"
+  --root "$ROOT" --cwd "$CWD" --profile adaptive --query "<task text>"
 
 # 3. After the task, once per knowledge item that passes the write gate.
 #    Wrap UTF-8 as an integrity-checked ASCII envelope; never write a temp file.
@@ -79,7 +79,7 @@ applies and what may be captured.
    `~/.tracebook`. Run `$SKILL_DIR/scripts/tracebook_runner.py preflight --root
    <external-root> --cwd <project-root>` first. For an already registered
    project, load task context with `context-read-path --root <external-root>
-   --cwd <project-root> --query <task text>`. This is the normal lock-free read
+   --cwd <project-root> --profile adaptive --query <task text>`. This is the normal lock-free read
    path: it does not initialize, register, repair health, recover transactions,
    or create lock files.
    If `preflight` returns `blocked: true`, execute the command in
@@ -131,7 +131,7 @@ directories, or `99-archive` without a tracing, audit, deep-health, or
 explicit-user reason. This bounds what is read out of the knowledge base; a log
 the user supplies for analysis is task input and is unaffected. After the
 minimal read set, call `tracebook_runner.py context-read-path --cwd
-<project-root> --query <task text>` and read only the returned schema-v2
+<project-root> --profile adaptive --query <task text>` and read only the returned schema-v2
 authority pages. It returns the last committed project snapshot without
 blocking on a same-project writer. A `PROJECT_ACTIVATION_REQUIRED` response
 means the target has not been registered and must be activated with `resolve`
@@ -141,6 +141,13 @@ Retrieval matches literal tokens (CJK bigrams, whole English words) with no
 stemming or synonyms, so prefer words that actually appear in the knowledge —
 if a query returns nothing, retry with terms from the project index or an exact
 `knowledge_id` rather than a paraphrase.
+
+The adaptive opening profile searches Current first. Only when that query has
+zero eligible Current matches does it use History to discover an entity, and it
+still returns the selected Current/as-of version without attaching History by
+default. Check `adaptive_history_fallback`, `match_source`, and
+`matched_version`; adaptive does not infer synonyms, judge relevance, widen
+scope, or replace the explicit audit required for historical analysis.
 
 When the task asks about history, versions, changes, Git commits, code
 evolution, regression, or why a decision changed, use `--profile audit` before
@@ -276,6 +283,13 @@ the gate: a defect investigation that read the code to locate the fault normally
 qualifies, and that conclusion is worth keeping. What fails is a conclusion
 resting on logs alone, temporary Q&A, unverified inference, or when the user
 prohibits a write. Never capture raw logs as the knowledge itself.
+
+Evaluate against the task's final state. If source, tests, configuration, Git
+commit or tag, deployment, or release state changes after a capture, re-read the
+affected `knowledge_id` and evaluate the write gate again. A release entity is
+created or revised only after its final tag target, verification results, and
+published state are known. Preserve an earlier verified event in History; do not
+rewrite it as though it never occurred.
 
 A revise records a material change to the durable entity: its conclusion,
 governed evidence, title, or lifecycle facts. New evidence warrants a revise

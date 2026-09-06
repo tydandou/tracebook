@@ -144,6 +144,16 @@ class SkillWorkflowTest(unittest.TestCase):
         self.assertIn("normal lock-free read", skill)
         self.assertIn("PROJECT_ACTIVATION_REQUIRED", skill)
 
+    def test_skill_uses_adaptive_opening_and_rechecks_final_state(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("--profile adaptive --query <task text>", skill)
+        self.assertIn("zero eligible Current matches", skill)
+        self.assertIn("adaptive_history_fallback", skill)
+        self.assertIn("If source, tests, configuration, Git", skill)
+        self.assertIn("after a capture, re-read", skill)
+        self.assertIn("final tag target", skill)
+
     def test_skill_discovers_local_project_docs_independently_of_git(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 

@@ -66,6 +66,7 @@ QUERY_CASES = (
     ("cross-language", {"query": "套接字截止时间"}, (), ("socket-policy",)),
     ("old-term-default", {"query": "Legacyhandoff"}, (), ("refund-policy",)),
     ("old-term-attachment", {"query": "Legacyhandoff", "include_history": True}, (), ("refund-policy",)),
+    ("old-term-adaptive", {"query": "Legacyhandoff", "profile": "adaptive"}, ("refund-policy",), ("refund-policy",)),
     ("old-term-audit", {"query": "Legacyhandoff", "profile": "audit"}, ("refund-policy",), ("refund-policy",)),
     ("past-as-of", {"query": "Legacyhandoff", "profile": "audit", "as_of": date(2026, 9, 1)}, ("refund-policy",), ("refund-policy",)),
     ("future-term-as-of", {"query": "Currenthandoff", "profile": "audit", "as_of": date(2026, 9, 1)}, (), ()),
@@ -98,6 +99,9 @@ class RetrievalAcceptanceTest(unittest.TestCase):
                     if name == "old-term-audit":
                         self.assertEqual(2, result["current_context"][0]["version"])
                         self.assertEqual(1, result["current_context"][0]["matched_version"])
+                    if name == "old-term-adaptive":
+                        self.assertTrue(result["adaptive_history_fallback"])
+                        self.assertEqual([], result["historical_context"])
                     if name == "superseded-explicit":
                         self.assertEqual("replacement-policy", result["current_context"][0]["replacement_knowledge_id"])
             self.assertEqual(before, fingerprint(context.root))

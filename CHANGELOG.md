@@ -5,6 +5,31 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.8] - 2026-09-06
+
+### Added
+
+- Added the bounded `adaptive` retrieval profile. It searches Current first and,
+  only after zero eligible Current matches, retries History discovery while still
+  returning the selected Current/as-of version without attaching History by
+  default. Results expose `adaptive_history_fallback` for verification.
+- Retrieval acceptance and copied-package CLI workflows cover adaptive hits,
+  misses, exact-ID bypass, Current fast paths, snapshot purity, and all three
+  supported project modes: plain directories, Git without a remote, and Git
+  repositories with equivalent remotes.
+
+### Changed
+
+- The Skill's normal opening read now uses `--profile adaptive`; explicit
+  historical, version, regression, commit, and change-rationale analysis still
+  uses the larger `audit` profile.
+- The durable-knowledge write gate is evaluated against the task's final state.
+  A source, test, configuration, commit, tag, deployment, or release change after
+  capture requires the affected knowledge IDs to be read and evaluated again.
+- Plugin manifests, tagged installation guidance, public site surfaces, and
+  release validation identify v4.0.8. Git remains optional and the schema,
+  project identity, snapshot, and external-only storage contracts are unchanged.
+
 ## [4.0.7] - 2026-09-05
 
 ### Added

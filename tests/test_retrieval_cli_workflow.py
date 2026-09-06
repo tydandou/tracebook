@@ -1,4 +1,4 @@
-"""Multi-session CLI acceptance of v4.0.7 in source and copied packages."""
+"""Multi-session CLI acceptance of v4.0.8 in source and copied packages."""
 
 from datetime import date
 import hashlib
@@ -100,6 +100,11 @@ class RetrievalCLIWorkflowTest(unittest.TestCase):
 
         self.assertEqual([], read("--query", "Legacyhandoff")["current_context"])
         self.assertEqual([], read("--query", "Legacyhandoff", "--include-history")["current_context"])
+        adaptive = read("--query", "Legacyhandoff", "--profile", "adaptive")
+        self.assertTrue(adaptive["adaptive_history_fallback"])
+        self.assertEqual([], adaptive["historical_context"])
+        self.assertEqual(2, adaptive["current_context"][0]["version"])
+        self.assertEqual(1, adaptive["current_context"][0]["matched_version"])
         found = read("--query", "Legacyhandoff", "--profile", "audit")
         entity, = found["current_context"]
         self.assertEqual(2, entity["version"])

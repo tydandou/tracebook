@@ -41,7 +41,7 @@
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.7
+codex plugin marketplace add tydandou/tracebook --ref v4.0.8
 codex plugin add tracebook@tracebook
 ```
 
@@ -174,7 +174,7 @@ PowerShell 传输兼容性按证据等级声明：
 
 ## 安装
 
-`4.0.7` 已发布，对应 `v4.0.7` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.8` 已发布，对应 `v4.0.8` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -182,7 +182,7 @@ PowerShell 传输兼容性按证据等级声明：
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.7
+codex plugin marketplace add tydandou/tracebook --ref v4.0.8
 codex plugin add tracebook@tracebook
 ```
 
@@ -208,7 +208,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.7
+codex plugin marketplace add tydandou/tracebook --ref v4.0.8
 codex plugin add tracebook@tracebook
 ```
 
@@ -217,7 +217,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.7
+codex plugin marketplace add tydandou/tracebook --ref v4.0.8
 codex plugin add tracebook@tracebook
 ```
 
@@ -393,12 +393,15 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" resolve \
 
 ```sh
 python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
-  --root "$TRACEBOOK_ROOT" --cwd . --query "订单重试规则"
+  --root "$TRACEBOOK_ROOT" --cwd . --profile adaptive --query "订单重试规则"
 ```
 
 如果返回 `PROJECT_ACTIVATION_REQUIRED`，先在具有写权限的环境执行一次 `resolve`，再重试读取。项目知识写入会生成完整的不可变快照；只有全部页面准备完成后才原子切换指针。因此读取方只能看到旧完整快照或新完整快照，不会看到部分写入。
 
-默认检索只返回匹配的 `current` 权威页。涉及历史、版本、变更、Git 提交、代码演进、回归或“为什么修改”时，使用有界的审计预设；当前工作树的 `git status` 或 `git diff` 检查不要求读取 History，除非任务明确要求历史背景：
+`adaptive` 先检索 Current，仅在合格 Current 零命中时用 History 发现实体；仍返回所选当前/as-of
+版本，默认不附带 History，保持 10 个实体/20,000 字符上限，并输出
+`adaptive_history_fallback`。未指定 profile 的既有调用继续保持 Current-only 的 `default`
+行为。涉及历史、版本、变更、Git 提交、代码演进、回归或“为什么修改”时，使用有界的审计预设；当前工作树的 `git status` 或 `git diff` 检查不要求读取 History，除非任务明确要求历史背景：
 
 ```sh
 python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
@@ -433,7 +436,8 @@ omitted_entities、history_omitted_entities 的紧凑 JSON 数组内容字符数
 `budget_chars_used` 报告用量；省略样本最多 10 个、携带权威页路径且共享预算，计数保持完整。
 `history_available: null` 表示尚未检查历史，而不是没有历史。
 
-零结果、截断或依据不足时，使用源码路径、ID 或已记录术语定向补查；旧术语可通过 audit 定位。
+零结果、截断或依据不足时，使用源码路径、ID 或已记录术语定向补查。adaptive 可在 Current
+零命中后找回只存在于 History 的术语；历史分析仍使用 audit。
 组合读取时核对 `read_snapshots` 和版本，采用结论前核验适用性和源码。Skill 限制补查次数与总预算，
 无法确认时说明缺口。只读的 audit 检索预设与会持久化 Deep 健康报告的 `audit` 命令不同。
 
@@ -745,7 +749,7 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v4.0.7` 版本。
+`v4.0.8` 版本。
 
 ## 稳定范围与保证
 

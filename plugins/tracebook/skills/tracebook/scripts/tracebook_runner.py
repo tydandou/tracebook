@@ -105,7 +105,7 @@ else:
     from .transaction import TransactionDiagnostic, inspect_transactions, recover_transactions
 
 
-RETRIEVAL_PROFILES = {"default", "reference", "audit"}
+RETRIEVAL_PROFILES = {"default", "adaptive", "reference", "audit"}
 
 
 def _retrieval_options(
@@ -131,6 +131,46 @@ def _retrieval_options(
     if max_results < 1 or max_chars < 1:
         raise ValueError("INVALID_REQUEST: result limits must be positive")
     return include_history, max_results, max_chars
+
+
+def _build_profile_context(
+    root: Path,
+    project: Path,
+    project_id: str,
+    name: str,
+    slug: str,
+    query: str,
+    *,
+    profile: str,
+    **options: object,
+) -> dict[str, object]:
+    """Build one bounded result, with History as an adaptive zero-hit fallback.
+
+    Adaptive reads keep the default Current-only cost when Current matches.  A
+    natural-language query with no eligible Current match is retried with
+    History discovery, while the selected Current/as-of version remains the
+    returned result.  Exact ID and evidence-only reads already have deterministic
+    lookup keys and therefore never need this fallback.
+    """
+    initial = dict(options)
+    initial["discover_history"] = profile == "audit"
+    payload = build_context(
+        root, project, project_id, name, slug, query, **initial
+    )
+    fallback = (
+        profile == "adaptive"
+        and bool(query.strip())
+        and options.get("knowledge_id") is None
+        and payload["matched_count"] == 0
+    )
+    if fallback:
+        retry = dict(options)
+        retry["discover_history"] = True
+        payload = build_context(
+            root, project, project_id, name, slug, query, **retry
+        )
+    payload["adaptive_history_fallback"] = fallback
+    return payload
 
 
 def default_root() -> Path:
@@ -433,13 +473,14 @@ def retrieve_context(
         knowledge_roots[project.project_id] = knowledge_root
         if mode == "legacy":
             legacy_projects.append(project.project_id)
-    payload = build_context(
+    payload = _build_profile_context(
         resolved.root,
         resolved.root / resolved.record.relative_path,
         resolved.record.project_id,
         resolved.record.name,
         resolved.record.slug,
         query,
+        profile=profile,
         projects=tuple(selected),
         include_history=include_history,
         as_of=as_of,
@@ -452,7 +493,6 @@ def retrieve_context(
         project_knowledge_roots=knowledge_roots,
         knowledge_id=knowledge_id,
         full_content=full_content,
-        discover_history=profile == "audit",
         query_warnings=("legacy snapshot fallback: " + ", ".join(sorted(legacy_projects)),)
         if legacy_projects else (),
     )
@@ -541,12 +581,13 @@ def read_context(
     if selected_evidence_paths and not evidence_keys and not query.strip() and not knowledge_id:
         # Every evidence-path failed to parse and no query remains; return the
         # warnings without a full-corpus scan rather than raising.
-        payload = build_context(
+        payload = _build_profile_context(
             resolved_root, resolved_root / primary.relative_path,
             primary.project_id, primary.name, primary.slug, query,
+            profile=profile,
             projects=tuple(selected), max_results=max_results, max_chars=max_chars,
             query_warnings=tuple(evidence_warnings), full_content=full_content,
-            include_history=include_history, discover_history=profile == "audit",
+            include_history=include_history,
         )
         payload.update(profile=profile, history_requested=include_history,
                        knowledge_id=knowledge_id, read_snapshots={})
@@ -567,13 +608,14 @@ def read_context(
             else:
                 snapshot_roots.append(knowledge_root)
         try:
-            candidate_payload = build_context(
+            candidate_payload = _build_profile_context(
                 resolved_root,
                 resolved_root / primary.relative_path,
                 primary.project_id,
                 primary.name,
                 primary.slug,
                 query,
+                profile=profile,
                 projects=tuple(selected),
                 include_history=include_history,
                 as_of=as_of,
@@ -587,7 +629,6 @@ def read_context(
                 evidence_keys=tuple(evidence_keys),
                 knowledge_id=knowledge_id,
                 full_content=full_content,
-                discover_history=profile == "audit",
                 query_warnings=tuple(evidence_warnings) + (
                     ("legacy snapshot fallback: " + ", ".join(sorted(legacy_projects)),)
                     if legacy_projects else ()
@@ -1035,7 +1076,7 @@ def main(argv: list[str] | None = None) -> int:
     context_read_parser.add_argument("--as-of")
     context_read_parser.add_argument("--status", default="current")
     context_read_parser.add_argument("--kind")
-    context_read_parser.add_argument("--profile", choices=("default", "reference", "audit"), default="default")
+    context_read_parser.add_argument("--profile", choices=("default", "adaptive", "reference", "audit"), default="default")
     context_read_parser.add_argument("--scope", choices=("project", "domain", "pattern", "all"), default="project")
     context_read_parser.add_argument("--max-results", type=int, default=None)
     context_read_parser.add_argument("--max-chars", type=int, default=None)
@@ -1051,7 +1092,7 @@ def main(argv: list[str] | None = None) -> int:
     context_read_path_parser.add_argument("--as-of")
     context_read_path_parser.add_argument("--status", default="current")
     context_read_path_parser.add_argument("--kind")
-    context_read_path_parser.add_argument("--profile", choices=("default", "reference", "audit"), default="default")
+    context_read_path_parser.add_argument("--profile", choices=("default", "adaptive", "reference", "audit"), default="default")
     context_read_path_parser.add_argument("--scope", choices=("project", "domain", "pattern", "all"), default="project")
     context_read_path_parser.add_argument("--max-results", type=int, default=None)
     context_read_path_parser.add_argument("--max-chars", type=int, default=None)
@@ -1100,7 +1141,7 @@ def main(argv: list[str] | None = None) -> int:
     context_parser.add_argument("--kind")
     context_parser.add_argument("--project-id", action="append", default=[])
     context_parser.add_argument("--system-id", action="append", default=[])
-    context_parser.add_argument("--profile", choices=("default", "reference", "audit"), default="default")
+    context_parser.add_argument("--profile", choices=("default", "adaptive", "reference", "audit"), default="default")
     context_parser.add_argument("--scope", choices=("project", "domain", "pattern", "all"), default="project")
     context_parser.add_argument("--max-results", type=int, default=None)
     context_parser.add_argument("--max-chars", type=int, default=None)

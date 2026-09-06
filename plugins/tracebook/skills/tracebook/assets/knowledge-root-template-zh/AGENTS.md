@@ -17,7 +17,7 @@
 4. `00-global/health/health-status.md`。
 5. 解析器返回的当前项目路径，再读其 `index.md`。
 6. 当前项目的 `project-status.md`。
-7. 用任务原文执行 runner 的 `context-read-path`（即 Skill 的 Quick Start
+7. 用任务原文执行 runner 的 `context-read-path --profile adaptive`（即 Skill 的 Quick Start
    步骤 2）。若 `preflight` 返回 `blocked: true`，先执行其
    `required_action.argv`，再回到这一步。
 8. 只读该命令返回的、与任务相关的权威页。

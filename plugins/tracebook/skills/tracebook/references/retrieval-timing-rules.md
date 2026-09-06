@@ -15,8 +15,9 @@ immutable snapshot — so the same key against the same snapshot returns a
 byte-identical result. Re-querying an unchanged key therefore tends to add
 nothing, unless this task has captured knowledge since, which moves the snapshot.
 
-A single query is a local file scan: no network, no embedding, no index. It is
-cheap enough that querying when unsure is the cheaper mistake than skipping.
+A single query is a local file scan: no network, no embedding, no index. The
+adaptive opening reads Current first and scans History only after zero eligible
+Current matches, keeping the common path bounded while recovering an old term.
 
 Routine work with no durable question — a typo fix, a single test run, a pure
 language question — normally needs none.
@@ -30,8 +31,10 @@ query result means no match for that key, not that no relevant knowledge exists.
 - Use paths, IDs or terms obtained from source/index navigation for a targeted
   follow-up; whole English words and CJK bigrams do not imply synonyms, stemming
   or translation. Do not manufacture a business synonym dictionary.
-- If a previous name or rule may have disappeared from Current, explicitly use
-  profile audit. A History hit discovers an eligible entity; read its selected
+- The adaptive opening already retries History after zero Current matches. If a
+  previous name or rule may have disappeared from Current, or the task asks for
+  versions, changes, regressions, commits, or rationale, explicitly use profile
+  audit. A History hit discovers an eligible entity; read its selected
   version, not the historical match as today's fact. Preserve project/kind/status
   filters. Never automatically search all projects or resurrect retired entities.
 - Read a few decisive entities with knowledge-id and full-content. If read_snapshots

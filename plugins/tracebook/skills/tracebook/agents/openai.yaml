@@ -1,6 +1,6 @@
 interface:
   display_name: "Tracebook"
   short_description: "Evidence-backed memory for coding agents"
-  default_prompt: "Use $tracebook to load project knowledge, follow up insufficient results with concrete keys, read complete decisive entities, and capture only verified durable conclusions."
+  default_prompt: "Use $tracebook to load project knowledge with the adaptive Current-first read, follow up insufficient results with concrete keys, read complete decisive entities, and capture only verified durable conclusions from the task's final state."
 policy:
   allow_implicit_invocation: true

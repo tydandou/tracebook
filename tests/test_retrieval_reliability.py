@@ -66,6 +66,41 @@ class RetrievalReliabilityTest(unittest.TestCase):
             self.assertEqual("current", current["version_state"])
             self.assert_budget(result, 50000)
 
+    def test_adaptive_profile_uses_history_only_after_zero_current_matches(self):
+        self.revised()
+        current = self.read("currenthandoff", profile="adaptive")
+        self.assertFalse(current["adaptive_history_fallback"])
+        self.assertFalse(current["history_inspected"])
+        self.assertEqual("selected_version", current["current_context"][0]["match_source"])
+
+        for result in (
+            self.read("legacyhandoff", profile="adaptive"),
+            retrieve_context(self.resolved, "legacyhandoff", profile="adaptive"),
+            read_context(
+                self.resolved.root,
+                (self.resolved.record.project_id,),
+                "legacyhandoff",
+                profile="adaptive",
+            ),
+        ):
+            selected, = result["current_context"]
+            self.assertTrue(result["adaptive_history_fallback"])
+            self.assertTrue(result["history_inspected"])
+            self.assertEqual([], result["historical_context"])
+            self.assertEqual(2, selected["version"])
+            self.assertEqual("history", selected["match_source"])
+            self.assertEqual(1, selected["matched_version"])
+            self.assert_budget(result, 20000)
+
+        unknown = self.read("unknownhistoricalterm", profile="adaptive")
+        self.assertTrue(unknown["adaptive_history_fallback"])
+        self.assertTrue(unknown["history_inspected"])
+        self.assertEqual([], unknown["current_context"])
+
+        exact = self.read(knowledge_id="retry-rule", profile="adaptive")
+        self.assertFalse(exact["adaptive_history_fallback"])
+        self.assertFalse(exact["history_inspected"])
+
     def test_full_content_is_complete_from_snapshot_and_explicitly_bounded(self):
         body = "正文和引号 \"\\\"\n" * 100 + "关键结论 newtailtoken"
         written = self.write(body=body)

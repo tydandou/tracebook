@@ -19,7 +19,7 @@ For a business-project task, read in this order:
 4. `00-global/health/health-status.md`.
 5. The current project path returned by the resolver, then its `index.md`.
 6. The current project `project-status.md`.
-7. Run the Runner's `context-read-path` with the task wording — step 2 of the
+7. Run the Runner's `context-read-path --profile adaptive` with the task wording — step 2 of the
    Skill's Quick Start. If `preflight` returned `blocked: true`, execute its
    `required_action.argv` first, then return to this step.
 8. Only task-relevant authority pages returned by that command.
