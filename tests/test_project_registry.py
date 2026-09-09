@@ -93,6 +93,19 @@ class ProjectRegistryTest(unittest.TestCase):
             self.assertEqual("github.com/acme/widgets", second.remotes[0])
             self.assertEqual({str(first_path.resolve()), str(second_path.resolve())}, set(second.locations))
 
+    def test_unicode_git_root_and_remote_preserve_identity(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = self._root(base)
+            project = self._git_project(base, "中文 source's", "https://example.com/团队/规则.git")
+            first = ensure_project(root, project)
+            nested = project / "nested"
+            nested.mkdir()
+            second = ensure_project(root, nested)
+            self.assertEqual(first.project_id, second.project_id)
+            self.assertEqual((str(project.resolve()),), second.locations)
+            self.assertEqual(("example.com/团队/规则",), second.remotes)
+
     def test_same_name_without_a_shared_signal_creates_distinct_projects(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)

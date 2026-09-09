@@ -1,4 +1,4 @@
-"""Multi-session CLI acceptance of v4.0.8 in source and copied packages."""
+"""Multi-session CLI acceptance of v4.0.9 in source and copied packages."""
 
 from datetime import date
 import hashlib
@@ -27,7 +27,7 @@ class RetrievalCLIWorkflowTest(unittest.TestCase):
     maxDiff = None
 
     def run_flow(self, runner, base, mode):
-        source = base / "source"
+        source = base / "source 中文's"
         source.mkdir()
         if mode != "plain":
             subprocess.run(["git", "init", "-q", str(source)], check=True, capture_output=True)
@@ -37,7 +37,7 @@ class RetrievalCLIWorkflowTest(unittest.TestCase):
         (source / "src").mkdir()
         (source / "src/retry.py").write_text("ATTEMPTS = 2\n", encoding="utf-8")
         source_before = fingerprint(source)
-        knowledge = base / "kb"
+        knowledge = base / "kb 知识's"
         trace = []
 
         def call(command, *args, request=None, expected=0):
@@ -68,12 +68,25 @@ class RetrievalCLIWorkflowTest(unittest.TestCase):
                     health_args.extend(("--changed", path))
                 for path in result["new_paths"]:
                     health_args.extend(("--new-path", path))
-                checked = call("check", *health_args)
+                # Exercise the shipped closeout example against actual captures;
+                # do not duplicate the existing comprehensive retrieval flow.
+                verifier = runner.parent.parent / "examples" / "verify_capture.py"
+                process = subprocess.run(
+                    [sys.executable, "-B", str(verifier), "--root", str(knowledge),
+                     "--cwd", str(source), "--today", "2026-09-05"],
+                    input=encode_envelope(json.dumps(result, ensure_ascii=False).encode("utf-8")),
+                    cwd=base, capture_output=True, timeout=90)
+                self.assertEqual(0, process.returncode, process.stdout.decode("utf-8") +
+                                 process.stderr.decode("utf-8"))
+                closeout = json.loads(process.stdout)
+                self.assertEqual("completed", closeout["verification"])
+                checked = closeout["check"]["response"]
+                trace.append(("check", health_args, checked))
                 self.assertEqual([], checked["findings"]["entity_issues"])
                 self.assertEqual([], checked["findings"]["missing_sources"])
                 if checked["check_type"] == "Deep":
-                    call("audit", "--cwd", str(source), "--source-root", str(source),
-                         "--scope", result["health_scope"], "--today", "2026-09-05")
+                    self.assertEqual("completed", closeout["audit"]["state"])
+                    trace.append(("audit", health_args, closeout["audit"]["response"]))
             return result
 
         def read(*args, cwd=source):
@@ -89,6 +102,11 @@ class RetrievalCLIWorkflowTest(unittest.TestCase):
         identity = registered["project"]["project_id"]
         self.assertTrue((knowledge / "AGENTS.md").is_file())
         self.assertFalse((knowledge / registered["project"]["relative_path"] / "AGENTS.md").exists())
+        # Establish an earlier real audit so the later capture/check must take
+        # the Deep branch, without editing private health state in the fixture.
+        for scope in ("project", "domain", "pattern"):
+            call("audit", "--cwd", str(source), "--source-root", str(source),
+                 "--scope", scope, "--today", "2026-07-01")
         first = write()
         self.assertTrue(write()["skipped"])
         body = "规则说明。" * 110 + "当前结论 Currenthandoff：只尝试两次，失败后停止。"
@@ -179,6 +197,10 @@ class RetrievalCLIWorkflowTest(unittest.TestCase):
                          "context-read-path", "transactions"}
                         <= {command for command, _, _ in trace})
         self.assertTrue(Path(first["new_paths"][0]).is_file())
+        for scope in ("project", "domain", "pattern"):
+            self.assertTrue(any(command == "check" and result["check_type"] == "Deep"
+                                and args[args.index("--scope") + 1] == scope
+                                for command, args, result in trace))
 
     def test_source_cli_three_project_modes(self):
         for mode in ("plain", "git", "remote"):

@@ -60,7 +60,7 @@ jobs:
       - name: Validate Skill package
         run: python plugins/tracebook/skills/tracebook/scripts/validate_skill_package.py
       - name: Compile Python sources
-        run: python -m compileall -q plugins/tracebook/skills/tracebook/scripts tests
+        run: python -m compileall -q plugins/tracebook/skills/tracebook/scripts plugins/tracebook/skills/tracebook/examples tests
       - name: Check pull request whitespace
         if: github.event_name == 'pull_request'
         shell: bash

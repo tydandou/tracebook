@@ -41,7 +41,7 @@
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.8
+codex plugin marketplace add tydandou/tracebook --ref v4.0.9
 codex plugin add tracebook@tracebook
 ```
 
@@ -174,7 +174,7 @@ PowerShell 传输兼容性按证据等级声明：
 
 ## 安装
 
-`4.0.8` 已发布，对应 `v4.0.8` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.9` 已发布，对应 `v4.0.9` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -182,7 +182,7 @@ PowerShell 传输兼容性按证据等级声明：
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.8
+codex plugin marketplace add tydandou/tracebook --ref v4.0.9
 codex plugin add tracebook@tracebook
 ```
 
@@ -208,7 +208,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.8
+codex plugin marketplace add tydandou/tracebook --ref v4.0.9
 codex plugin add tracebook@tracebook
 ```
 
@@ -217,7 +217,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.8
+codex plugin marketplace add tydandou/tracebook --ref v4.0.9
 codex plugin add tracebook@tracebook
 ```
 
@@ -740,18 +740,25 @@ python -m unittest discover -s tests -v
 
 ```text
 python plugins/tracebook/skills/tracebook/scripts/validate_skill_package.py
-python -m compileall -q plugins/tracebook/skills/tracebook/scripts tests
+python -m compileall -q plugins/tracebook/skills/tracebook/scripts plugins/tracebook/skills/tracebook/examples tests
 git diff --check
 ```
 
-仓库 CI 会在 Ubuntu 和 Windows 上使用 Python 3.10 与 3.13 运行完整测试和上述静态
+仓库 CI 会在 Ubuntu、Windows 和 macOS 上使用 Python 3.10 与 3.13 运行完整测试和上述静态
 检查。Linux 会执行在缺少符号链接权限的 Windows 主机上可能跳过的符号链接边界用例。
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v4.0.8` 版本。
+`v4.0.9` 版本。
 
 ## 稳定范围与保证
+
+完整入库收尾可使用随包分发的
+[收尾流程](plugins/tracebook/skills/tracebook/references/closeout-workflow.md)和
+[可执行示例](plugins/tracebook/skills/tracebook/examples/verify_capture.py)。
+它将 capture 返回的全部路径和 scope 传给 check，按需执行 Deep audit，分别保留写入、
+警告、检查和审计结果；不会重试 capture，也不会把待复核发现认定为事实。
+自动触发仍依赖宿主，确定性 CLI 测试不代表宿主触发可靠性。
 
 Tracebook 已完整覆盖本文档描述的本地、基于证据的项目记忆工作流。以下边界是有意提供的
 安全保证，而不是尚未补齐的运行时依赖：
@@ -762,7 +769,7 @@ Tracebook 已完整覆盖本文档描述的本地、基于证据的项目记忆�
 - 不包含生命周期 Hook。自动选择 Skill 仍取决于宿主，但可随时显式调用 `$tracebook`。
 - 不会自动确认业务陈述或 Deep 审计发现为真；证据和人工复核仍具有权威性。
 - 不在业务仓库内安装，也不生成仓库配置。
-- 发布 CI 配置为在 Ubuntu 和 Windows 上验证 Python 3.10 与 3.13；不声明该矩阵之外
+- 发布 CI 配置为在 Ubuntu、Windows 和 macOS 上验证 Python 3.10 与 3.13；不声明该矩阵之外
   的环境兼容性。
 - 生成输出使用 Markdown 链接。Wikilink 是审计和手工编辑的兼容输入，不是生成输出。
 - Deep 候选提取会扫描所选 project、domain 或 pattern 范围内的每个活跃的持久

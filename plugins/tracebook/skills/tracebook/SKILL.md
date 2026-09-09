@@ -51,7 +51,12 @@ pipeline. A request with high-confidence lossy-text markers is rejected before
 project resolution; use `--allow-suspicious-encoding` only for intentional
 ASCII question-mark runs or replacement-marker text.
 
-Then verify the write with `check` (see Verify Knowledge Writes). The block above
+Then verify the write with `check` (see Verify Knowledge Writes). For a complete
+capture → immediate user summary → check → conditional audit → final review
+sequence, read the [closeout workflow](references/closeout-workflow.md) and use
+the packaged [executable example](examples/verify_capture.py) with the retained
+capture response. It preserves separate write/check/audit results and never
+replays capture. The block above
 settles only which command to run; the sections below govern when each step
 applies and what may be captured.
 
@@ -382,6 +387,12 @@ and pattern paths use scope plus `knowledge_id`, while `kind` remains governed
 metadata. Do not create aggregate pages or use a topic split to route schema-v2 knowledge. Apply
 frontmatter and lifecycle labels when required.
 ## Verify Knowledge Writes
+
+Use [closeout workflow](references/closeout-workflow.md) when executing this
+phase, especially across Windows host/shell boundaries or after partial
+failure. A skipped capture is no new write, not proof of a new health check.
+If verification fails after capture, report the committed write separately
+from incomplete health verification; do not retry capture to fix a check.
 
 After every successful capture, require `changed_paths`, `new_paths`, and
 `health_scope` in its structured JSON. Stop and report an incomplete runner

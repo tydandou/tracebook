@@ -47,7 +47,7 @@ new agent session:
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.8
+codex plugin marketplace add tydandou/tracebook --ref v4.0.9
 codex plugin add tracebook@tracebook
 ```
 
@@ -201,7 +201,7 @@ PowerShell transport compatibility is stated by evidence level:
 
 ## Install
 
-The `4.0.8` release is available as the `v4.0.8` tag. Use the tagged
+The `4.0.9` release is available as the `v4.0.9` tag. Use the tagged
 installation commands for the stable release, or use the local development
 loading instructions when working from a clone.
 
@@ -210,7 +210,7 @@ loading instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.8
+codex plugin marketplace add tydandou/tracebook --ref v4.0.9
 codex plugin add tracebook@tracebook
 ```
 
@@ -238,7 +238,7 @@ Removing a plugin never touches its knowledge root. If
 `codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.8
+codex plugin marketplace add tydandou/tracebook --ref v4.0.9
 codex plugin add tracebook@tracebook
 ```
 
@@ -247,7 +247,7 @@ To move to a different tagged source, replace the marketplace first:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.8
+codex plugin marketplace add tydandou/tracebook --ref v4.0.9
 codex plugin add tracebook@tracebook
 ```
 
@@ -892,20 +892,28 @@ Validate the Skill package, compile Python sources, and check whitespace:
 
 ```text
 python plugins/tracebook/skills/tracebook/scripts/validate_skill_package.py
-python -m compileall -q plugins/tracebook/skills/tracebook/scripts tests
+python -m compileall -q plugins/tracebook/skills/tracebook/scripts plugins/tracebook/skills/tracebook/examples tests
 git diff --check
 ```
 
 The repository CI runs the full suite and these static checks with Python 3.10
-and 3.13 on Ubuntu and Windows. Linux exercises the symlink boundary cases that
+and 3.13 on Ubuntu, Windows and macOS. Linux exercises the symlink boundary cases that
 may be skipped on Windows hosts without symlink privileges.
 
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v4.0.8` release.
+resolves the published `v4.0.9` release.
 
 ## Stable Scope and Guarantees
+
+For a complete post-capture sequence, use the packaged
+[closeout workflow](plugins/tracebook/skills/tracebook/references/closeout-workflow.md)
+and [executable example](plugins/tracebook/skills/tracebook/examples/verify_capture.py).
+It forwards capture paths and scope to check, conditionally runs Deep audit, and
+preserves write/warning/check/audit outcomes separately. It never retries capture
+or treats review findings as proof. Automatic host invocation remains
+host-dependent; deterministic CLI tests do not measure invocation reliability.
 
 Tracebook is complete for the local, evidence-backed project-memory workflow
 documented here. The following boundaries are deliberate guarantees, not missing
@@ -920,7 +928,7 @@ runtime dependencies:
 - No automatic confirmation that a business statement or Deep-audit finding is
   true; evidence and human review remain authoritative.
 - No business-repository installation or generated repository configuration.
-- Release CI is configured for Python 3.10 and 3.13 on Ubuntu and Windows;
+- Release CI is configured for Python 3.10 and 3.13 on Ubuntu, Windows and macOS;
   environments outside that matrix are not claimed.
 - Generated output uses Markdown links. Wikilinks are compatibility input for
   auditing and manual editing, not generated output.

@@ -1,0 +1,21 @@
+{
+  "verification_level": "Opt-in real host experiment; not an offline CI assertion or invocation-rate estimate",
+  "fixture": {
+    "source": "src/retry.py contains only ATTEMPTS = 2 followed by a newline",
+    "skill": "copy the version under test to the temporary project's .agents/skills/tracebook",
+    "knowledge": "new external sibling directory, passed only to the child as TRACEBOOK_ROOT",
+    "repository": "fresh Git repository without a remote"
+  },
+  "prompt": "Inspect src/retry.py and explain the configured attempt limit. Record this verified durable project rule in the external knowledge root provided by TRACEBOOK_ROOT and report the actual write and health outcome. Do not change source, commit, use other agents, or access unrelated projects. Complete only this small task.",
+  "explicit_prefix": "Use $tracebook at <copied-skill>/SKILL.md. ",
+  "observations": [
+    "Actual copied SKILL.md read, not just a claim of skill invocation",
+    "Read-only preflight, activation when blocked, context load before engineering work",
+    "Capture response and authority page exist with evidence and verification boundary",
+    "Returned user_summary is reproduced in the next agent message before check",
+    "Check receives all changed/new paths and exact scope; Deep requires audit",
+    "Final report separates source static inspection, committed write, and actual health outcome",
+    "Source fingerprint remains unchanged; no unrelated project or Git writes"
+  ],
+  "limits": "One explicit and one implicit sample per version do not establish reliable automatic discovery, universal host compatibility, or a quantified improvement. Classify environment startup errors separately. Preserve local redacted traces rather than storing raw transcripts as knowledge."
+}

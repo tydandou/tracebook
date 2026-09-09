@@ -85,6 +85,7 @@ def repository_root(cwd: Path) -> Path:
         capture_output=True,
         check=False,
         text=True,
+        encoding="utf-8",
     )
     if result.returncode == 0:
         return Path(result.stdout.strip()).resolve()
@@ -101,6 +102,7 @@ def _origin_remote_raw(repo: Path) -> str:
         capture_output=True,
         check=False,
         text=True,
+        encoding="utf-8",
     )
     return result.stdout.strip()
 

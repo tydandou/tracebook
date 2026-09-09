@@ -5,6 +5,36 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.9] - 2026-09-10
+
+### Added
+
+- A packaged executable closeout example consumes an existing capture receipt,
+  validates its paths and scope, invokes check with every changed/new path, and
+  runs audit when a Deep check requests it. Capture and health remain separate
+  commands; no schema, Runner API, dependency or background service was added.
+- Closeout guidance covers the write gate, immediate user summary, Bash/Zsh and
+  PowerShell pipelines, JavaScript path literals, partial success, diagnostic
+  layers, and final-state knowledge re-evaluation.
+- Regression coverage includes malformed receipts, non-fatal capture warnings,
+  skipped events, health failures, Deep audit failures, Unicode/quoted paths,
+  and documented PowerShell 5.1/7 native pipelines. Existing source and copied
+  package lifecycle/retrieval flows now exercise the closeout example.
+
+### Changed
+
+- Write commitment, check completion, audit completion and review findings are
+  reported separately. The example never retries capture, repairs authority
+  pages, or equates a completed health command with factual correctness.
+- Plugin manifests and public installation guidance identify v4.0.9.
+
+### Fixed
+
+- Decode Git repository roots and origin URLs explicitly as UTF-8. On Windows
+  using a GBK default locale, a Unicode Git path could previously crash
+  preflight/resolve before any knowledge operation. Unicode path and remote
+  identity regressions now run alongside the complete copied-package flows.
+
 ## [4.0.8] - 2026-09-06
 
 ### Added
