@@ -41,7 +41,7 @@
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.9
+codex plugin marketplace add tydandou/tracebook --ref v4.0.10
 codex plugin add tracebook@tracebook
 ```
 
@@ -174,7 +174,7 @@ PowerShell 传输兼容性按证据等级声明：
 
 ## 安装
 
-`4.0.9` 已发布，对应 `v4.0.9` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.10` 已发布，对应 `v4.0.10` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -182,7 +182,7 @@ PowerShell 传输兼容性按证据等级声明：
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.9
+codex plugin marketplace add tydandou/tracebook --ref v4.0.10
 codex plugin add tracebook@tracebook
 ```
 
@@ -208,7 +208,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.9
+codex plugin marketplace add tydandou/tracebook --ref v4.0.10
 codex plugin add tracebook@tracebook
 ```
 
@@ -217,7 +217,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.9
+codex plugin marketplace add tydandou/tracebook --ref v4.0.10
 codex plugin add tracebook@tracebook
 ```
 
@@ -345,9 +345,16 @@ Plugin 的设计目标是在日常任务语言中直接调用。例如：
 - `Record this idempotent-consumer approach as a reusable pattern, then run the required health check.`
 - `Run a Deep Tracebook audit for the current project; keep findings as candidates for human review.`
 
-工程工作开始前，Skill 依次读取外部根目录规则、健康状态、项目索引和项目状态，随后只
+工程工作开始前，Skill 依次读取外部根目录规则、全局健康概览、项目索引、项目状态和
+当前项目完整健康页（包括人工备注），随后只
 读取相关文档。任务结束后，它按照
 [`SKILL.md`](plugins/tracebook/skills/tracebook/SKILL.md) 中的持久写入门禁处理。
+capture 在项目状态页的受管区块中保留最近 80 条事件，每个事件仍写入月度日志。
+区块外人工摘要和旧内容原样保留，因此既有大页面不会自动缩小。
+全局健康表保留所有范围的风险、检查日期和计数，将告警正文替换为 `Issues` 总数和
+`Details` 链接；仅在任务明确涉及其他范围或要求全局审查时读取其他详情。
+顶部旧字段不是全局合计，概览也不代表本次检查或跨范围原子快照。旧版长表只在获准
+执行的健康重建时更新；preflight/context 保持只读，不覆盖已安装知识根的规则。
 
 ## 日常工作流
 
@@ -749,7 +756,7 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v4.0.9` 版本。
+`v4.0.10` 版本。
 
 ## 稳定范围与保证
 

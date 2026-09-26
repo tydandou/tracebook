@@ -3,10 +3,12 @@ from dataclasses import replace
 from datetime import date
 import hashlib
 import json
+import re
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+from urllib.parse import unquote
 
 from plugins.tracebook.skills.tracebook.scripts import health_state
 from plugins.tracebook.skills.tracebook.scripts.check_knowledge import CheckReport
@@ -274,7 +276,42 @@ class MultiProjectHealthTest(unittest.TestCase):
             aggregate = first.decode("utf-8")
             self.assertLess(aggregate.index("domain"), aggregate.index("pattern"))
             self.assertLess(aggregate.index("github.com/acme/alpha"), aggregate.index("github.com/acme/beta"))
-            self.assertIn("alpha needs a source", aggregate)
+            self.assertNotIn("alpha needs a source", aggregate)
+            self.assertIn("alpha needs a source", alpha_path.read_text(encoding="utf-8"))
+            self.assertIn("[Details](../../01-projects/alpha/health-status.md)", aggregate)
+
+    def test_aggregate_size_does_not_grow_with_issue_text_and_details_survive(self) -> None:
+        with TemporaryDirectory() as temp:
+            root, _, _ = self._legacy_root(Path(temp))
+            ensure_health_layout(root)
+            source = health_path(root, "project", "alpha")
+            state = replace(load_health_state(source), risk_level="High",
+                            last_regular=date(2026, 9, 20), pending_confirmations=3,
+                            missing_sources=2, broken_links=1, issues=("short finding",))
+            source.write_text(render_health_state(state), encoding="utf-8")
+            short = rebuild_global_health(root).read_text(encoding="utf-8")
+            long_issue = "source_missing Pending | 中文 & link [path] " * 4000
+            source.write_text(render_health_state(replace(state, issues=(long_issue,))), encoding="utf-8")
+            before = source.read_bytes()
+            long = rebuild_global_health(root).read_text(encoding="utf-8")
+            self.assertEqual(short, long)
+            self.assertEqual(before, source.read_bytes())
+            self.assertIn(long_issue, source.read_text(encoding="utf-8"))
+            self.assertIn("2026-09-20", long)
+            self.assertIn("| 3 | 2 | 1 | 0 | High | 1 |", long)
+            self.assertIn("pattern", long)
+            self.assertIn("Unknown", long)
+            for target in re.findall(r"\[Details\]\(([^)]+)\)", long):
+                self.assertTrue((root / "00-global/health" / unquote(target)).is_file())
+
+    def test_aggregate_links_follow_registered_unicode_project_paths(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            record = ProjectRecord("prj-fixture", "知识项目", "01-projects/知识项目--1234")
+            state = HealthState("project", record.project_id, risk_level="Unknown")
+            content = health_state._render_aggregate((state,), (record,))
+            self.assertIn("[Details](../../01-projects/知识项目--1234/health-status.md)", content)
+            self.assertIn("| Unknown | 0 |", content)
 
     def test_project_high_state_survives_a_later_low_project_check(self) -> None:
         with TemporaryDirectory() as temp:

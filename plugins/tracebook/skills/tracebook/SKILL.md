@@ -124,13 +124,33 @@ new, outside the current repository, or of uncertain relevance is not valid.
 
 For nontrivial software-repository work, default to this read phase even when
 the user did not explicitly request Tracebook. Read the external root
-`AGENTS.md`, health status, current project index, and
-project status in this order. Then select only documents relevant to the task.
+`AGENTS.md`, global health overview, current project index, project status,
+and the current project's `health-status.md` in this order. The global overview
+retains every scope's risk, dates and counts; its `Issues` column counts generated
+findings and `Details` links to full scope reports. Always read the current
+project's full health page, including manual notes. Follow other scope links only
+when the task explicitly includes those scopes or requests a global health review.
+The overview is persisted state, not a fresh check or a cross-scope atomic snapshot;
+its legacy top fields are not global totals. Existing verbose overviews remain
+readable and become compact at the next authorized health rebuild, never during
+preflight/context reads. Then select only documents relevant to the task.
 Repository-local design documents are task input even when they are ignored or
 untracked by Git. Discover relevant project documents from the filesystem, not
 from `git ls-files` or an ignore-aware file list alone. Use each document's
 declared status, baseline, and later superseding decisions to judge authority;
 Git tracking is release-review metadata, not a truth or relevance boundary.
+For portable `rg` searches, use this sequence:
+
+1. Set the working directory to the search root and use `.` as the path.
+2. Pass quoted file patterns with `-g`.
+3. When scope matters, list the selected files first:
+   `rg --files . -g 'ddl/*.sql' -g 'test_*.py'`.
+4. Search the selected files:
+   `rg -n -e '<pattern>' . -g 'ddl/*.sql' -g 'test_*.py'`.
+
+If already in `ddl`, use `-g '*.sql'`. This keeps commands portable across
+PowerShell, Bash, and Zsh; check stderr and the file list when completeness matters.
+
 Do not load the knowledge root's own complete logs, raw material, archive
 directories, or `99-archive` without a tracing, audit, deep-health, or
 explicit-user reason. This bounds what is read out of the knowledge base; a log

@@ -161,6 +161,17 @@ class SkillWorkflowTest(unittest.TestCase):
         self.assertIn("from the filesystem", skill)
         self.assertIn("not a truth or relevance boundary", skill)
 
+    def test_skill_requires_shell_neutral_rg_glob_usage(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        guidance = " ".join(skill.split())
+        self.assertIn("use this sequence", guidance)
+        self.assertIn("Set the working directory to the search root", guidance)
+        self.assertIn("Pass quoted file patterns with `-g`", guidance)
+        self.assertIn("rg --files . -g 'ddl/*.sql' -g 'test_*.py'", guidance)
+        self.assertIn("rg -n -e '<pattern>' . -g 'ddl/*.sql' -g 'test_*.py'", guidance)
+        self.assertIn("If already in `ddl`, use `-g '*.sql'`", guidance)
+
     def test_repository_agents_file_is_optional_in_skill_and_templates(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         english = (

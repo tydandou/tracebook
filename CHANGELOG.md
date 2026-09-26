@@ -5,6 +5,32 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.10] - 2026-09-26
+
+### Fixed
+
+- Resolve the closeout source root through the same Git-aware resolver as capture,
+  including calls from subdirectories and external GIT_DIR/GIT_WORK_TREE setups.
+  Resolution failures preserve the capture receipt without replaying the write.
+
+### Changed
+
+- Global health overviews retain scope risks, dates and counters, with issue counts
+  and links to full reports instead of repeating issue text. The current project's
+  complete health report remains required; read-only commands do not rebuild old
+  overviews or overwrite installed root rules.
+- Project status keeps the newest 80 events in a managed block. Monthly logs and
+  authority history remain intact; manual and unmarked legacy text are preserved.
+  Malformed blocks reject capture before commit.
+- Document portable ripgrep glob selection and update plugin manifests, bilingual
+  installation guides and website references to v4.0.10.
+
+### Scope
+
+- Retrieval scoring, response fields and shared-evidence audit behavior remain at
+  the v4.0.9 baseline. This maintenance release makes no retrieval-quality or
+  across-the-board latency improvement claim.
+
 ## [4.0.9] - 2026-09-10
 
 ### Added

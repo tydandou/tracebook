@@ -47,7 +47,7 @@ new agent session:
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.9
+codex plugin marketplace add tydandou/tracebook --ref v4.0.10
 codex plugin add tracebook@tracebook
 ```
 
@@ -201,7 +201,7 @@ PowerShell transport compatibility is stated by evidence level:
 
 ## Install
 
-The `4.0.9` release is available as the `v4.0.9` tag. Use the tagged
+The `4.0.10` release is available as the `v4.0.10` tag. Use the tagged
 installation commands for the stable release, or use the local development
 loading instructions when working from a clone.
 
@@ -210,7 +210,7 @@ loading instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.9
+codex plugin marketplace add tydandou/tracebook --ref v4.0.10
 codex plugin add tracebook@tracebook
 ```
 
@@ -238,7 +238,7 @@ Removing a plugin never touches its knowledge root. If
 `codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.9
+codex plugin marketplace add tydandou/tracebook --ref v4.0.10
 codex plugin add tracebook@tracebook
 ```
 
@@ -247,7 +247,7 @@ To move to a different tagged source, replace the marketplace first:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.9
+codex plugin marketplace add tydandou/tracebook --ref v4.0.10
 codex plugin add tracebook@tracebook
 ```
 
@@ -392,9 +392,19 @@ The Plugin is designed to be invoked in normal task language. Examples:
 - `Run a Deep Tracebook audit for the current project; keep findings as candidates for human review.`
 
 Before engineering work, the Skill reads the external-root rules, health
-status, project index, and project status, followed only by relevant documents.
+overview, project index, project status, and the current project's full health
+page (including manual notes), followed only by relevant documents.
 After the task, it applies the durable-write gate described in
 [`SKILL.md`](plugins/tracebook/skills/tracebook/SKILL.md).
+Capture retains its newest 80 events in a marked project-status block; every
+event remains in the monthly log. Manual summaries and legacy text outside the
+block are preserved, so existing large pages are not automatically compacted.
+The global health table retains all scope risks, check dates and counters, with
+an `Issues` count and `Details` links instead of repeating issue text. Other scopes'
+details are loaded only for explicitly scoped tasks or global health review.
+Its legacy top fields are not totals, and it is not a fresh or atomic cross-scope
+check. Existing verbose tables change only on an authorized health rebuild;
+preflight/context stay read-only and installed root rules are not overwritten.
 
 ## Daily Workflow
 
@@ -903,7 +913,7 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v4.0.9` release.
+resolves the published `v4.0.10` release.
 
 ## Stable Scope and Guarantees
 

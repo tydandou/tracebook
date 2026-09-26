@@ -18,6 +18,12 @@ from .transaction import commit_updates
 
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 EVENT = re.compile(r"<!-- tracebook:event:([0-9a-f]{16}) -->")
+PROJECT_STATUS_START = "<!-- tracebook:recent-events:start -->"
+PROJECT_STATUS_END = "<!-- tracebook:recent-events:end -->"
+PROJECT_STATUS_EVENT = re.compile(
+    r"^- \d{4}-\d{2}-\d{2}: (?:create|revise|change-status) `[a-z0-9]+(?:-[a-z0-9]+)*` v[1-9][0-9]*$"
+)
+PROJECT_STATUS_EVENT_LIMIT = 80
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 CURRENT = re.compile(r"(?ms)^## Current\n\n(.*?)(?=\n## History\n|\Z)")
 
@@ -179,8 +185,30 @@ def _index_content(root: Path, index: Path, page: Path, title: str) -> str:
 
 
 def _project_status(current: str, request: object, today: date, version: int) -> str:
+    """只滚动受管事件区块；旧内容与人工摘要原样保留，异常区块明确拒绝写入。
+
+    80 条是展示窗口，不是历史保留期。每个新事件仍由同一 capture 事务写入
+    月度日志，权威页继续保存版本。未标记的旧事件不猜测归属，也不自动迁移。
+    """
     entry = f"- {today.isoformat()}: {getattr(request, 'operation')} `{getattr(request, 'knowledge_id')}` v{version}"
-    return current.rstrip() + "\n" + entry + "\n"
+    start_count, end_count = current.count(PROJECT_STATUS_START), current.count(PROJECT_STATUS_END)
+    if start_count == end_count == 0:
+        prefix = current or "# Project Status\n"
+        prefix += "\n" if prefix.endswith("\n") else "\n\n"
+        prefix += "## Recent knowledge events\n\n[logs/](logs/)\n\n"
+        suffix, events = "\n", []
+    else:
+        if start_count != 1 or end_count != 1:
+            raise _error("project-status", "has ambiguous recent-event markers")
+        start, end = current.index(PROJECT_STATUS_START), current.index(PROJECT_STATUS_END)
+        if end < start:
+            raise _error("project-status", "has reversed recent-event markers")
+        prefix, suffix = current[:start], current[end + len(PROJECT_STATUS_END):]
+        events = current[start + len(PROJECT_STATUS_START):end].strip().splitlines()
+        if any(PROJECT_STATUS_EVENT.fullmatch(line) is None for line in events):
+            raise _error("project-status", "contains unrecognized recent-event content")
+    recent = (events + [entry])[-PROJECT_STATUS_EVENT_LIMIT:]
+    return prefix + PROJECT_STATUS_START + "\n" + "\n".join(recent) + "\n" + PROJECT_STATUS_END + suffix
 
 
 def _log(current: str, request: object, event_id: str, today: date) -> str:

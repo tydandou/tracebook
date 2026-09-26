@@ -10,11 +10,16 @@ full documents.
 
 1. Business repository `AGENTS.md`, when present.
 2. External knowledge-root `AGENTS.md`.
-3. `00-global/health/health-status.md`.
+3. `00-global/health/health-status.md` (scope risks, dates, counts and detail links).
 4. Current project `index.md`.
 5. Current project `project-status.md`.
-6. Run Runner `context` with the task wording.
-7. Read task-relevant authority pages returned by context.
+6. Current project full `health-status.md`, including manual notes.
+7. Run Runner `context` with the task wording.
+8. Read task-relevant authority pages returned by context.
+
+Follow other scope health details only when explicitly relevant or performing
+a global review. Legacy top fields are not totals; persisted status is not a new
+check. Read-only commands never rebuild an existing verbose overview.
 
 ## Default Do Not Read
 

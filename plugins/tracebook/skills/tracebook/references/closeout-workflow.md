@@ -8,6 +8,12 @@ Runner with argument arrays (`shell=False`), forwarding every changed/new path
 and the exact project/domain/pattern scope. Check and audit may persist health
 reports. Use the same root, project and date as capture.
 
+The example accepts a repository subdirectory as `--cwd`. For a Git project it
+reuses the Runner's repository-root resolution, including `GIT_DIR` and
+`GIT_WORK_TREE`, as the evidence source root. Plain directories keep the supplied
+`--cwd`. Resolution failure reports `source_resolution` with the receipt preserved
+and health commands not run; it never replays capture.
+
 ## End-to-end sequence
 
 1. Finish the engineering task and evaluate each atomic knowledge item against

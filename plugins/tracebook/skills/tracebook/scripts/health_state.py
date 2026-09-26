@@ -430,7 +430,13 @@ def _aggregate_cell(value: str) -> str:
     return value.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
 
 
-def _render_aggregate(states: tuple[HealthState, ...]) -> str:
+def _render_aggregate(states: tuple[HealthState, ...], projects: tuple[ProjectRecord, ...]) -> str:
+    """生成跨范围概览：保留风险与计数，以链接代替无限增长的问题正文。
+
+    每行对应持久化的范围状态；聚合重建不执行检查，也不清理或改写详情。
+    Issues 是全部生成告警数，独立于 Missing/Pending 等既有计数口径。
+    """
+    project_paths = {record.identity: record.relative_path for record in projects}
     lines = [
         "# Knowledge Health Status",
         "",
@@ -457,9 +463,13 @@ def _render_aggregate(states: tuple[HealthState, ...]) -> str:
         "",
         "## Scope Summary",
         "",
+        "Stored scope results, not a new health check or a cross-scope atomic snapshot.",
+        "The legacy fields above are not scope totals. Each row retains its own dates and risk.",
+        "Issues counts all generated findings; Details contains the full scope page, including manual notes.",
+        "",
         _AGGREGATE_START,
-        "| Scope | Identity | Last Light | Last Regular | Last Deep | Changes | New Pages | Pending | Missing | Broken | Orphans | Risk | Issues |",
-        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
+        "| Scope | Identity | Last Light | Last Regular | Last Deep | Changes | New Pages | Pending | Missing | Broken | Orphans | Risk | Issues | Details |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- |",
     ]
     for state in states:
         values = (
@@ -475,9 +485,14 @@ def _render_aggregate(states: tuple[HealthState, ...]) -> str:
             str(state.broken_links),
             str(state.orphan_pages),
             state.risk_level,
-            "; ".join(state.issues) or "None",
+            str(len(state.issues)),
         )
-        lines.append("| " + " | ".join(_aggregate_cell(value) for value in values) + " |")
+        detail_path = (
+            f"../../{project_paths[state.identity]}/health-status.md"
+            if state.scope == "project" else f"scopes/{state.scope}-status.md"
+        )
+        detail = f"[Details]({detail_path})"
+        lines.append("| " + " | ".join(_aggregate_cell(value) for value in values) + " | " + detail + " |")
     lines.extend([_AGGREGATE_END, ""])
     return "\n".join(lines)
 
@@ -543,7 +558,7 @@ def _ensure_layout_under_maintenance(root: Path) -> tuple[Path, ...]:
         else default
         for default in defaults
     )
-    aggregate = _render_aggregate(states)
+    aggregate = _render_aggregate(states, projects)
 
     if is_legacy:
         if manifest_path.exists() or manifest_path.is_symlink():
@@ -642,7 +657,7 @@ def rebuild_global_health(root: Path) -> Path:
             ):
                 return target
         projects = _registered_projects(resolved_root)
-        content = _render_aggregate(_loaded_states(resolved_root, projects))
+        content = _render_aggregate(_loaded_states(resolved_root, projects), projects)
         if target.is_file() and target.read_text(encoding="utf-8") == content:
             return target
         _ensure_parent_directories((target,))

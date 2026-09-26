@@ -16,9 +16,11 @@ For a business-project task, read in this order:
 1. The current business repository's `AGENTS.md`, when present.
 2. This file.
 3. This root's `index.md` — the entry point to its six sections.
-4. `00-global/health/health-status.md`.
+4. `00-global/health/health-status.md` (scope overview).
 5. The current project path returned by the resolver, then its `index.md`.
-6. The current project `project-status.md`.
+6. The current project `project-status.md`, then its full `health-status.md`,
+   including manual notes. Follow other scope `Details` links only for an
+   explicitly scoped task or global health review; the overview is not a new check.
 7. Run the Runner's `context-read-path --profile adaptive` with the task wording — step 2 of the
    Skill's Quick Start. If `preflight` returned `blocked: true`, execute its
    `required_action.argv` first, then return to this step.

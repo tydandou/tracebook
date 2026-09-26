@@ -330,10 +330,12 @@ class HealthPersistenceTest(unittest.TestCase):
             self.assertEqual(status_before, status.read_bytes())
             self.assertEqual(log_before, log.read_bytes())
             self.assertNotEqual(aggregate_before, aggregate.read_bytes())
-            self.assertIn(
+            self.assertNotIn(
                 "complete missing-source finding",
                 aggregate.read_text(encoding="utf-8"),
             )
+            self.assertIn("complete missing-source finding", status.read_text(encoding="utf-8"))
+            self.assertIn("[Details]", aggregate.read_text(encoding="utf-8"))
 
     def test_aggregate_pre_hash_failure_preserves_committed_scope_context(self) -> None:
         with TemporaryDirectory() as temp:

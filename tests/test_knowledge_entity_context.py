@@ -1,14 +1,16 @@
-from datetime import date
+from datetime import date, timedelta
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from plugins.tracebook.skills.tracebook.scripts.capture import CaptureRequest
 from plugins.tracebook.skills.tracebook.scripts.errors import TracebookError
 from plugins.tracebook.skills.tracebook.scripts.knowledge_root import repair_knowledge_root
 from plugins.tracebook.skills.tracebook.scripts.system_registry import bind_project, create_system
 from plugins.tracebook.skills.tracebook.scripts.snapshots import project_knowledge_root
+from plugins.tracebook.skills.tracebook.scripts import transaction
 from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import (
     capture,
     read_context,
@@ -80,6 +82,95 @@ class KnowledgeEntityContextTest(unittest.TestCase):
             self.assertIn("`order-retry-idempotency` v1", status)
             self.assertIn("`order-retry-idempotency` v2", status)
             self.assertNotIn("v订单重试幂等机制", status)
+
+    def test_project_status_keeps_summary_and_bounds_recent_events(self) -> None:
+        with TemporaryDirectory() as temp:
+            resolved = self._context(Path(temp))
+            project = resolved.root / resolved.record.relative_path
+            status = project / "project-status.md"
+            original = "# Project Status\n\n当前状态：持续维护\n- 2026-01-01: 人工待确认事项\n"
+            status.write_text(original, encoding="utf-8")
+            events = []
+            for version in range(1, 84):
+                day = date(2026, 1, 1) + timedelta(days=version - 1)
+                request = self._request(body=f"Verified revision {version}")
+                if version > 1:
+                    request = self._request(operation="revise", expected_version=version - 1,
+                                            body=f"Verified revision {version}")
+                result = capture(resolved, request, day)
+                events.append((day, result.event_id))
+            content = status.read_text(encoding="utf-8")
+            self.assertTrue(content.startswith(original))
+            managed = content.split("<!-- tracebook:recent-events:start -->\n")[1].split(
+                "<!-- tracebook:recent-events:end -->")[0]
+            event_lines = [line for line in managed.splitlines() if line.startswith("- 2026-")]
+            self.assertEqual(80, len(event_lines))
+            self.assertTrue(event_lines[0].endswith(" v4"))
+            self.assertTrue(event_lines[-1].endswith(" v83"))
+            for day, event_id in events:
+                log = project / "logs" / f"{day:%Y-%m}.md"
+                self.assertEqual(1, log.read_text(encoding="utf-8").count(event_id))
+            self.assertIn("[logs/](logs/)", content)
+            snapshot, _ = project_knowledge_root(resolved.root, resolved.record, operation="context")
+            self.assertIn("version: 83", (snapshot / "business-rule/order-retry-idempotency.md").read_text(encoding="utf-8"))
+            before = {p: p.read_bytes() for p in project.rglob("*") if p.is_file()}
+            self.assertTrue(capture(resolved, request, day).skipped)
+            self.assertEqual(before, {p: p.read_bytes() for p in project.rglob("*") if p.is_file()})
+
+    def test_project_status_preserves_legacy_dated_text_and_trailing_notes(self) -> None:
+        with TemporaryDirectory() as temp:
+            resolved = self._context(Path(temp))
+            status = resolved.root / resolved.record.relative_path / "project-status.md"
+            original = "# Project Status\n\n" + "".join(
+                f"- 2026-01-01: create `legacy-{i}` v1\n" for i in range(90))
+            original += "\n## Pending\n- 2026-01-02: 人工风险记录\n"
+            status.write_text(original, encoding="utf-8")
+            capture(resolved, self._request(), date(2026, 9, 20))
+            self.assertTrue(status.read_text(encoding="utf-8").startswith(original))
+            trailing = "\n## Manual follow-up\n- 保留顺序和空行。\n"
+            status.write_text(status.read_text(encoding="utf-8") + trailing, encoding="utf-8")
+            capture(resolved, self._request(operation="revise", expected_version=1,
+                                           body="Revised fact"), date(2026, 9, 21))
+            updated = status.read_text(encoding="utf-8")
+            self.assertTrue(updated.startswith(original))
+            self.assertTrue(updated.endswith(trailing))
+
+    def test_status_window_and_monthly_log_recover_together(self) -> None:
+        with TemporaryDirectory() as temp:
+            resolved = self._context(Path(temp))
+            project = resolved.root / resolved.record.relative_path
+            original_replace = transaction._replace_target
+
+            def fail_log(target, staged, *, operation):
+                if target == project / "logs/2026-09.md":
+                    raise OSError("simulated monthly log failure")
+                original_replace(target, staged, operation=operation)
+
+            with patch.object(transaction, "_replace_target", side_effect=fail_log):
+                with self.assertRaisesRegex(OSError, "simulated monthly log failure"):
+                    capture(resolved, self._request(), date(2026, 9, 20))
+            recovered = resolve(resolved.root, Path(temp) / "repo")
+            status = (project / "project-status.md").read_text(encoding="utf-8")
+            self.assertEqual(1, status.count("`order-retry-idempotency` v1"))
+            log = (project / "logs/2026-09.md").read_text(encoding="utf-8")
+            self.assertEqual(1, log.count("order-retry-idempotency"))
+            self.assertTrue(capture(recovered, self._request(), date(2026, 9, 20)).skipped)
+
+    def test_malformed_status_block_rejects_capture_without_overwriting_notes(self) -> None:
+        with TemporaryDirectory() as temp:
+            resolved = self._context(Path(temp))
+            project = resolved.root / resolved.record.relative_path
+            status = project / "project-status.md"
+            start = "<!-- tracebook:recent-events:start -->"
+            end = "<!-- tracebook:recent-events:end -->"
+            for block in (start, end + "\n" + start, start + start + end,
+                          start + "\n人工待确认事项\n" + end):
+                with self.subTest(block=block):
+                    status.write_text("# Project Status\n" + block, encoding="utf-8")
+                    before = {p: p.read_bytes() for p in project.rglob("*") if p.is_file()}
+                    with self.assertRaisesRegex(ValueError, "project-status"):
+                        capture(resolved, self._request(), date(2026, 9, 20))
+                    self.assertEqual(before, {p: p.read_bytes() for p in project.rglob("*") if p.is_file()})
 
     def test_legacy_root_is_rejected_without_schema_migration(self) -> None:
         with TemporaryDirectory() as temp:

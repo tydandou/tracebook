@@ -14,9 +14,11 @@
 1. 当前业务仓库的 `AGENTS.md`（如存在）。
 2. 本文件。
 3. 本根目录的 `index.md`——六个分区的导航入口。
-4. `00-global/health/health-status.md`。
+4. `00-global/health/health-status.md`（各范围健康概览）。
 5. 解析器返回的当前项目路径，再读其 `index.md`。
-6. 当前项目的 `project-status.md`。
+6. 当前项目的 `project-status.md`，再读完整 `health-status.md`，包括人工备注。
+   仅在任务明确涉及其他范围或要求全局健康审查时跟进其他范围的 `Details` 链接；
+   概览是持久状态，不代表本次已执行检查。
 7. 用任务原文执行 runner 的 `context-read-path --profile adaptive`（即 Skill 的 Quick Start
    步骤 2）。若 `preflight` 返回 `blocked: true`，先执行其
    `required_action.argv`，再回到这一步。

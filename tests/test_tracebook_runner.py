@@ -178,6 +178,29 @@ class TracebookRunnerTest(unittest.TestCase):
             self.assertEqual(resolved.record.project_id, result["project"]["project_id"])
             self.assertEqual(registry_before, (root / "registry.json").read_bytes())
 
+    def test_opening_paths_keep_current_health_and_do_not_rebuild_verbose_overview(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root = base / "knowledge"
+            first = base / "first"
+            second = base / "second"
+            first.mkdir()
+            second.mkdir()
+            current = resolve(root, first)
+            other = resolve(root, second)
+            overview = root / "00-global/health/health-status.md"
+            overview.write_text("# Old overview\n" + "old detail\n" * 1000, encoding="utf-8")
+            current_health = root / current.record.relative_path / "health-status.md"
+            current_health.write_text(current_health.read_text(encoding="utf-8") +
+                                      "\n## Manual notes\nPending: confirm source\n", encoding="utf-8")
+            before = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            payload = preflight(root, first)
+            self.assertIn(str(overview), payload["read_paths"])
+            self.assertIn(str(current_health), payload["read_paths"])
+            self.assertNotIn(str(root / other.record.relative_path / "health-status.md"), payload["read_paths"])
+            tracebook_runner.read_context_for_path(root, first, "missingterm")
+            self.assertEqual(before, {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()})
+
     def test_resolve_ensures_project_health_while_holding_the_project_lock(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)

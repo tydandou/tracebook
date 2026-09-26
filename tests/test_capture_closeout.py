@@ -1,7 +1,9 @@
 """Observable closeout branches, using real CLI flows separately for integration."""
 import copy
+from datetime import datetime
 import base64
 import json
+import os
 import re
 from pathlib import Path
 import subprocess
@@ -30,8 +32,10 @@ class CaptureCloseoutTest(unittest.TestCase):
                             new_paths=[str(self.root / "规则's.md")], user_summary="已写入规则。")
 
     def verify(self, receipt=None):
-        return example.verify(self.receipt if receipt is None else receipt,
-                              root=self.root, cwd=self.source, today="2026-09-09")
+        # 此助手只测试健康子进程失败分支；真实 Git 解析由下方 CLI 场景覆盖。
+        with patch.object(example, "repository_root", return_value=self.source):
+            return example.verify(self.receipt if receipt is None else receipt,
+                                  root=self.root, cwd=self.source, today="2026-09-09")
 
     def response(self, check_type="Light", code=0, **extra):
         payload = dict(check_type=check_type, findings={"review_candidates": ["review, not fact"]},
@@ -141,6 +145,74 @@ class CaptureCloseoutTest(unittest.TestCase):
                 else:
                     self.assertEqual("receipt_transport", decoded["phase"])
                 self.assertEqual([], list(self.root.iterdir()))
+
+    def test_real_closeout_resolves_sources_from_git_subdirectory_and_plain_root(self):
+        """真实收尾不得把调用目录差异误报为证据缺失，安装副本也应一致。"""
+        copied = self.base / "copied plugin"
+        shutil.copytree(example.SCRIPTS.parent, copied,
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        for package, skill in (("source", example.SCRIPTS.parent), ("copied", copied)):
+            for mode in ("git-root", "git-subdirectory", "plain-root", "git-environment"):
+                with self.subTest(package=package, mode=mode):
+                    source = self.base / package / mode / "源 码's"
+                    source.mkdir(parents=True)
+                    env = dict(os.environ)
+                    if mode == "git-environment":
+                        env.update(GIT_DIR=str(source.parent / "external-metadata"), GIT_WORK_TREE=str(source))
+                        subprocess.run(["git", "init", "-q"], cwd=source, env=env,
+                                       check=True, capture_output=True, timeout=20)
+                    elif mode != "plain-root":
+                        subprocess.run(["git", "init", "-q", str(source)],
+                                       check=True, capture_output=True, timeout=20)
+                    (source / "src").mkdir()
+                    (source / "src/retry.py").write_text("ATTEMPTS = 2\n", encoding="utf-8")
+                    # 场景固定在2026-09-20；来源mtime也固定，避免次日运行变成漂移测试。
+                    source_time = datetime(2026, 9, 20).timestamp()
+                    os.utime(source / "src/retry.py", (source_time, source_time))
+                    nested = source / "tools" / "nested"
+                    nested.mkdir(parents=True)
+                    caller = nested if mode in ("git-subdirectory", "git-environment") else source
+                    source_before = {p.relative_to(source): p.read_bytes()
+                                     for p in source.rglob("*") if p.is_file()}
+                    root = self.root / package / mode
+                    request = dict(operation="create", knowledge_id="retry-limit", scope="project",
+                                   kind="decision", title="重试规则", body="ATTEMPTS = 2",
+                                   evidence=["src/retry.py:L1"])
+                    capture = subprocess.run(
+                        [sys.executable, "-B", str(skill / "scripts/tracebook_runner.py"),
+                         "capture", "--root", str(root), "--cwd", str(caller),
+                         "--request", "-", "--today", "2026-09-20"],
+                        input=encode_envelope(json.dumps(request, ensure_ascii=False).encode("utf-8")),
+                        cwd=self.base, env=env, capture_output=True, timeout=45)
+                    self.assertEqual(0, capture.returncode, capture.stderr + capture.stdout)
+                    receipt = json.loads(capture.stdout)
+                    closeout = subprocess.run(
+                        [sys.executable, "-B", str(skill / "examples/verify_capture.py"),
+                         "--root", str(root), "--cwd", str(caller), "--today", "2026-09-20"],
+                        input=capture.stdout, cwd=self.base, env=env, capture_output=True, timeout=45)
+                    self.assertEqual(0, closeout.returncode, closeout.stderr + closeout.stdout)
+                    result = json.loads(closeout.stdout)
+                    self.assertEqual("completed", result["verification"], result)
+                    self.assertEqual(receipt, result["capture"])
+                    for phase in ("check", "audit"):
+                        if result[phase]["state"] == "completed":
+                            findings = result[phase]["response"]["findings"]
+                            self.assertEqual([], findings.get("missing_sources", []))
+                            self.assertEqual([], findings.get("review_candidates", []), findings)
+                    page = Path(receipt["new_paths"][0]).read_text(encoding="utf-8")
+                    self.assertIn("version: 1\n", page)
+                    self.assertEqual(source_before, {p.relative_to(source): p.read_bytes()
+                                                    for p in source.rglob("*") if p.is_file()})
+
+    def test_source_resolution_failure_preserves_receipt_without_starting_health(self):
+        with patch.object(example, "repository_root", side_effect=OSError("git unavailable")), \
+                patch.object(example, "run_health") as health:
+            result = example.verify(self.receipt, root=self.root, cwd=self.source, today="2026-09-20")
+        self.assertEqual("source_resolution", result["phase"])
+        self.assertEqual("incomplete", result["verification"])
+        self.assertEqual(self.receipt, result["capture"])
+        self.assertEqual("not_run", result["check"]["state"])
+        health.assert_not_called()
 
     @unittest.skipUnless(sys.platform == "win32", "Windows native pipeline")
     def test_documented_powershell_closeout_with_unicode_and_quote_paths(self):

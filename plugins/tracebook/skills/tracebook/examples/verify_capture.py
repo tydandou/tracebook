@@ -14,8 +14,13 @@ import subprocess
 import sys
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-sys.path.insert(0, str(SCRIPTS))
-from request_transport import MAX_REQUEST_BYTES, decode_request  # noqa: E402
+if __package__:
+    from ..scripts.request_transport import MAX_REQUEST_BYTES, decode_request  # noqa: E402
+    from ..scripts.project_registry import repository_root  # noqa: E402
+else:
+    sys.path.insert(0, str(SCRIPTS.parent))
+    from scripts.request_transport import MAX_REQUEST_BYTES, decode_request  # noqa: E402
+    from scripts.project_registry import repository_root  # noqa: E402
 
 
 def validate_receipt(receipt, root):
@@ -94,7 +99,14 @@ def verify(receipt, *, root, cwd, today, timeout=120):
     if receipt["skipped"]:
         result["verification"] = "skipped_no_new_write"
         return result
-    common = ["--root", str(root), "--cwd", str(cwd), "--source-root", str(cwd),
+    # 与 capture/Runner 共用根解析，包括 GIT_DIR/GIT_WORK_TREE。解析失败保留
+    # 已提交 receipt，并显式报告未检查；不猜路径或重放 capture。
+    try:
+        source_root = repository_root(cwd)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        result.update(phase="source_resolution", error=str(error))
+        return result
+    common = ["--root", str(root), "--cwd", str(cwd), "--source-root", str(source_root),
               "--today", today, "--scope", receipt["health_scope"]]
     argv = [sys.executable, "-B", str(SCRIPTS / "tracebook_runner.py"), "check", *common]
     for key, flag in (("changed_paths", "--changed"), ("new_paths", "--new-path")):

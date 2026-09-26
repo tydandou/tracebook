@@ -2,7 +2,12 @@
 
 For repository work, first preflight a new or uncertain target; once work on
 an existing target starts, resolve the external root and read only its minimal
-ordered context: root rules, global health, project index, and project status.
+ordered context: root rules, global health overview, project index, project status,
+and the current project's full `health-status.md` (including manual notes).
+The overview preserves scope risks, check dates, counters and issue counts with
+`Details` links; follow other scopes only for explicitly scoped or global review.
+Legacy top fields are not totals, and an overview is not a new check. Preflight
+and context reads do not rebuild old verbose overviews.
 Then run the Runner's deterministic `context` command with the task wording.
 Read only the returned authority pages that are relevant to the work.
 
