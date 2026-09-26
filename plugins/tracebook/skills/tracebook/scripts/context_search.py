@@ -15,6 +15,7 @@ from .knowledge_parse import (
     evidence_items,
     evidence_lookup_key,
     is_file_evidence,
+    LINE_SUFFIX,
 )
 from .project_registry import ProjectRecord
 from .storage import read_bytes_shared
@@ -23,6 +24,9 @@ from .storage import read_bytes_shared
 FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 HISTORY = re.compile(r"(?ms)^### Version (\d+) — (\d{4}-\d{2}-\d{2})\n\n(.*?)(?=^### Version |\Z)")
 WORD = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+IDENTIFIER = re.compile(r"[a-z0-9]+(?:[-_./:][a-z0-9]+)+")
+IDENTIFIER_COMPONENT = re.compile(r"[a-z0-9]+(?:[-_][a-z0-9]+)*")
+NORMALIZED_LINE_SUFFIX = re.compile(LINE_SUFFIX.pattern, re.IGNORECASE)
 CJK = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
 CJK_RUN = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]+")
 STOPWORDS = {
@@ -50,15 +54,38 @@ def _recency_key(updated: str) -> tuple[int, ...]:
         return (0,)
 
 
-def _tokens(value: str) -> set[str]:
-    normalized = _norm(value)
+def _tokens(normalized: str, *, components: bool = False) -> set[str]:
+    """Tokenize normalized text; expand candidate components, not query terms."""
     words = set(WORD.findall(normalized))
+    if components:
+        words.update(part for word in tuple(words) if "-" in word for part in word.split("-"))
     for run in CJK_RUN.findall(normalized):
         if len(run) == 1:
             words.add(run)
         else:
             words.update(run[index:index + 2] for index in range(len(run) - 1))
     return words
+
+
+def _identifiers(normalized: str, *, components: bool = False) -> set[str]:
+    values = {NORMALIZED_LINE_SUFFIX.sub("", value) for value in IDENTIFIER.findall(normalized)}
+    if components:
+        values.update(part for value in tuple(values) for part in IDENTIFIER_COMPONENT.findall(value))
+    return values
+
+
+@dataclass(frozen=True)
+class _Query:
+    normalized: str
+    tokens: frozenset[str]
+    effective: frozenset[str]
+    identifiers: frozenset[str]
+
+    @classmethod
+    def parse(cls, value: str) -> _Query:
+        normalized = _norm(value)
+        tokens = frozenset(_tokens(normalized))
+        return cls(normalized, tokens, tokens - STOPWORDS, frozenset(_identifiers(normalized)))
 
 
 def _evidence(section: str) -> list[str]:
@@ -208,32 +235,32 @@ def _candidates(root: Path, projects: tuple[ProjectRecord, ...], scope: str, inc
     return current, history, warnings
 
 
-def _score(candidate: Candidate, query: str) -> int:
-    normalized = _norm(query)
-    query_tokens = _tokens(query)
-    title_tokens = _tokens(candidate.fields["title"])
-    evidence_tokens = _tokens(" ".join(_evidence(candidate.section)))
+def _evaluate_match(candidate: Candidate, query: _Query) -> tuple[bool, int, int]:
+    """Reuse each field's tokens for admission and score; retain no corpus cache."""
     score = 10 if candidate.fields.get("status") == "current" and not candidate.historical else 0
-    if normalized == _norm(candidate.fields["knowledge_id"]): score += 100
-    score += 12 * len(query_tokens & title_tokens)
-    score += 10 * len(query_tokens & evidence_tokens)
-    score += 4 * len(query_tokens & _tokens(candidate.section))
-    return score
-
-
-def _has_meaningful_overlap(candidate: Candidate, query: str) -> bool:
-    """Require real query overlap; lifecycle base score alone never returns."""
-    if _norm(query) == _norm(candidate.fields["knowledge_id"]):
-        return True
-    query_tokens = _tokens(query)
-    effective = query_tokens - STOPWORDS
-    strong = (
-        _tokens(candidate.fields["title"])
-        | _tokens(" ".join(_evidence(candidate.section)))
-        | _tokens(candidate.fields["knowledge_id"])
-    )
-    body = _tokens(candidate.section)
-    return bool(effective & strong) or bool(effective & body)
+    if not query.normalized.strip():
+        return False, score, 0
+    exact_id = query.normalized == _norm(candidate.fields["knowledge_id"])
+    eligible, identifier_hit = exact_id, False
+    if exact_id:
+        score += 100
+    for value, weight in (
+        (candidate.fields["knowledge_id"], 0),
+        (candidate.fields["title"], 12),
+        (" ".join(_evidence(candidate.section)), 10),
+        # Preserve the existing section scoring, including its Evidence block.
+        (candidate.section, 4),
+    ):
+        normalized = _norm(value)
+        tokens = _tokens(normalized, components=True)
+        eligible = eligible or bool(query.effective & tokens)
+        shared_tokens = query.tokens & tokens
+        score += weight * len(shared_tokens)
+        # A complete identifier also shares a lexical token. Avoid a second
+        # regex scan of unrelated fields, especially for exact-ID text queries.
+        if query.identifiers and shared_tokens and not identifier_hit:
+            identifier_hit = bool(query.identifiers & _identifiers(normalized, components=True))
+    return eligible, score, 2 if exact_id else int(identifier_hit)
 
 
 def context(
@@ -269,6 +296,7 @@ def context(
     for item in available_history:
         history_by_path.setdefault(item.path, []).append(item)
     wanted = set(evidence_keys)
+    parsed_query = _Query.parse(query)
     selected = [
         item for item in candidates
         if (knowledge_id is None or item.fields["knowledge_id"] == knowledge_id)
@@ -276,33 +304,36 @@ def context(
         and (kind is None or item.fields["type"] == kind)
         and (allowed_kinds is None or item.fields["type"] in allowed_kinds)
     ]
-    scored: list[tuple[Candidate, int, bool, Candidate]] = []
+    scored: list[tuple[Candidate, int, bool, Candidate, int]] = []
     for item in selected:
         evidence_hit = bool(wanted & _evidence_keys(item.section)) if wanted else False
         exact_id = knowledge_id is not None and item.fields["knowledge_id"] == knowledge_id
-        direct = exact_id or evidence_hit or (has_query and _has_meaningful_overlap(item, query))
+        overlap, score, identifier_rank = _evaluate_match(item, parsed_query)
+        direct = exact_id or evidence_hit or (has_query and overlap)
         matched = item
         if not direct:
             # History discovers only an already eligible entity. It never widens
             # status/kind/project filters or earns a Current evidence-path match.
-            history_hits = [
-                historical for historical in history_by_path.get(item.path, ())
-                if discover_history and has_query and _has_meaningful_overlap(historical, query)
-            ]
+            history_hits = []
+            for historical in history_by_path.get(item.path, ()) if discover_history and has_query else ():
+                hit, old_score, old_rank = _evaluate_match(historical, parsed_query)
+                if hit:
+                    history_hits.append((historical, old_score, old_rank))
             if not history_hits:
                 continue
-            matched = max(history_hits, key=lambda hit: (_score(hit, query), hit.updated, hit.version))
-        scored.append((item, _score(matched, query) if has_query else 0, evidence_hit, matched))
+            matched, score, identifier_rank = max(
+                history_hits, key=lambda hit: (hit[1], hit[0].updated, hit[0].version))
+        scored.append((item, score if has_query else 0, evidence_hit, matched, identifier_rank))
     ranked = sorted(
         scored,
-        key=lambda row: (-int(row[2]), -row[1], _recency_key(row[0].updated),
+        key=lambda row: (-int(row[2]), -row[4], -row[1], _recency_key(row[0].updated),
                          row[0].fields["knowledge_id"], row[0].path.as_posix()),
     )
     budget = _ResultBudget(max_chars)
     payload: list[dict[str, object]] = []
     returned_items: list[Candidate] = []
     char_truncated = False
-    for item, score, evidence_hit, matched in ranked[:max_results]:
+    for item, score, evidence_hit, matched, _ in ranked[:max_results]:
         value = item.payload(root, score, full_content=full_content)
         value["match_source"] = "selected_version" if matched is item else "history"
         value["matched_version"] = matched.version
@@ -313,7 +344,7 @@ def context(
             break
         returned_items.append(item)
 
-    omitted_current = [item for item, _, _, _ in ranked[len(payload):]]
+    omitted_current = [item for item, *_ in ranked[len(payload):]]
     history_for_returned = [
         version for item in returned_items for version in history_by_path.get(item.path, ())
     ]
@@ -323,7 +354,8 @@ def context(
     historical: list[dict[str, object]] = []
     if include_history:
         for item in history_for_returned:
-            value = item.payload(root, _score(item, query), full_content=full_content)
+            _, score, _ = _evaluate_match(item, parsed_query)
+            value = item.payload(root, score, full_content=full_content)
             if not budget.append(historical, value):
                 char_truncated = True
                 break

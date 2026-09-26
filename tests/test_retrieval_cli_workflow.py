@@ -1,4 +1,4 @@
-"""Multi-session CLI acceptance of v4.0.10 in source and copied packages."""
+"""Multi-session CLI acceptance of v4.0.11 in source and copied packages."""
 
 from datetime import date
 import hashlib

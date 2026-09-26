@@ -5,6 +5,23 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.11] - 2026-09-27
+
+### Fixed
+
+- Preserve complete identifier signals and discover hyphenated identifiers by
+  component. Keep explicit Current evidence-path matches first and prioritize
+  exact knowledge IDs and complete identifiers without a general title tier.
+- Parse queries once and reuse candidate tokens for admission and scoring.
+  Text queries retain related references; exact reads still use knowledge-id.
+  Response fields, budgets, project boundaries and adaptive fallback are unchanged.
+
+### Tests
+
+- Add fictional identifier fixtures and source/copied-plugin CLI coverage for
+  multi-project isolation, shared scopes, system membership, version history,
+  lifecycle filters, snapshot provenance and read-only retrieval.
+
 ## [4.0.10] - 2026-09-26
 
 ### Fixed

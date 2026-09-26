@@ -162,8 +162,12 @@ blocking on a same-project writer. A `PROJECT_ACTIVATION_REQUIRED` response
 means the target has not been registered and must be activated with `resolve`
 before project context can be read. Context failure must be reported and may
 fall back to index navigation; do not pretend a structured search succeeded.
-Retrieval matches literal tokens (CJK bigrams, whole English words) with no
-stemming or synonyms, so prefer words that actually appear in the knowledge —
+Retrieval matches literal tokens (CJK bigrams, whole English words and identifier
+components), with complete identifiers prioritized below explicit Current evidence
+paths and exact knowledge IDs. A whole hyphenated query does not expand into its
+generic components; use a component explicitly when needed. Identifier matches
+do not establish business applicability. There is no stemming or synonym inference,
+so prefer words that actually appear in the knowledge —
 if a query returns nothing, retry with terms from the project index or an exact
 `knowledge_id` rather than a paraphrase.
 

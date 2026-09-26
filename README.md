@@ -47,7 +47,7 @@ new agent session:
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.10
+codex plugin marketplace add tydandou/tracebook --ref v4.0.11
 codex plugin add tracebook@tracebook
 ```
 
@@ -201,7 +201,7 @@ PowerShell transport compatibility is stated by evidence level:
 
 ## Install
 
-The `4.0.10` release is available as the `v4.0.10` tag. Use the tagged
+The `4.0.11` release is available as the `v4.0.11` tag. Use the tagged
 installation commands for the stable release, or use the local development
 loading instructions when working from a clone.
 
@@ -210,7 +210,7 @@ loading instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.10
+codex plugin marketplace add tydandou/tracebook --ref v4.0.11
 codex plugin add tracebook@tracebook
 ```
 
@@ -238,7 +238,7 @@ Removing a plugin never touches its knowledge root. If
 `codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.10
+codex plugin marketplace add tydandou/tracebook --ref v4.0.11
 codex plugin add tracebook@tracebook
 ```
 
@@ -247,7 +247,7 @@ To move to a different tagged source, replace the marketplace first:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.10
+codex plugin marketplace add tydandou/tracebook --ref v4.0.11
 codex plugin add tracebook@tracebook
 ```
 
@@ -620,6 +620,15 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" context \
   --max-chars 20000
 ```
 
+Literal retrieval preserves complete identifiers such as `load_user_profile` and
+`src/load-user.py`, and can discover hyphenated identifiers by a component such
+as `load`. Explicit Current evidence-path matches rank first, followed by exact
+knowledge IDs and complete identifier matches; other results retain weighted
+lexical ranking. A whole `--query refund-policy` does not expand to unrelated
+`policy` entries or hide other entries that reference `refund-policy`. Use
+`--knowledge-id` for an exact read. These signals do not establish business
+applicability; inspect the full conclusion and its evidence before adopting it.
+
 The `adaptive` profile searches Current first and retries History discovery only
 after zero eligible Current matches. It still returns the selected current/as-of
 version, does not attach History by default, keeps the 10-entity / 20,000-character
@@ -913,7 +922,7 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v4.0.10` release.
+resolves the published `v4.0.11` release.
 
 ## Stable Scope and Guarantees
 

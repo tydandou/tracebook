@@ -41,7 +41,7 @@
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.10
+codex plugin marketplace add tydandou/tracebook --ref v4.0.11
 codex plugin add tracebook@tracebook
 ```
 
@@ -174,7 +174,7 @@ PowerShell 传输兼容性按证据等级声明：
 
 ## 安装
 
-`4.0.10` 已发布，对应 `v4.0.10` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.11` 已发布，对应 `v4.0.11` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -182,7 +182,7 @@ PowerShell 传输兼容性按证据等级声明：
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.10
+codex plugin marketplace add tydandou/tracebook --ref v4.0.11
 codex plugin add tracebook@tracebook
 ```
 
@@ -208,7 +208,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.10
+codex plugin marketplace add tydandou/tracebook --ref v4.0.11
 codex plugin add tracebook@tracebook
 ```
 
@@ -217,7 +217,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.10
+codex plugin marketplace add tydandou/tracebook --ref v4.0.11
 codex plugin add tracebook@tracebook
 ```
 
@@ -404,6 +404,12 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" context-read-path \
 ```
 
 如果返回 `PROJECT_ACTIVATION_REQUIRED`，先在具有写权限的环境执行一次 `resolve`，再重试读取。项目知识写入会生成完整的不可变快照；只有全部页面准备完成后才原子切换指针。因此读取方只能看到旧完整快照或新完整快照，不会看到部分写入。
+
+词面检索保留 `load_user_profile`、`src/load-user.py` 等完整标识符，并允许用 `load`
+这样的组件发现连字符标识符。显式 Current 证据路径命中优先，其次为精确知识 ID、完整
+标识符命中，其余按词面加权分数排序。`--query refund-policy` 不会仅因共同的 `policy`
+扩大结果，也不会隐藏引用 `refund-policy` 的其他知识；精确读取使用 `--knowledge-id`。
+这些信号不代表业务适用性，采用结论前仍须完整读取正文并核验证据。
 
 `adaptive` 先检索 Current，仅在合格 Current 零命中时用 History 发现实体；仍返回所选当前/as-of
 版本，默认不附带 History，保持 10 个实体/20,000 字符上限，并输出
@@ -756,7 +762,7 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v4.0.10` 版本。
+`v4.0.11` 版本。
 
 ## 稳定范围与保证
 
