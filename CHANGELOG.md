@@ -5,6 +5,27 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.12] - 2026-09-27
+
+### Changed
+
+- Let the Agent select a registered related project when feature work needs its
+  interface contract or debugging reveals a specific evidence gap, without
+  requiring the user to name the provider again. Keep identity and permitted
+  scope explicit; prefer lock-free, targeted context-read calls.
+- Read decisive evidence in full before choosing a provider or closing a gap.
+  Local matches may describe only symptoms; a successful provider call does not
+  identify the failing service. Share existing follow-up budgets across projects
+  and stop when the task has sufficient verified context.
+- Clarify that context with a system includes the cwd project and recorded
+  members. A registered relation alone does not trigger a system-wide scan.
+
+### Scope
+
+- This is a Skill workflow update. Retrieval algorithms, CLI/JSON contracts,
+  storage schema, and dependencies are unchanged. Scripted retrieval workflows
+  do not establish autonomous Agent diagnosis accuracy or a performance gain.
+
 ## [4.0.11] - 2026-09-27
 
 ### Fixed

@@ -215,13 +215,21 @@ source as a finding rather than as truth. Follow
 
 ## Read Related Projects Deliberately
 
-The active project is the default and only automatic project scope. Do not scan
-all registered projects. When the user explicitly names another project, first
-run `project-search --root <external-root> --query <name-or-id>`, then pass the
-selected stable IDs through repeated `context --project-id <project-id>`
-arguments. When the request is about a registered microservice system, use
-`context --system-id <system-id>`; it selects only that system's recorded
-members. Context results identify their source project.
+Start with the active project. For feature work or debugging, also read a related
+project when the task depends on its interface, service, or shared contract, or
+when a specific information gap requires that project's evidence. The user need
+not name it again when task evidence identifies the dependency, its registered
+identity is unambiguous, and the read is within the permitted task scope. A local
+hit does not establish that the execution context is complete.
+
+Use the members and directed relations returned by `preflight`, plus current
+source, configuration, logs, or verified knowledge, to identify the provider.
+Use `project-search --root <external-root> --query <name-or-id>` when its stable
+ID is unknown. Then use the lock-free `context-read --root <external-root>
+--project-id <project-id> --profile adaptive --query <concrete-key>`; repeat
+`--project-id` only for the projects needed by this question. Results retain
+their source project. Selection is an Agent decision; the engine does not infer
+dependencies or widen the query scope.
 
 Use `--profile reference` only when the user asks to reuse an existing
 project's architecture for a new project. Before that target is activated, use
@@ -232,15 +240,14 @@ decision knowledge from explicitly selected source projects and excludes
 file-level source maps, incidents, and routine change history. Never infer a
 reference source from the current workspace alone.
 
-If a user says only "related services" and no system is registered, search for
-candidate projects and ask for a source project or system before expanding the
-read scope. Follow [cross-project reading rules](references/cross-project-reading-rules.md).
-
-`preflight` reports a registered project's `systems` membership, including the
-other member projects and their recorded relations. When the task spans members
-of that system, read with `context --system-id <system-id>` rather than the
-default project scope: a system relation makes the cross-project read possible,
-it does not widen the default scope automatically.
+If the task needs a whole registered system, `context --cwd <project-root>
+--system-id <system-id>` includes the cwd project and that system's recorded
+members; it is a maintenance-capable command, not the lock-free read path above.
+A relation alone is not a reason to read every member. If the provider or allowed
+scope remains ambiguous, clarify that specific gap rather than guessing. Follow
+[cross-project reading rules](references/cross-project-reading-rules.md) for
+selection, and [retrieval timing rules](references/retrieval-timing-rules.md) for
+full reads, shared budgets, and stopping. Do not scan all registered projects.
 
 ## Register a System Relation When the Link Is Structural
 

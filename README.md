@@ -47,7 +47,7 @@ new agent session:
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.11
+codex plugin marketplace add tydandou/tracebook --ref v4.0.12
 codex plugin add tracebook@tracebook
 ```
 
@@ -201,7 +201,7 @@ PowerShell transport compatibility is stated by evidence level:
 
 ## Install
 
-The `4.0.11` release is available as the `v4.0.11` tag. Use the tagged
+The `4.0.12` release is available as the `v4.0.12` tag. Use the tagged
 installation commands for the stable release, or use the local development
 loading instructions when working from a clone.
 
@@ -210,7 +210,7 @@ loading instructions when working from a clone.
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.11
+codex plugin marketplace add tydandou/tracebook --ref v4.0.12
 codex plugin add tracebook@tracebook
 ```
 
@@ -238,7 +238,7 @@ Removing a plugin never touches its knowledge root. If
 `codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.11
+codex plugin marketplace add tydandou/tracebook --ref v4.0.12
 codex plugin add tracebook@tracebook
 ```
 
@@ -247,7 +247,7 @@ To move to a different tagged source, replace the marketplace first:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.11
+codex plugin marketplace add tydandou/tracebook --ref v4.0.12
 codex plugin add tracebook@tracebook
 ```
 
@@ -696,8 +696,8 @@ named by the user, discover its stable ID first, then include only that ID:
 python "$SKILL_DIR/scripts/tracebook_runner.py" project-search \
   --root "$TRACEBOOK_ROOT" --query order-service
 
-python "$SKILL_DIR/scripts/tracebook_runner.py" context \
-  --root "$TRACEBOOK_ROOT" --cwd . \
+python "$SKILL_DIR/scripts/tracebook_runner.py" context-read \
+  --root "$TRACEBOOK_ROOT" \
   --project-id prj-... --query "OrderPaid event contract"
 ```
 
@@ -710,6 +710,10 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" system-bind-project --root "$TRA
 python "$SKILL_DIR/scripts/tracebook_runner.py" system-relate --root "$TRACEBOOK_ROOT" --system-id sys-... --source-project-id prj-... --target-project-id prj-... --kind event
 python "$SKILL_DIR/scripts/tracebook_runner.py" context --root "$TRACEBOOK_ROOT" --cwd . --system-id sys-... --query "OrderPaid event contract"
 ```
+
+The system query includes the cwd project and recorded system members, and can
+perform maintenance. Prefer `context-read` with selected project IDs for ordinary
+lock-free reads.
 
 For a new project that explicitly borrows another project's architecture, pass
 that source project to the read-only command and use `--profile reference`.
@@ -725,6 +729,14 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" context-read \
 The profile returns only architecture, module, and decision entries. Every
 cross-project result identifies its source; Tracebook never scans every
 registered project by default.
+
+For feature work or debugging, the Agent can also select a registered provider
+identified by task evidence when its interface contract or execution behavior
+is needed, even if the user did not name that project. It confirms identity and
+permitted scope, uses targeted `context-read` calls, and reads decisive entries
+in full. A local hit is not proof of complete context. Related-project reads
+share the existing follow-up budget and stop when the task has enough verified
+evidence; the retrieval engine itself does not infer dependencies or widen scope.
 
 ### Check the captured scope
 
@@ -922,7 +934,7 @@ may be skipped on Windows hosts without symlink privileges.
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
 publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v4.0.11` release.
+resolves the published `v4.0.12` release.
 
 ## Stable Scope and Guarantees
 

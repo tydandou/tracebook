@@ -27,6 +27,13 @@ language question — normally needs none.
 Zero results, truncated results, omitted warnings, an incomplete decisive excerpt,
 or competing applicable conclusions require attention before answering. An empty
 query result means no match for that key, not that no relevant knowledge exists.
+Nonzero matches may describe only the caller's symptom. For feature work, ask
+whether the interface contract and behavior needed to implement the task are
+known; for debugging, ask which execution step the current evidence explains
+and which remains unknown. A required provider contract is a reason to retrieve
+it even when local results are plentiful. Use the
+[cross-project reading rules](cross-project-reading-rules.md) to select a
+provider for that gap; match counts and scores are not completeness judgments.
 
 - Use paths, IDs or terms obtained from source/index navigation for a targeted
   follow-up; whole English words and CJK bigrams do not imply synonyms, stemming
@@ -40,12 +47,23 @@ query result means no match for that key, not that no relevant knowledge exists.
 - Read a few decisive entities with knowledge-id and full-content. If read_snapshots
   or versions changed between queries, reassess using the new complete version;
   do not splice incompatible read generations into one claimed fact.
+  Before an excerpt determines the provider or closes an information gap, read
+  its complete body and evidence. An excerpt missing a dependency does not prove
+  that no dependency exists. Keep the owning project selected for the full read
+  because the same knowledge ID may exist in several projects. Do not fetch the
+  full body of every result by default.
 - Normally allow at most two targeted discovery follow-ups after the opening
   query, with an aggregate 100,000-character result-content budget including
   decisive full reads. A task explicitly requiring deeper historical analysis
   can justify a stated larger budget. Stop earlier when evidence is sufficient
   or no new key remains; repeated state changes or exhausted budgets are disclosed
   limitations, not reasons for unlimited retries.
+  These limits apply across local and related-project reads together. Reuse
+  already-read results from the same scope, key, and snapshot; expanding to a
+  new project is a new scope, not a reason to repeat an unchanged local query.
+  Stop when the necessary implementation context or diagnostic evidence is
+  verified, not merely when any result appears. Report remaining gaps if the
+  budget is exhausted; a partial chain is not a confirmed root cause.
 
 Before adopting a conclusion, verify applicability and evidence. Recency only
 breaks score ties; neither the first result nor entity status proves business

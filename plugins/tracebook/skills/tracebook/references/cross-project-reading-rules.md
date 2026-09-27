@@ -1,14 +1,36 @@
 # Cross-Project Reading Rules
 
-Treat the active project as the default boundary. A different project becomes a
-source only when the user names it, supplies its path or stable ID, or selects
-a registered system that contains it. Do not search every project merely
-because they share an external knowledge root.
+Start in the active project. Explicit user selection remains valid; feature
+work and debugging can also reveal a necessary provider without the user naming
+it. Read that provider when an interface, service, or shared contract affects
+the task, or when its evidence can fill a specific gap in the execution chain.
+Do not wait for zero local matches when the task already requires that contract.
 
-Use `project-search` to present deterministic project candidates. A display
-name can be ambiguous, so the selected `project_id` is the authority for a
-cross-project read. Use a system only when its explicit membership and
-relations describe the requested microservice set.
+Before expanding, identify the missing fact and the project that can supply it.
+Use `preflight` relations as navigation, checked against source, configuration,
+logs, or verified knowledge. A relation is not proof of relevance or permission;
+a service address in an unrelated hit is not proof of ownership or failure.
+If local retrieval is empty and no provider is yet known, use the concrete task
+key to inspect the plausible direct relations within the permitted scope. Do
+not turn a zero result into an all-project search.
+
+Use `project-search` when the stable ID is unknown. Resolve ambiguous names or
+ownership before reading; if the evidence cannot resolve them, ask for the
+missing identity or scope. A confirmed dependency within the permitted task
+scope needs no repeated confirmation. Do not register a project just to read it.
+Use repeated `context-read --project-id` arguments for the selected projects,
+with a concrete interface name, error code, configuration key, or other task key.
+An explicit source or provider mapping can identify a registered project even
+without a system relation; reading it does not create a persistent relation.
+
+Read the relevant contract or execution segment, not the provider's entire
+architecture. A successful call to one provider does not establish that another
+provider failed; verify the actual failing step. Follow a further dependency
+only when a new task-relevant gap requires it, within the same permitted scope
+and the shared limits in [retrieval timing rules](retrieval-timing-rules.md).
+Do not restart the budget for each project or automatically traverse a system.
+Stop when the task has sufficient verified context. If a gap remains, state
+what was checked and what evidence or scope is missing.
 
 Every returned cross-project item must retain its source project identity. A
 fact about another service is not a fact about the active project. Do not copy

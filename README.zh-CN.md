@@ -41,7 +41,7 @@
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.11
+codex plugin marketplace add tydandou/tracebook --ref v4.0.12
 codex plugin add tracebook@tracebook
 ```
 
@@ -174,7 +174,7 @@ PowerShell 传输兼容性按证据等级声明：
 
 ## 安装
 
-`4.0.11` 已发布，对应 `v4.0.11` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.12` 已发布，对应 `v4.0.12` tag。稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -182,7 +182,7 @@ PowerShell 传输兼容性按证据等级声明：
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.11
+codex plugin marketplace add tydandou/tracebook --ref v4.0.12
 codex plugin add tracebook@tracebook
 ```
 
@@ -208,7 +208,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.11
+codex plugin marketplace add tydandou/tracebook --ref v4.0.12
 codex plugin add tracebook@tracebook
 ```
 
@@ -217,7 +217,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.11
+codex plugin marketplace add tydandou/tracebook --ref v4.0.12
 codex plugin add tracebook@tracebook
 ```
 
@@ -571,18 +571,18 @@ Python 前就会被不可逆地替换。系统会在任何知识写入前拒绝�
 
 ### 有边界地读取关联微服务
 
-当前项目始终是默认读取边界。用户明确点名其他服务时，先用 `project-search` 查找候选项目，再把选定的稳定 `project_id` 传给 `context --project-id`；不能因共用知识根目录而扫描全部项目。
+当前项目始终是默认读取边界。用户明确点名其他服务时，先用 `project-search` 查找候选项目，再把选定的稳定 `project_id` 传给只读的 `context-read --project-id`；不能因共用知识根目录而扫描全部项目。
 
 ```sh
 python "$SKILL_DIR/scripts/tracebook_runner.py" project-search \
   --root "$TRACEBOOK_ROOT" --query order-service
 
-python "$SKILL_DIR/scripts/tracebook_runner.py" context \
-  --root "$TRACEBOOK_ROOT" --cwd . \
+python "$SKILL_DIR/scripts/tracebook_runner.py" context-read \
+  --root "$TRACEBOOK_ROOT" \
   --project-id prj-... --query "OrderPaid 事件契约"
 ```
 
-可为一组微服务创建 `system`，登记成员与有向 API 或事件关系；`context --system-id sys-...` 仅读取该系统成员。新项目明确参考某个来源项目时，使用没有 `--cwd` 的只读命令，因而不会注册尚未创建的目标项目：
+可为一组微服务创建 `system`，登记成员与有向 API 或事件关系；`context --system-id sys-...` 选择当前目录项目与该系统成员的并集。该命令可能执行维护；日常只读查询优先使用 `context-read`。新项目明确参考某个来源项目时，使用没有 `--cwd` 的只读命令，因而不会注册尚未创建的目标项目：
 
 ```sh
 python "$SKILL_DIR/scripts/tracebook_runner.py" context-read \
@@ -591,6 +591,11 @@ python "$SKILL_DIR/scripts/tracebook_runner.py" context-read \
 ```
 
 此视图只返回架构、模块和决策知识。跨项目结果保留来源项目，不能把来源服务事实写成当前服务事实。
+
+功能开发或排障需要关联服务的接口契约、执行行为时，即使用户没有点名提供者，
+Agent 也可以根据任务证据定位已注册项目，确认身份和允许读取的范围后定向执行
+`context-read`，并读取关键条目的全文。本地有命中不代表上下文完整。
+跨项目读取共用既有补查预算，证据足够便停止；检索引擎本身不推断依赖或自动扩大范围。
 
 ### 检查捕获范围
 
@@ -762,7 +767,7 @@ git diff --check
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
 验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v4.0.11` 版本。
+`v4.0.12` 版本。
 
 ## 稳定范围与保证
 
