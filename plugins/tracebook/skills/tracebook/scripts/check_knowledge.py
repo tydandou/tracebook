@@ -646,10 +646,9 @@ def _entry_sections(content: str) -> list[list[tuple[int, str]]]:
     return sections
 
 
-def _fact_candidates(root: Path, pages: list[Path]) -> list[str]:
+def _fact_candidates(root: Path, pages: PageContents) -> list[str]:
     candidates: list[str] = []
-    for page in pages:
-        content = page.read_text(encoding="utf-8")
+    for page, content in pages.items():
         for section in _entry_sections(content):
             section_content = "\n".join(line for _, line in section)
             if _has_evidence(section_content) or PENDING_STATUS.search(section_content):
@@ -662,21 +661,21 @@ def _fact_candidates(root: Path, pages: list[Path]) -> list[str]:
     return candidates
 
 
-def _missing_audit_sources(root: Path, pages: list[Path], source_root: Path | None) -> list[str]:
+def _missing_audit_sources(root: Path, pages: PageContents, source_root: Path | None) -> list[str]:
     if source_root is None:
         return ["Source root was not provided for Deep Audit"]
     missing: list[str] = []
-    for page in pages:
-        for source_path in SOURCE_PATH.findall(page.read_text(encoding="utf-8")):
+    for page, content in pages.items():
+        for source_path in SOURCE_PATH.findall(content):
             if not (source_root / source_path).is_file():
                 missing.append(f"{_relative(root, page)} -> {source_path}")
     return sorted(set(missing))
 
 
-def _root_cause_candidates(root: Path, pages: list[Path]) -> list[str]:
+def _root_cause_candidates(root: Path, pages: PageContents) -> list[str]:
     candidates: list[str] = []
-    for page in pages:
-        for number, line in enumerate(page.read_text(encoding="utf-8").splitlines(), 1):
+    for page, content in pages.items():
+        for number, line in enumerate(content.splitlines(), 1):
             if "root cause" in line.lower() or "根因" in line:
                 candidates.append(f"{_relative(root, page)}:L{number}: root-cause claim requires human review")
     return candidates
@@ -699,11 +698,23 @@ def run_deep_audit(root: Path, project_dir: Path, source_root: Path | None = Non
     root = root.resolve()
     project_dir = project_dir.resolve()
     source = source_root.resolve() if source_root is not None else None
-    pages = _deep_pages(project_dir)
+    facts: list[str] = []
+    missing: list[str] = []
+    causes: list[str] = []
+    for page in _deep_pages(project_dir):
+        # Reuse this page across the analyses without retaining the whole tree.
+        contents = {page: page.read_text(encoding="utf-8")}
+        facts.extend(_fact_candidates(root, contents))
+        if source is not None:
+            missing.extend(_missing_audit_sources(root, contents, source))
+        causes.extend(_root_cause_candidates(root, contents))
     return DeepAuditReport(
-        fact_candidates=_fact_candidates(root, pages),
-        missing_source_paths=_missing_audit_sources(root, pages, source),
-        root_cause_candidates=_root_cause_candidates(root, pages),
+        fact_candidates=facts,
+        missing_source_paths=(
+            sorted(set(missing)) if source is not None
+            else ["Source root was not provided for Deep Audit"]
+        ),
+        root_cause_candidates=causes,
         status_log_drift=_status_log_drift(root, project_dir),
     )
 def run_check(
@@ -728,7 +739,24 @@ def run_check(
     changed = [path.resolve() for path in changed_paths]
     source = source_root.resolve() if source_root is not None else None
     check_type, trigger_reasons = trigger if trigger is not None else _trigger(_status_values(root), changed, now)
-    pages = _load_page_contents(project_dir)
+    return _check_pages(
+        root, project_dir, changed, now, source, _load_page_contents(project_dir),
+        (check_type, trigger_reasons), review_after_days,
+    )
+
+
+def _check_pages(
+    root: Path,
+    project_dir: Path,
+    changed: list[Path],
+    now: date,
+    source: Path | None,
+    pages: PageContents,
+    trigger: tuple[str, list[str]],
+    review_after_days: int | None,
+) -> CheckReport:
+    """Check already-read pages using resolved paths and the selected trigger."""
+    check_type, trigger_reasons = trigger
     broken_wikilinks, ambiguous_wikilinks = _broken_wikilinks(
         root, project_dir, pages
     )

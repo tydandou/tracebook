@@ -5,7 +5,8 @@ raw conversations, logs, guesses, or ordinary code changes. A knowledge entity
 has a stable lowercase-hyphenated `knowledge_id`; the ID does not change when
 the title, evidence, body, or lifecycle state changes.
 
-Before writing, use `context` to find an existing entity. Use `create` only
+Before writing, use `context-read-path` (or `context-read` for selected project
+IDs) to find an existing entity. Use `create` only
 for a new conclusion. Use `revise` or `change-status` with its returned
 version for a changed conclusion. Never create a second ID merely to avoid a
 version conflict.

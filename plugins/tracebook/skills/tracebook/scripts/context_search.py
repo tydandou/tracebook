@@ -260,7 +260,7 @@ def _evaluate_match(candidate: Candidate, query: _Query) -> tuple[bool, int, int
         # regex scan of unrelated fields, especially for exact-ID text queries.
         if query.identifiers and shared_tokens and not identifier_hit:
             identifier_hit = bool(query.identifiers & _identifiers(normalized, components=True))
-    return eligible, score, 2 if exact_id else int(identifier_hit)
+    return eligible or identifier_hit, score, 2 if exact_id else int(identifier_hit)
 
 
 def context(

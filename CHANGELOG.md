@@ -5,6 +5,32 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.13] - 2026-10-04
+
+### Fixed
+
+- Admit complete identifier matches even when their ordinary tokens are all
+  stopwords. Preserve scoring, filtering and budgets for Current and History
+  discovery without changing supported identifier syntax.
+
+### Changed
+
+- Reuse one page read for project health checks and relation candidates, and
+  one read per analyzed page for Deep Audit. Keep findings, triggers, risk
+  classification and persistence behavior unchanged.
+- Align ordinary reading instructions with the existing lock-free context-read
+  commands; activation and maintenance commands remain available.
+- Direct the Agent to load SKILL.md from Tracebook's path in the skill catalog.
+
+### Scope
+
+- Keep CLI/JSON contracts, storage schema, dependencies, lifecycle filters,
+  scoring and budgets unchanged. Complete identifier matches now qualify for
+  admission; unsupported identifier syntax is outside this fix.
+- Add regression coverage for identifier admission, read reuse, relation
+  candidates, scoped locking and relative knowledge roots. Scripted workflows
+  do not establish autonomous Skill-loading accuracy or semantic recall.
+
 ## [4.0.12] - 2026-09-27
 
 ### Changed

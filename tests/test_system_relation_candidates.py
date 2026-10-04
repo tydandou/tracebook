@@ -5,6 +5,11 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
+
+from plugins.tracebook.skills.tracebook.scripts.tracebook_runner import (
+    check, ensure_for_health,
+)
 
 RUNNER = (
     Path(__file__).resolve().parents[1]
@@ -84,6 +89,39 @@ class SystemRelationCandidateTest(unittest.TestCase):
             self.assertIn("spans-two-repos", lines[0])
             self.assertIn("sample_service", lines[0])
             self.assertIn("no system relation recorded", lines[0])
+
+    def test_project_check_reads_authority_once_and_keeps_relation_candidate(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            root, docs, _, _ = self._fixture(base)
+            receipt = self._capture(
+                root, docs, "spans-two-repos",
+                ["services/sample_service/src/sample_service.go:L1"],
+            )
+            page = Path(receipt["new_paths"][0])
+            context = ensure_for_health(root, docs)
+            original_read_text = Path.read_text
+            reads = []
+
+            def counted_read_text(path, *args, **kwargs):
+                if path == page:
+                    reads.append(path)
+                return original_read_text(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", new=counted_read_text):
+                result = check(
+                    context, [Path(p) for p in receipt["changed_paths"]],
+                    date(2026, 8, 10), docs,
+                    [Path(p) for p in receipt["new_paths"]],
+                )
+
+            self.assertEqual([page], reads)
+            candidates = [c for c in result.report.review_candidates
+                          if c.reason == "system_relation_candidate"]
+            self.assertEqual(1, len(candidates))
+            self.assertEqual("spans-two-repos", candidates[0].knowledge_id)
+            self.assertEqual("advisory", candidates[0].severity)
+            self.assertEqual("Light", result.report.check_type)
 
     def test_no_candidate_once_a_system_relation_exists(self) -> None:
         with TemporaryDirectory() as temp:

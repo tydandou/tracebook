@@ -14,12 +14,14 @@ full documents.
 4. Current project `index.md`.
 5. Current project `project-status.md`.
 6. Current project full `health-status.md`, including manual notes.
-7. Run Runner `context` with the task wording.
+7. Run `context-read-path --profile adaptive --query <task text>` for the registered project.
 8. Read task-relevant authority pages returned by context.
 
 Follow other scope health details only when explicitly relevant or performing
 a global review. Legacy top fields are not totals; persisted status is not a new
 check. Read-only commands never rebuild an existing verbose overview.
+Use `context-read` for explicitly selected project IDs. Activation or maintenance
+uses `resolve` only when required, as described by the installed Skill.
 
 ## Default Do Not Read
 

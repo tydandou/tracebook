@@ -8,10 +8,12 @@ The overview preserves scope risks, check dates, counters and issue counts with
 `Details` links; follow other scopes only for explicitly scoped or global review.
 Legacy top fields are not totals, and an overview is not a new check. Preflight
 and context reads do not rebuild old verbose overviews.
-Then run the Runner's deterministic `context` command with the task wording.
+Then run `context-read-path --profile adaptive --query <task text>` for the
+registered current project. Use `context-read` for explicitly selected project
+IDs. Both are read-only; use `resolve` only for required activation or maintenance.
 Read only the returned authority pages that are relevant to the work.
 
-`context` returns Current results by default, ordered deterministically by
+Retrieval returns Current results by default, ordered deterministically by
 stable ID, title, evidence/source-path, and body matches. Use
 `--include-history` to attach history to already matched entities; use the explicit
 `--profile audit` for history-based discovery, and `--as-of YYYY-MM-DD` to

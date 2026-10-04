@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from plugins.tracebook.skills.tracebook.scripts.check_knowledge import run_deep_audit
 from plugins.tracebook.skills.tracebook.scripts.health_state import (
@@ -17,6 +18,42 @@ class DeepAuditTest(unittest.TestCase):
         repo = base / "business"
         (repo / ".git").mkdir(parents=True)
         return resolve(base / "knowledge", repo), repo
+
+    def test_deep_audit_reads_each_analyzed_page_once(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            project = root / "01-projects" / "sample"
+            project.mkdir(parents=True)
+            page = project / "incident.md"
+            page.write_text(
+                "# Incident\nRoot cause: the API retried 3 times.\n\n"
+                "## Evidence\n- `src/missing.py:L1`\n",
+                encoding="utf-8",
+            )
+            original_read_text = Path.read_text
+            reads = []
+
+            def counted_read_text(path, *args, **kwargs):
+                if path == page:
+                    reads.append(path)
+                return original_read_text(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", new=counted_read_text):
+                report = run_deep_audit(root, project, root)
+
+            self.assertEqual([page], reads)
+            self.assertEqual(
+                ["01-projects/sample/incident.md:L2: factual claim requires evidence review"],
+                report.fact_candidates,
+            )
+            self.assertEqual(
+                ["01-projects/sample/incident.md -> src/missing.py"],
+                report.missing_source_paths,
+            )
+            self.assertEqual(
+                ["01-projects/sample/incident.md:L2: root-cause claim requires human review"],
+                report.root_cause_candidates,
+            )
 
     def test_deep_audit_outputs_candidates_without_asserting_business_truth(self) -> None:
         with TemporaryDirectory() as temp:

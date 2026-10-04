@@ -1,7 +1,8 @@
 # Writing Rules
 
 1. Structure knowledge; do not paste chat transcripts.
-2. Use `context` before writing and retain the stable `knowledge_id` for a
+2. Use `context-read-path` (or `context-read` for selected project IDs) before
+   writing and retain the stable `knowledge_id` for a
    conclusion across revisions.
 3. Mark uncertain information as `Pending`.
 4. State the evidence for conclusions inferred from code.

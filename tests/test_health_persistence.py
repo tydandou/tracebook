@@ -1,5 +1,7 @@
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -467,48 +469,82 @@ class HealthPersistenceTest(unittest.TestCase):
             self.assertIn("does not assert business truth", log.read_text(encoding="utf-8"))
             self.assertEqual((status, log), changed[:2])
 
+    def test_runner_preserves_relative_context_root_checks(self) -> None:
+        with TemporaryDirectory() as temp:
+            base = Path(temp).resolve()
+            repo = base / "business"
+            repo.mkdir()
+            context = resolve(base / "knowledge", repo)
+            page = context.root / "02-domain" / "rule.md"
+            page.write_text("# Rule\nEvidence:\n- `human:confirmed`\n", encoding="utf-8")
+            original_cwd = Path.cwd()
+            try:
+                os.chdir(base)
+                result = check(
+                    replace(context, root=Path("knowledge")),
+                    [page], date(2026, 7, 18), scope="domain",
+                )
+            finally:
+                os.chdir(original_cwd)
+            self.assertEqual("Light", result.report.check_type)
+            self.assertIn("02-domain/rule.md", result.report.orphan_pages)
+
     def test_runner_routes_scope_scan_and_persistence_under_the_same_lock(self) -> None:
         with TemporaryDirectory() as temp:
             base = Path(temp)
             repo = base / "business"
             (repo / ".git").mkdir(parents=True)
             context = resolve(base / "knowledge", repo)
-            report = self._report()
             active: list[str] = []
             aggregate = context.root / "00-global" / "health" / "health-status.md"
+            page = context.root / "02-domain" / "rule.md"
+            page.write_text(
+                "# Rule\nVerified scope fixture.\n\nEvidence:\n- `human:confirmed`\n",
+                encoding="utf-8",
+            )
+            day = date(2026, 7, 18)
+            status = health_path(context.root, "domain", "domain")
+            log = health_log_path(context.root, "domain", "domain", day)
+            original_lock = tracebook_runner.file_lock
+            original_read = Path.read_text
+            original_replace = os.replace
+            reads: list[Path] = []
+            writes: list[Path] = []
 
             @contextmanager
-            def recording_lock(root: Path, name: str, *, operation: str, **_: object):
-                active.append(name)
-                try:
-                    yield
-                finally:
-                    active.remove(name)
+            def recording_lock(root: Path, name: str, *, operation: str, **kwargs: object):
+                with original_lock(root, name, operation=operation, **kwargs):
+                    active.append(name)
+                    try:
+                        yield
+                    finally:
+                        active.remove(name)
 
-            def run(root: Path, scan_root: Path, *args: object, **kwargs: object) -> CheckReport:
-                self.assertEqual(context.root / "02-domain", scan_root)
-                self.assertIn("domain", active)
-                return report
+            def read(path: Path, *args: object, **kwargs: object) -> str:
+                if path == page:
+                    self.assertIn("domain", active)
+                    reads.append(path)
+                return original_read(path, *args, **kwargs)
 
-            def persist(*args: object) -> tuple[Path, ...]:
-                self.assertIn("domain", active)
-                return (health_path(context.root, "domain", "domain"),)
+            def replace(source, target, *args, **kwargs):
+                target = Path(target)
+                if target in {status, log}:
+                    self.assertIn("domain", active)
+                    writes.append(target)
+                elif target == aggregate:
+                    self.assertNotIn("domain", active)
+                return original_replace(source, target, *args, **kwargs)
 
             with patch.object(tracebook_runner, "file_lock", recording_lock), patch.object(
-                tracebook_runner, "run_check", side_effect=run
-            ), patch.object(
-                tracebook_runner, "persist_check_under_lock", side_effect=persist
-            ), patch.object(
-                tracebook_runner, "finish_health_persistence", return_value=(aggregate,)
-            ):
-                result = check(
-                    context,
-                    [],
-                    date(2026, 7, 18),
-                    scope="domain",
-                )
+                Path, "read_text", new=read
+            ), patch("os.replace", new=replace):
+                result = check(context, [page], day, scope="domain")
 
-            self.assertEqual((aggregate,), result.changed_paths)
+            self.assertEqual([page], reads)
+            self.assertEqual({status, log}, set(writes))
+            self.assertEqual("Light", result.report.check_type)
+            self.assertEqual(day, load_health_state(status).last_light)
+            self.assertEqual((status, log, aggregate), result.changed_paths)
 
 
 if __name__ == "__main__":

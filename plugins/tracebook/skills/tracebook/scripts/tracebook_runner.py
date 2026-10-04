@@ -20,6 +20,7 @@ if __package__ in (None, ""):
     from scripts.check_knowledge import (
         CheckReport,
         DeepAuditReport,
+        _check_pages,
         _load_page_contents,
         _trigger,
         run_check,
@@ -66,6 +67,7 @@ else:
     from .check_knowledge import (
         CheckReport,
         DeepAuditReport,
+        _check_pages,
         _load_page_contents,
         _trigger,
         run_check,
@@ -727,20 +729,24 @@ def _run_scoped_check(
     source_root: Path | None,
     review_after_days: int | None = None,
 ) -> CheckReport:
-    scan_root = _scope_scan_root(context, scope)
+    scan_root = _scope_scan_root(context, scope).resolve()
     trigger = _trigger(
         _scope_trigger_values(context, scope, today),
         changed_paths,
         today,
     )
-    report = run_check(
-        context.root,
+    changed = [path.resolve() for path in changed_paths]
+    source = source_root.resolve() if source_root is not None else None
+    pages = _load_page_contents(scan_root)
+    report = _check_pages(
+        context.root.resolve(),
         scan_root,
-        changed_paths,
+        changed,
         today,
-        source_root,
-        trigger=trigger,
-        review_after_days=review_after_days,
+        source,
+        pages,
+        trigger,
+        review_after_days,
     )
     if scope == "project":
         # Needs the project registry and the system registry, which the pure
@@ -749,7 +755,7 @@ def _run_scoped_check(
         report.review_candidates = sorted(
             report.review_candidates
             + system_relation_candidates(
-                context.root, context.record, _load_page_contents(scan_root)
+                context.root, context.record, pages
             ),
             key=lambda candidate: (candidate.path, candidate.reason),
         )

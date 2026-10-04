@@ -49,6 +49,87 @@ class RetrievalReliabilityTest(unittest.TestCase):
         self.write()
         self.write(operation="revise", expected_version=1, body="currenthandoff", day=2)
 
+    def test_complete_identifiers_admit_stopword_only_tokens(self):
+        self.write(body="设备字段 is_on、is.on、on/is、at:by、is-on 控制启用状态。")
+        root = self.resolved.root
+        fingerprint = lambda: {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+                               for p in root.rglob("*") if p.is_file()}
+        before = fingerprint()
+        for query in ("is_on", "is.on", "on/is", "at:by", "is-on",
+                      "ｉｓ＿ｏｎ", "ｉｓ．ｏｎ"):
+            with self.subTest(query=query):
+                result = self.read(query, profile="adaptive")
+                self.assertEqual(["retry-rule"],
+                                 [item["knowledge_id"] for item in result["current_context"]])
+                self.assertFalse(result["adaptive_history_fallback"])
+                self.assertEqual("selected_version", result["current_context"][0]["match_source"])
+                self.assert_budget(result, 20000)
+        self.assertEqual(["retry-rule"],
+                         [item["knowledge_id"] for item in self.read(knowledge_id="retry-rule")["current_context"]])
+        self.assertEqual(before, fingerprint())
+
+    def test_identifier_admission_preserves_stopword_noise_and_boundaries(self):
+        self.write(body="字段 this_is_on、is_on_extra、this.is.on、is.on.extra。")
+        for query in ("is", "on", "is on", "the a is of to", "is_on", "is.on"):
+            with self.subTest(query=query):
+                self.assertEqual([], self.read(query, profile="adaptive")["current_context"])
+
+    def test_complete_identifier_admission_also_discovers_history(self):
+        self.write(body="旧字段 is_on、is.on 控制设备启用状态。")
+        self.write(operation="revise", expected_version=1, body="设备采用新版状态规则。", day=2)
+        for query in ("is_on", "is.on", "ｉｓ＿ｏｎ"):
+            with self.subTest(query=query):
+                self.assertEqual([], self.read(query)["current_context"])
+                self.assertEqual([], self.read(query, include_history=True)["current_context"])
+                adaptive = self.read(query, profile="adaptive")
+                current, = adaptive["current_context"]
+                self.assertTrue(adaptive["adaptive_history_fallback"])
+                self.assertEqual((2, "history", 1),
+                                 (current["version"], current["match_source"], current["matched_version"]))
+                self.assertEqual("设备采用新版状态规则。", current["excerpt"])
+                self.assertEqual([], adaptive["historical_context"])
+                audit = self.read(query, profile="audit")
+                self.assertEqual([1], [item["version"] for item in audit["historical_context"]])
+                old = self.read(query, profile="audit", as_of=date(2026, 9, 1))
+                self.assertEqual((1, "historical", "selected_version"),
+                                 (old["current_context"][0]["version"],
+                                  old["current_context"][0]["version_state"],
+                                  old["current_context"][0]["match_source"]))
+                self.assert_budget(adaptive, 20000)
+                self.assert_budget(audit, 50000)
+
+    def test_identifier_admission_keeps_scope_filters_and_budgets(self):
+        self.write(body="字段 is_on 控制状态。")
+        self.write(kind="module", knowledge_id="device-module", body="字段 is_on 控制状态。")
+        self.write(knowledge_id="pending-rule", status="pending", body="字段 is_on 控制状态。")
+        self.write(scope="domain", knowledge_id="domain-rule", body="字段 is_on 控制状态。")
+        other_repo = self.base / "other"
+        other_repo.mkdir()
+        other = resolve(self.resolved.root, other_repo)
+        self.write(target=other, knowledge_id="other-rule", body="字段 is_on 控制状态。")
+        for options, expected in (
+            ({"kind": "decision"}, {"retry-rule"}),
+            ({"status": "pending"}, {"pending-rule"}),
+            ({"scope": "domain"}, {"domain-rule"}),
+            ({"scope": "pattern"}, set()),
+        ):
+            with self.subTest(options=options):
+                self.assertEqual(expected,
+                                 {item["knowledge_id"] for item in self.read("is_on", **options)["current_context"]})
+        combined = read_context(self.resolved.root,
+                                (self.resolved.record.project_id, other.record.project_id), "is_on")
+        self.assertEqual({"retry-rule", "device-module", "other-rule"},
+                         {item["knowledge_id"] for item in combined["current_context"]})
+        limited = self.read("is_on", max_results=1)
+        self.assertEqual(2, limited["matched_count"])
+        self.assertEqual(1, limited["returned_current_count"])
+        self.assertIn("max_results", limited["truncation_reason"])
+        small = self.read("is_on", max_chars=1)
+        self.assertEqual(2, small["matched_count"])
+        self.assertEqual([], small["current_context"])
+        self.assertIn("max_chars", small["truncation_reason"])
+        self.assert_budget(small, 1)
+
     def test_history_discovers_current_only_in_explicit_audit_profile(self):
         self.revised()
         for options in ({}, {"include_history": True}):

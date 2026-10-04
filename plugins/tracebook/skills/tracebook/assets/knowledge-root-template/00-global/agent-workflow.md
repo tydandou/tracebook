@@ -1,9 +1,10 @@
 # Agent Knowledge Workflow
 
 Before a business task, preflight a new or uncertain target; once development
-starts, resolve the project and run deterministic `context` retrieval with the
-task wording. The active project is the default boundary. Select another
-project or a registered system only when the request explicitly requires it.
+starts on a registered project, run read-only `context-read-path --profile adaptive`
+with the task wording. Follow the installed Skill for required activation or
+maintenance. The active project is the default boundary. Select related projects
+only under the installed Skill's cross-project reading rules and permitted scope.
 After a business task, decide whether
 verified durable knowledge was learned. Create a new schema-v2 `knowledge_id`
 only for a new conclusion; otherwise revise the existing entity with its

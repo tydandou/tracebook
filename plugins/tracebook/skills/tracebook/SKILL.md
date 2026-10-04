@@ -1,6 +1,6 @@
 ---
 name: tracebook
-description: MUST invoke before any software-development work in the session. This includes analysis, scaffolding a new project, debugging, review, code changes, tests, builds, deploys, CI/CD, and incidents. It applies to work outside the current repository too. Loads external project knowledge context first. After task completion, evaluates the write gate for durable knowledge capture. Skip only for general Q&A or non-project conversations.
+description: MUST invoke before any software-development work in the session. This includes analysis, scaffolding a new project, debugging, review, code changes, tests, builds, deploys, CI/CD, and incidents. It applies to work outside the current repository too. Loads external project knowledge context first. After task completion, evaluates the write gate for durable knowledge capture. Skip only for general Q&A or non-project conversations. Load SKILL.md using Tracebook’s path in the skill catalog.
 ---
 
 # Tracebook
