@@ -668,7 +668,7 @@ def read_context_for_path(
     """Read an already activated target without locks or maintenance writes."""
     target = repository_root(cwd)
     resolved_root, target = validate_external_root(root, target)
-    record = registered_project(resolved_root, target, resolved_repo=True)
+    record = registered_project(resolved_root, target, resolved_repo=True, remote_check=False)
     if record is None:
         raise TracebookError(
             "PROJECT_ACTIVATION_REQUIRED",

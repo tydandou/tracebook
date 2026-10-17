@@ -403,22 +403,30 @@ def identity_advisory(record: ProjectRecord) -> str | None:
 
 
 def registered_project(
-    knowledge_root: Path, repo: Path, *, resolved_repo: bool = False
+    knowledge_root: Path, repo: Path, *, resolved_repo: bool = False, remote_check: bool = True
 ) -> ProjectRecord | None:
     """Resolve an already registered project without changing the knowledge root.
 
     Pass ``resolved_repo=True`` when ``repo`` is already a ``repository_root``
     result, to skip a redundant ``git rev-parse`` subprocess. It is idempotent
     (resolving a Git toplevel returns itself), so the flag only avoids the cost.
+
+    Pass ``remote_check=False`` on the read path to skip the ``git config``
+    remote probe once the canonical location already matches: a location hit is
+    authoritative, and the probe costs a subprocess per read. ``resolve`` and
+    preflight keep the default, so location/remote identity conflicts are still
+    detected where they are first established.
     """
     location = repo if resolved_repo else repository_root(repo)
     root, location = validate_external_root(knowledge_root, location)
     path = registry_path(root)
     records = _load_registry(path, root)
     location_text, location_key = _canonical_location(location, registry=path)
-    remote = _origin_remote(location)
     locations, remotes = _signal_indexes(records, registry=path)
     by_location = locations.get(location_key)
+    if by_location is not None and not remote_check:
+        return by_location
+    remote = _origin_remote(location)
     by_remote = remotes.get(remote) if remote else None
     if by_location and by_remote and by_location.project_id != by_remote.project_id:
         raise _identity_conflict(location_text, by_location, remote or "", by_remote)

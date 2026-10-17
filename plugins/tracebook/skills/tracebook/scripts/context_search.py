@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 import json
+import math
 import re
 import unicodedata
 from collections.abc import Mapping
@@ -85,7 +86,13 @@ class _Query:
     def parse(cls, value: str) -> _Query:
         normalized = _norm(value)
         tokens = frozenset(_tokens(normalized))
-        return cls(normalized, tokens, tokens - STOPWORDS, frozenset(_identifiers(normalized)))
+        effective = tokens - STOPWORDS
+        # Single ASCII letters (e.g. the "x" split from "x_customer_record") carry
+        # almost no discriminating information and inflate recall severely.
+        # Drop them only when other effective tokens remain; a query that is
+        # itself a single letter (e.g. "c" for the C language) keeps its token.
+        longer = frozenset(t for t in effective if len(t) > 1 or not t.isascii())
+        return cls(normalized, tokens, longer if longer else effective, frozenset(_identifiers(normalized)))
 
 
 def _evidence(section: str) -> list[str]:
@@ -235,8 +242,54 @@ def _candidates(root: Path, projects: tuple[ProjectRecord, ...], scope: str, inc
     return current, history, warnings
 
 
-def _evaluate_match(candidate: Candidate, query: _Query) -> tuple[bool, int, int]:
-    """Reuse each field's tokens for admission and score; retain no corpus cache."""
+def _candidate_fields(candidate: Candidate) -> tuple[tuple[str, int], ...]:
+    """The scored fields of a candidate and their structural weights."""
+    return (
+        (candidate.fields["knowledge_id"], 0),
+        (candidate.fields["title"], 12),
+        (" ".join(_evidence(candidate.section)), 10),
+        # Preserve the existing section scoring, including its Evidence block.
+        (candidate.section, 4),
+    )
+
+
+def _document_frequencies(candidates: list[Candidate]) -> dict[str, int]:
+    """Count, per token, how many candidates contain it in any scored field.
+
+    Computed over the request's own candidate set, so no corpus cache or index
+    is retained between requests. A token is counted once per candidate.
+    """
+    frequencies: dict[str, int] = {}
+    for candidate in candidates:
+        seen: set[str] = set()
+        for value, _ in _candidate_fields(candidate):
+            for token in _tokens(_norm(value), components=True):
+                if token not in seen:
+                    seen.add(token)
+                    frequencies[token] = frequencies.get(token, 0) + 1
+    return frequencies
+
+
+def _inverse_document_frequency(frequencies: dict[str, int], total: int) -> dict[str, float]:
+    """Smoothed IDF: `log(N / (df + 1)) + 1`. Always positive, so a term that
+    appears everywhere still contributes, only far less than a rare one."""
+    if total <= 0:
+        return {}
+    return {token: math.log(total / (count + 1)) + 1.0 for token, count in frequencies.items()}
+
+
+def _evaluate_match(
+    candidate: Candidate,
+    query: _Query,
+    idf: dict[str, float] | None = None,
+) -> tuple[bool, int, int]:
+    """Reuse each field's tokens for admission and score; retain no corpus cache.
+
+    When `idf` is supplied, each shared token contributes its inverse document
+    frequency instead of a flat count, so rare identifiers outrank tokens that
+    appear across the whole corpus. Without it the previous flat weighting is
+    preserved.
+    """
     score = 10 if candidate.fields.get("status") == "current" and not candidate.historical else 0
     if not query.normalized.strip():
         return False, score, 0
@@ -244,18 +297,15 @@ def _evaluate_match(candidate: Candidate, query: _Query) -> tuple[bool, int, int
     eligible, identifier_hit = exact_id, False
     if exact_id:
         score += 100
-    for value, weight in (
-        (candidate.fields["knowledge_id"], 0),
-        (candidate.fields["title"], 12),
-        (" ".join(_evidence(candidate.section)), 10),
-        # Preserve the existing section scoring, including its Evidence block.
-        (candidate.section, 4),
-    ):
+    for value, weight in _candidate_fields(candidate):
         normalized = _norm(value)
         tokens = _tokens(normalized, components=True)
         eligible = eligible or bool(query.effective & tokens)
         shared_tokens = query.tokens & tokens
-        score += weight * len(shared_tokens)
+        if idf is None:
+            score += weight * len(shared_tokens)
+        else:
+            score += round(weight * sum(idf.get(token, 1.0) for token in shared_tokens))
         # A complete identifier also shares a lexical token. Avoid a second
         # regex scan of unrelated fields, especially for exact-ID text queries.
         if query.identifiers and shared_tokens and not identifier_hit:
@@ -305,10 +355,14 @@ def context(
         and (allowed_kinds is None or item.fields["type"] in allowed_kinds)
     ]
     scored: list[tuple[Candidate, int, bool, Candidate, int]] = []
+    # IDF is derived from this request's own candidate set, so document
+    # frequencies reflect the pages actually under consideration and nothing
+    # is cached between requests.
+    idf = _inverse_document_frequency(_document_frequencies(selected), len(selected))
     for item in selected:
         evidence_hit = bool(wanted & _evidence_keys(item.section)) if wanted else False
         exact_id = knowledge_id is not None and item.fields["knowledge_id"] == knowledge_id
-        overlap, score, identifier_rank = _evaluate_match(item, parsed_query)
+        overlap, score, identifier_rank = _evaluate_match(item, parsed_query, idf)
         direct = exact_id or evidence_hit or (has_query and overlap)
         matched = item
         if not direct:
@@ -316,7 +370,7 @@ def context(
             # status/kind/project filters or earns a Current evidence-path match.
             history_hits = []
             for historical in history_by_path.get(item.path, ()) if discover_history and has_query else ():
-                hit, old_score, old_rank = _evaluate_match(historical, parsed_query)
+                hit, old_score, old_rank = _evaluate_match(historical, parsed_query, idf)
                 if hit:
                     history_hits.append((historical, old_score, old_rank))
             if not history_hits:

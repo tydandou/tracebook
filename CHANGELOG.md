@@ -5,6 +5,45 @@ before the matching Git tag is published.
 
 ## [Unreleased]
 
+## [4.0.14] - 2026-10-17
+
+### Fixed
+
+- Exclude single ASCII-letter components such as the `x` split from
+  `x_customer_record` from ordinary candidate admission when other effective query
+  terms remain. A query that is itself one letter keeps its existing behavior,
+  and complete identifier admission remains unchanged.
+
+### Changed
+
+- Weight shared retrieval terms by inverse document frequency computed from
+  the current request's candidate set. Rare test names, identifiers and
+  configuration keys can outrank common words without adding an index, cache,
+  service or dependency. The JSON `score` remains an integer relevance value,
+  but its numeric value is now corpus-relative and may differ from earlier
+  releases.
+- Let `context-read-path` return an already registered location without a
+  second Git remote probe. Preflight and maintenance paths retain full
+  location/remote conflict checks, while a location miss still allows remote
+  identity resolution.
+- Document the `CLAUDE_CODE_MODEL_CAPABILITIES=-mid_conv_system` client
+  workaround for third-party gateways that silently discard Claude Code's
+  mid-conversation system message containing the Skill list.
+
+### Tests
+
+- Add a fixed retrieval evaluation suite with 53 synthetic knowledge pages and
+  80 cases covering identifiers, Chinese and mixed queries, troubleshooting,
+  feature work, deployment, databases, lifecycle, budgets and explicit
+  cross-project reads. Known lexical and field-weight boundaries remain
+  explicit fixtures; latency is reported rather than used as a gate.
+
+### Scope
+
+- Keep storage schema, CLI options, lifecycle and scope filters, result budgets
+  and dependencies unchanged. CamelCase decomposition, synonym expansion,
+  stemming and further field-weight tuning remain outside this release.
+
 ## [4.0.13] - 2026-10-04
 
 ### Fixed

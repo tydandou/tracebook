@@ -1,0 +1,102 @@
+{
+  "note": "status=pass 必须满足全部断言；status=known_gap 记录当前已知缺口，若意外通过则测试失败，提示把状态改回 pass。project 默认 target，both 表示 target+sibling 的显式多项目读取。",
+  "cases": [
+    {"id": "A01", "query": "x_customer_record", "must_hit": ["customer-sharding", "record-verify-tool"], "top1": "customer-sharding", "must_not_hit": ["contact-verify-sample", "dead-letter", "sync-retry", "sync-watermark"], "status": "pass", "reason": "R2 fixed: single-letter component x excluded from effective tokens"},
+    {"id": "A02", "query": "record_diff_check", "must_hit": ["record-verify-tool"], "top1": "record-verify-tool"},
+    {"id": "A03", "query": "is_on", "must_hit": ["device-switch"], "top1": "device-switch", "must_not_hit": ["device-switch-extra"]},
+    {"id": "A04", "query": "http.client.timeout", "must_hit": ["config-timeout"], "top1": "config-timeout"},
+    {"id": "A05", "query": "tools/record_diff_check", "must_hit": ["record-verify-tool"], "top1": "record-verify-tool"},
+    {"id": "A06", "query": "sync-cli", "must_hit": ["cli-subcommand"], "top1": "cli-subcommand"},
+    {"id": "A07", "query": "ConvertCustomerCode", "must_hit": ["camel-converter"], "top1": "camel-converter"},
+    {"id": "A08", "query": "CustomerCode", "must_hit": ["camel-converter"], "status": "known_gap", "reason": "CamelCase 不拆分组件，词法检索边界"},
+    {"id": "A09", "query": "x_sync_dead_letter", "must_hit": ["dead-letter", "sync-retry"], "top1": "dead-letter"},
+
+    {"id": "B01", "query": "水位线", "must_hit": ["sync-watermark"], "top1": "sync-watermark"},
+    {"id": "B02", "query": "客户编码", "must_hit": ["long-body-tail"], "must_not_hit": ["domain-customer-code"]},
+    {"id": "B03", "query": "tools record_diff_check x_customer_record 数据不一致 两个 rid 同步 校验 执行方式", "must_hit": ["record-verify-tool"], "top1": "record-verify-tool", "must_not_hit": ["demo-bank-sample"]},
+    {"id": "B04", "query": "死信记录重放", "must_hit": ["dead-letter"], "top1": "dead-letter"},
+    {"id": "B05", "query": "失败重试几次", "must_hit": ["sync-retry"], "top1": "sync-retry"},
+    {"id": "B06", "query": "标识计算方法", "must_hit": ["rid-generation-rule"], "status": "known_gap", "reason": "同义改写，无共享词"},
+
+    {"id": "C01", "query": "RID 不一致 同步", "must_hit": ["catalog-rid-mismatch"], "must_not_hit": ["demo-bank-sample"]},
+    {"id": "C02", "query": "增量同步 水位线", "must_hit": ["sync-watermark"], "top1": "sync-watermark"},
+    {"id": "C03", "query": "RID 生成规则", "must_hit": ["rid-generation-rule"], "top1": "rid-generation-rule"},
+    {"id": "C04", "query": "RID 格式", "must_hit": ["rid-format"], "top1": "rid-format"},
+    {"id": "C05", "query": "同步失败重试", "must_hit": ["sync-retry"], "top1": "sync-retry"},
+    {"id": "C06", "query": "校验环境 prod 只读", "must_hit": ["verify-env"], "top1": "verify-env"},
+    {"id": "C07", "query": "Windows 启动同步", "must_hit": ["windows-path"], "top1": "windows-path"},
+    {"id": "C08", "query": "连接池", "must_hit": ["mysql-conn"], "top1": "mysql-conn"},
+    {"id": "C09", "query": "分库分表", "must_hit": ["customer-sharding"], "top1": "customer-sharding"},
+
+    {"id": "D01", "options": {"evidence_paths": ["tools/record_diff_check/main.go"]}, "must_hit": ["record-verify-tool"], "top1": "record-verify-tool", "must_not_hit": ["output-interpretation"]},
+    {"id": "D02", "options": {"evidence_paths": ["tools/record_diff_check/main.go:L99"]}, "must_hit": ["record-verify-tool"], "top1": "record-verify-tool"},
+    {"id": "D03", "options": {"evidence_paths": ["scripts/run_sync.ps1"]}, "must_hit": ["windows-path"], "top1": "windows-path"},
+    {"id": "D04", "options": {"evidence_paths": ["manual/absent/main.go"]}, "expect_empty": true},
+    {"id": "D05", "query": "连接池", "options": {"evidence_paths": ["tools/record_diff_check/main.go"]}, "must_hit": ["record-verify-tool", "mysql-conn"], "top1": "record-verify-tool"},
+
+    {"id": "E01", "query": "并发", "must_not_hit": ["pending-concurrency"]},
+    {"id": "E02", "query": "legacycsvtoken", "options": {"profile": "adaptive"}, "must_hit": ["legacy-format"], "top1": "legacy-format"},
+
+    {"id": "F01", "query": "is_on", "project": "both", "must_hit": ["device-switch", "device-switch@sibling"]},
+    {"id": "F02", "query": "RID 生成", "must_hit": ["rid-generation-rule"], "top1": "rid-generation-rule", "must_not_hit": ["rid-generation-rule@sibling"]},
+    {"id": "F03", "query": "客户编码", "options": {"scope": "domain"}, "must_hit": ["domain-customer-code"], "must_not_hit": ["long-body-tail"]},
+    {"id": "F04", "query": "幂等", "options": {"scope": "pattern"}, "must_hit": ["pattern-idempotent"]},
+    {"id": "F05", "query": "RID", "options": {"kind": "module"}, "must_hit": ["record-verify-tool"], "must_not_hit": ["rid-format"]},
+
+    {"id": "G01", "query": "kafka 消费位点", "expect_empty": true},
+    {"id": "G02", "query": "the a is of to", "expect_empty": true},
+    {"id": "G03", "query": "redis", "expect_empty": true},
+    {"id": "G04", "query": "如何处理问题", "expect_empty": true, "status": "known_gap", "reason": "通用词命中但无用（合成场景中的“有命中但无用”）"},
+
+    {"id": "H01", "query": "hugepagetoken", "must_hit": ["huge-page"], "top1": "huge-page"},
+    {"id": "H02", "query": "同步", "options": {"max_results": 3}, "expect_fields": {"returned_count": 3, "truncated": true}},
+    {"id": "H03", "query": "record_diff_check", "options": {"max_chars": 100}, "expect_fields": {"returned_count": 0, "truncated": true}},
+
+    {"id": "K01", "scenario": "排障：错误码", "query": "E1001", "must_hit": ["err-code-e1001"], "top1": "err-code-e1001"},
+    {"id": "K02", "scenario": "排障：粘贴异常", "query": "java.lang.NullPointerException at com.acme.order.CallbackHandler.handle", "must_hit": ["stacktrace-npe"], "top1": "stacktrace-npe"},
+    {"id": "K03", "scenario": "排障：类名", "query": "CallbackHandler", "must_hit": ["stacktrace-npe"], "top1": "stacktrace-npe"},
+    {"id": "K04", "scenario": "排障：HTTP 状态", "query": "502 Bad Gateway", "must_hit": ["http-502-gateway"], "top1": "http-502-gateway"},
+    {"id": "K05", "scenario": "排障：容器事件", "query": "OOMKilled", "must_hit": ["k8s-resources"], "top1": "k8s-resources"},
+    {"id": "K06", "scenario": "排障：中文现象", "query": "时区 跨天统计不对", "must_hit": ["timezone-bug"], "top1": "timezone-bug"},
+    {"id": "K07", "scenario": "排障：失败测试", "query": "TestOrderTimeoutCancel 偶发失败", "must_hit": ["test-flaky"], "top1": "test-flaky", "status": "pass", "reason": "R1 fixed: IDF weighting lets the unique test name outrank the common token 失败"},
+    {"id": "K08", "scenario": "排障：栈帧文件行", "query": "CallbackHandler.java:55", "must_hit": ["stacktrace-npe"], "top1": "stacktrace-npe"},
+    {"id": "K09", "scenario": "排障：栈帧证据路径", "options": {"evidence_paths": ["src/main/java/com/acme/order/CallbackHandler.java"]}, "must_hit": ["stacktrace-npe"], "top1": "stacktrace-npe"},
+
+    {"id": "K10", "scenario": "功能：API 路径", "query": "/api/v1/orders/{order_id}", "must_hit": ["api-order-detail"], "top1": "api-order-detail"},
+    {"id": "K11", "scenario": "功能：中文接口", "query": "订单详情接口 返回字段", "must_hit": ["api-order-detail"], "top1": "api-order-detail"},
+    {"id": "K12", "scenario": "功能：前端组件", "query": "OrderListTable.vue 分页", "must_hit": ["order-list-component"], "top1": "order-list-component"},
+    {"id": "K13", "scenario": "功能：配置键", "query": "ratelimit.order.qps", "must_hit": ["ratelimit-config"], "top1": "ratelimit-config"},
+    {"id": "K14", "scenario": "功能：英文短语", "query": "access token 有效期", "must_hit": ["auth-jwt"], "top1": "auth-jwt"},
+    {"id": "K15", "scenario": "功能：中文任务描述", "query": "大促前把订单接口限流调高", "must_hit": ["ratelimit-config"], "top1": "ratelimit-config", "status": "known_gap", "reason": "字段权重 12:4 压过 IDF：订单/接口命中干扰页标题"},
+
+    {"id": "K20", "scenario": "部署：环境变量", "query": "ORDER_DB_URL", "must_hit": ["env-db-url"], "top1": "env-db-url"},
+    {"id": "K21", "scenario": "部署：Nginx 参数", "query": "proxy_read_timeout", "must_hit": ["http-502-gateway"], "top1": "http-502-gateway"},
+    {"id": "K22", "scenario": "部署：K8s 字段", "query": "resources.limits.memory", "must_hit": ["k8s-resources"], "top1": "k8s-resources"},
+
+    {"id": "K30", "scenario": "数据库：迁移文件", "query": "V20260901__add_idx_order_user.sql", "must_hit": ["sql-migration"], "top1": "sql-migration"},
+    {"id": "K31", "scenario": "数据库：表名", "query": "x_order_entry 联合索引", "must_hit": ["sql-migration"], "top1": "sql-migration", "must_not_hit": ["customer-sharding", "contact-verify-sample"], "status": "pass", "reason": "R2 fixed: x from x_order_entry no longer admitted as effective token"},
+    {"id": "K32", "scenario": "性能：慢查询", "query": "慢查询", "must_hit": ["slow-query"], "top1": "slow-query"},
+
+    {"id": "K40", "scenario": "依赖：版本升级", "query": "gorm v1.25.0 升级", "must_hit": ["dep-upgrade"], "top1": "dep-upgrade"},
+    {"id": "K41", "scenario": "依赖：API 行为", "query": "gorm Save 零值", "must_hit": ["dep-upgrade"], "top1": "dep-upgrade"},
+    {"id": "K42", "scenario": "兼容：版本号", "query": "2.3.0 426", "must_hit": ["version-compat"], "top1": "version-compat"},
+
+    {"id": "K50", "scenario": "CI：job 名", "query": "unit-test job", "must_hit": ["ci-pipeline"], "top1": "ci-pipeline"},
+    {"id": "K51", "scenario": "CI：中文", "query": "lint 失败", "must_hit": ["ci-pipeline"], "top1": "ci-pipeline", "status": "known_gap", "reason": "字段权重 12:4 压过 IDF：失败命中干扰页标题"},
+
+    {"id": "K60", "scenario": "评审：约定", "query": "handler 直接访问数据库", "must_hit": ["review-rule"], "top1": "review-rule"},
+    {"id": "K61", "scenario": "评审：英文句子", "query": "how is the token refreshed", "must_hit": ["auth-jwt"], "top1": "auth-jwt"},
+    {"id": "K62", "scenario": "评审：英文词形", "query": "refreshing tokens", "must_hit": ["auth-jwt"], "status": "known_gap", "reason": "R4：无词形归一（refreshing/tokens），词法检索边界"},
+
+    {"id": "K70", "scenario": "跨项目：本项目无契约", "query": "X-Pay-Signature", "expect_empty": true},
+    {"id": "K71", "scenario": "跨项目：显式读取提供方", "query": "X-Pay-Signature", "project": "both", "must_hit": ["payment-callback-contract@sibling"], "top1": "payment-callback-contract@sibling"},
+    {"id": "K72", "scenario": "跨项目：本项目幂等", "query": "支付回调 幂等", "must_hit": ["pay-callback-idempotent"], "top1": "pay-callback-idempotent"},
+
+    {"id": "K80", "scenario": "生命周期：废弃接口默认不出", "query": "/api/orders/detail", "must_not_hit": ["legacy-order-api"]},
+    {"id": "K81", "scenario": "生命周期：显式查废弃", "query": "/api/orders/detail", "options": {"status": "deprecated"}, "must_hit": ["legacy-order-api"]},
+
+    {"id": "K90", "scenario": "中文自然语言：库存", "query": "用户反馈下单提示库存不足，帮我看看是哪里返回的", "must_hit": ["err-code-e1001"], "top1": "err-code-e1001"},
+    {"id": "K91", "scenario": "中文自然语言：缓存", "query": "缓存什么时候失效", "must_hit": ["order-cache"], "top1": "order-cache"},
+    {"id": "K92", "scenario": "噪声：通用英文任务", "query": "fix the bug in order service", "must_not_hit": ["demo-bank-sample", "rid-format"]}
+  ]
+}

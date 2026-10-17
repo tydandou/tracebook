@@ -41,7 +41,7 @@
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.13
+codex plugin marketplace add tydandou/tracebook --ref v4.0.14
 codex plugin add tracebook@tracebook
 ```
 
@@ -174,7 +174,7 @@ PowerShell 传输兼容性按证据等级声明：
 
 ## 安装
 
-`4.0.13` 已发布，对应 `v4.0.13` tag。稳定版本请使用下面带 tag 的安装命令；
+`4.0.14` 对应 `v4.0.14` tag。tag 发布后，稳定版本请使用下面带 tag 的安装命令；
 从 clone 开发时，请使用本地加载方式。
 
 ### Codex
@@ -182,7 +182,7 @@ PowerShell 传输兼容性按证据等级声明：
 tag 发布后执行：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.13
+codex plugin marketplace add tydandou/tracebook --ref v4.0.14
 codex plugin add tracebook@tracebook
 ```
 
@@ -208,7 +208,7 @@ Tracebook 是纯 Skill 插件：不包含生命周期 Hook，因此无需在 `/h
 `codex plugin marketplace list` 确认）。重新添加来源，再安装：
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.13
+codex plugin marketplace add tydandou/tracebook --ref v4.0.14
 codex plugin add tracebook@tracebook
 ```
 
@@ -217,7 +217,7 @@ codex plugin add tracebook@tracebook
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.13
+codex plugin marketplace add tydandou/tracebook --ref v4.0.14
 codex plugin add tracebook@tracebook
 ```
 
@@ -239,6 +239,23 @@ claude --plugin-dir ./plugins/tracebook
 ```
 
 通过 marketplace 安装后，启动新会话或运行 `/reload-plugins`。
+
+### Skill 没有自动触发？
+
+如果你通过第三方 API 网关使用 Claude Code，Tracebook 可能不会自动调用。原因是 Claude Code
+把 Skill 列表放在一条中途 system 消息里发送，部分网关会静默丢弃这条消息而不返回拒绝状态码，
+导致 Claude Code 的回退机制无法触发。
+
+在 `~/.claude/settings.json` 的 `"env"` 中加入以下配置可以解决：
+
+```json
+"CLAUDE_CODE_MODEL_CAPABILITIES": "-mid_conv_system"
+```
+
+这会让 Claude Code 改用 user 消息发送 Skill 列表，绕过网关的限制。effort、thinking 等其他能力不受影响。
+
+注意：`CLAUDE_CODE_MODEL_CAPABILITIES` 是未公开的内部变量，Claude Code 升级后如果触发问题复现，
+请重新检查。Codex 用户不受此影响，Codex 使用 Responses 协议，以 developer 消息发送 Skill 列表。
 
 ### 更新或恢复 Claude Code 安装
 
@@ -766,8 +783,8 @@ git diff --check
 检查。Linux 会执行在缺少符号链接权限的 Windows 主机上可能跳过的符号链接边界用例。
 
 记录或发布版本前，应对照当前 Codex 和 Claude Code CLI help 检查 marketplace 命令，
-验证中英文指南并发布匹配的 Git tag。上面带 tag 的 Codex 安装命令会解析到已发布的
-`v4.0.13` 版本。
+验证中英文指南并发布匹配的 Git tag。发布后，上面带 tag 的 Codex 安装命令会解析到
+`v4.0.14` 版本。
 
 ## 稳定范围与保证
 

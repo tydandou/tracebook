@@ -47,7 +47,7 @@ new agent session:
 **Codex**
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.13
+codex plugin marketplace add tydandou/tracebook --ref v4.0.14
 codex plugin add tracebook@tracebook
 ```
 
@@ -201,16 +201,16 @@ PowerShell transport compatibility is stated by evidence level:
 
 ## Install
 
-The `4.0.13` release is available as the `v4.0.13` tag. Use the tagged
-installation commands for the stable release, or use the local development
-loading instructions when working from a clone.
+The `4.0.14` release uses the `v4.0.14` tag. After the tag is published, use
+the tagged installation commands for the stable release, or use the local
+development loading instructions when working from a clone.
 
 ### Codex
 
 Install the tagged release:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.13
+codex plugin marketplace add tydandou/tracebook --ref v4.0.14
 codex plugin add tracebook@tracebook
 ```
 
@@ -238,7 +238,7 @@ Removing a plugin never touches its knowledge root. If
 `codex plugin marketplace list` confirms it. Re-add the source, then install:
 
 ```text
-codex plugin marketplace add tydandou/tracebook --ref v4.0.13
+codex plugin marketplace add tydandou/tracebook --ref v4.0.14
 codex plugin add tracebook@tracebook
 ```
 
@@ -247,7 +247,7 @@ To move to a different tagged source, replace the marketplace first:
 ```text
 codex plugin remove tracebook@tracebook
 codex plugin marketplace remove tracebook
-codex plugin marketplace add tydandou/tracebook --ref v4.0.13
+codex plugin marketplace add tydandou/tracebook --ref v4.0.14
 codex plugin add tracebook@tracebook
 ```
 
@@ -270,6 +270,29 @@ claude --plugin-dir ./plugins/tracebook
 ```
 
 Start a new session or run `/reload-plugins` after a marketplace installation.
+
+### Skill not triggering automatically?
+
+If you route Claude Code through a third-party API gateway, Tracebook may not
+invoke automatically. Claude Code sends the skill listing inside a mid-conversation
+system message; some gateways silently drop that message without returning a
+rejection, which prevents Claude Code's own fallback from firing.
+
+Add the following to `"env"` in `~/.claude/settings.json`:
+
+```json
+"CLAUDE_CODE_MODEL_CAPABILITIES": "-mid_conv_system"
+```
+
+This tells Claude Code to send the skill listing in the user message instead,
+bypassing the gateway limitation. Effort, thinking, and other capabilities are
+unaffected.
+
+Note: `CLAUDE_CODE_MODEL_CAPABILITIES` is an undocumented internal switch. If
+triggering stops working after a Claude Code upgrade, check whether this value
+still has the expected effect. Codex users are not affected — Codex uses the
+Responses wire format, which sends the skill listing as a `developer` message
+that gateways do not discard.
 
 ### Update or recover a Claude Code installation
 
@@ -933,8 +956,8 @@ may be skipped on Windows hosts without symlink privileges.
 
 Before documenting or publishing a release, compare marketplace commands with
 the current Codex and Claude Code CLI help, validate both language guides, and
-publish the matching Git tag. The tagged Codex installation command above
-resolves the published `v4.0.13` release.
+publish the matching Git tag. After publication, the tagged Codex installation
+command above resolves the `v4.0.14` release.
 
 ## Stable Scope and Guarantees
 
